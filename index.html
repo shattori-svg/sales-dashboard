@@ -12,29 +12,12 @@
   </header>
 
   <nav class="tabs">
-    <button type="button" class="tab active" data-tab="input" aria-selected="true">Input</button>
-    <button type="button" class="tab" data-tab="hourly" aria-selected="false">時間別集計</button>
+    <button type="button" class="tab active" data-tab="hourly" aria-selected="true">時間別集計</button>
     <button type="button" class="tab" data-tab="daily" aria-selected="false">日別集計</button>
   </nav>
 
   <main>
-    <section id="input-panel" class="panel active">
-      <h2>Data Upload</h2>
-      <p class="hint">Upload one or more Excel files. Each file's BusinessDate in the data is used to assign it as Today, Yesterday, or Last Week (same weekday). DoD and WoW are shown when matching dates are available.</p>
-
-      <form id="upload-form" class="upload-form">
-        <div class="upload-group">
-          <label for="file-files">Excel files <span class="required">Required</span></label>
-          <input type="file" id="file-files" name="files" accept=".xlsx,.xls" multiple required>
-          <span class="file-name" id="name-files"></span>
-        </div>
-        <button type="submit" id="btn-generate" class="btn-primary">Generate Report</button>
-      </form>
-
-      <p id="upload-error" class="error" role="alert" hidden></p>
-    </section>
-
-    <section id="hourly-panel" class="panel">
+    <section id="hourly-panel" class="panel active">
       <div class="output-header">
         <label for="output-date">Output date</label>
         <select id="output-date" aria-label="Select output date">
@@ -171,7 +154,7 @@
         </div>
       </div>
 
-      <p id="output-empty" class="empty-message" hidden>To view the report, upload files in the "Input" tab and click "Generate Report".</p>
+      <p id="output-empty" class="empty-message" hidden>No data for the selected date.</p>
     </section>
 
     <section id="daily-panel" class="panel">
@@ -184,7 +167,7 @@
         </select>
       </div>
       <div id="daily-summary-tables"></div>
-      <p id="daily-empty" class="empty-message" hidden>Select an end date to load the daily summary. Upload data in the Input tab if no dates are available.</p>
+      <p id="daily-empty" class="empty-message" hidden>Select an end date to load the daily summary.</p>
     </section>
   </main>
 

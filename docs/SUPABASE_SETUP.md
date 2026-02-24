@@ -11,7 +11,7 @@
 
 ## 2. テーブルの作成
 
-Supabase ダッシュボードの **SQL Editor** で次の SQL を実行し、`reports` テーブルを作成します。
+Supabase ダッシュボードの **SQL Editor** で、プロジェクト直下の `supabase-reports-table.sql` を実行してください。`reports` に加え、ビジネスアワー用の `masters` テーブルも作成されます。
 
 ```sql
 -- レポート保存用テーブル（business_date をキーに 1 日 1 行）
@@ -60,9 +60,24 @@ SUPABASE_URL=https://xxxxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-`.env` を読み込むには、起動前に [dotenv](https://www.npmjs.com/package/dotenv) を使うか、Render / Railway 等のクラウドではダッシュボードの **Environment** で上記 2 変数を追加します。
+`.env` を読み込むには、起動前に [dotenv](https://www.npmjs.com/package/dotenv) を使います（本番では各ホスティングの「環境変数」で設定します）。
 
-### dotenv を使う場合
+### 本番環境（Render / Railway など）
+
+**本番と Supabase がつながらない**場合は、デプロイ先のダッシュボードで次の 2 つを環境変数として追加してください。`.env` は本番サーバーには存在しないため、必ずホスティング側で設定します。
+
+| キー | 値 |
+|------|-----|
+| `SUPABASE_URL` | あなたの Project URL（例: `https://xkkntqzwkekcsimxszvc.supabase.co`） |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase の **Settings → API** でコピーした **service_role** キー |
+
+- **Render:** ダッシュボードで該当の **Web Service** を開く → **Environment** → **Add Environment Variable** で上記 2 つを追加 → **Save Changes** 後、必要なら **Manual Deploy** で再デプロイ。
+- **Railway:** プロジェクト → 該当サービス → **Variables** で上記 2 つを追加。保存すると自動で再デプロイされます。
+- **Vercel / その他:** 同様に「Environment Variables」や「設定 → 環境変数」で `SUPABASE_URL` と `SUPABASE_SERVICE_ROLE_KEY` を追加してください。
+
+設定後、本番 URL でアプリを開き、Excel をアップロードして動作を確認します。Supabase の **Table Editor → reports** にレコードが増えていれば接続できています。
+
+### dotenv を使う場合（ローカル）
 
 ```bash
 npm install dotenv

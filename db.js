@@ -21,6 +21,12 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   )
 `);
+db.exec(`
+  CREATE TABLE IF NOT EXISTS masters (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  )
+`);
 
 function saveReport(businessDate, data) {
   const stmt = db.prepare(
@@ -45,4 +51,28 @@ function getAvailableDates() {
   return Promise.resolve(rows.map((r) => r.business_date));
 }
 
-module.exports = { saveReport, getReport, getAvailableDates };
+const BUSINESS_HOURS_KEY = 'business_hours';
+const DEFAULT_BUSINESS_HOURS = Object.fromEntries(
+  [0, 1, 2, 3, 4, 5, 6].map((d) => [d, { start: '00:00', end: '24:00' }])
+);
+
+function getBusinessHours() {
+  const row = db.prepare('SELECT value FROM masters WHERE key = ?').get(BUSINESS_HOURS_KEY);
+  if (!row || !row.value) return Promise.resolve(DEFAULT_BUSINESS_HOURS);
+  try {
+    const parsed = JSON.parse(row.value);
+    if (parsed && typeof parsed === 'object') return Promise.resolve(parsed);
+  } catch (e) {}
+  return Promise.resolve(DEFAULT_BUSINESS_HOURS);
+}
+
+function saveBusinessHours(settings) {
+  const value = JSON.stringify(settings || DEFAULT_BUSINESS_HOURS);
+  db.prepare('INSERT INTO masters (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(
+    BUSINESS_HOURS_KEY,
+    value
+  );
+  return Promise.resolve();
+}
+
+module.exports = { saveReport, getReport, getAvailableDates, getBusinessHours, saveBusinessHours };

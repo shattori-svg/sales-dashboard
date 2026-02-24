@@ -13,3 +13,18 @@ create policy "Service role full access"
   to service_role
   using (true)
   with check (true);
+
+-- Masters table (e.g. business hours by weekday)
+create table if not exists public.masters (
+  key text primary key,
+  value jsonb not null
+);
+
+alter table public.masters enable row level security;
+
+create policy "Service role full access on masters"
+  on public.masters
+  for all
+  to service_role
+  using (true)
+  with check (true);

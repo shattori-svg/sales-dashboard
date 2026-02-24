@@ -8,7 +8,7 @@ const multer = require('multer');
 const { parseSheet } = require('./parser');
 const useSupabase = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 const db = useSupabase ? require('./db-supabase') : require('./db');
-const { saveReport, getReport, getAvailableDates } = db;
+const { saveReport, getReport, getAvailableDates, getBusinessHours, saveBusinessHours } = db;
 
 const app = express();
 const PORT = process.env.PORT || 3333;
@@ -30,8 +30,46 @@ function addDays(dateStr, days) {
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
+app.get('/upload', (req, res) => {
+  res.sendFile(path.join(__dirname, 'upload.html'), (err) => {
+    if (err) res.status(500).send('Upload page not found');
+  });
+});
+
 app.get('/health', (req, res) => {
   res.status(200).json({ ok: true });
+});
+
+app.get('/api/business-hours', async (req, res) => {
+  try {
+    const settings = await getBusinessHours();
+    res.json(settings);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to get business hours.' });
+  }
+});
+
+app.put('/api/business-hours', async (req, res) => {
+  try {
+    const settings = req.body;
+    if (!settings || typeof settings !== 'object') {
+      return res.status(400).json({ error: 'Body must be an object (e.g. { "0": { "start": "09:00", "end": "21:00" }, ... }).' });
+    }
+    const normalized = {};
+    for (let d = 0; d <= 6; d++) {
+      const day = settings[String(d)] || settings[d];
+      normalized[d] = {
+        start: (day && day.start) ? String(day.start).trim() : '00:00',
+        end: (day && day.end) ? String(day.end).trim() : '24:00',
+      };
+    }
+    await saveBusinessHours(normalized);
+    res.json(normalized);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to save business hours.' });
+  }
 });
 
 app.get('/api/dates', async (req, res) => {

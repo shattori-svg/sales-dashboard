@@ -18,6 +18,11 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 const TABLE = 'reports';
+const MASTERS_TABLE = 'masters';
+const BUSINESS_HOURS_KEY = 'business_hours';
+const DEFAULT_BUSINESS_HOURS = Object.fromEntries(
+  [0, 1, 2, 3, 4, 5, 6].map((d) => [d, { start: '00:00', end: '24:00' }])
+);
 
 function saveReport(businessDate, data) {
   const row = {
@@ -57,4 +62,28 @@ function getAvailableDates() {
     });
 }
 
-module.exports = { saveReport, getReport, getAvailableDates };
+function getBusinessHours() {
+  return supabase
+    .from(MASTERS_TABLE)
+    .select('value')
+    .eq('key', BUSINESS_HOURS_KEY)
+    .maybeSingle()
+    .then(({ data: row, error }) => {
+      if (error) throw error;
+      if (!row || row.value == null) return DEFAULT_BUSINESS_HOURS;
+      const v = typeof row.value === 'object' ? row.value : JSON.parse(row.value);
+      return v && typeof v === 'object' ? v : DEFAULT_BUSINESS_HOURS;
+    });
+}
+
+function saveBusinessHours(settings) {
+  const value = settings || DEFAULT_BUSINESS_HOURS;
+  return supabase
+    .from(MASTERS_TABLE)
+    .upsert({ key: BUSINESS_HOURS_KEY, value }, { onConflict: 'key' })
+    .then(({ error }) => {
+      if (error) throw error;
+    });
+}
+
+module.exports = { saveReport, getReport, getAvailableDates, getBusinessHours, saveBusinessHours };

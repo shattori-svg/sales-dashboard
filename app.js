@@ -5,7 +5,8 @@
     today: null,
     yesterday: null,
     lastWeek: null,
-    referenceDate: null
+    referenceDate: null,
+    businessHoursSettings: null
   };
 
   var DEPARTMENTS = ['Grocery', 'Fruit & Vegetable', 'Fish & Seafood', 'Meat', 'Delicatessen', 'Store Management'];
@@ -64,7 +65,8 @@
 
   function getDepartmentCompositionByTime(todayData, startTime, endTime) {
     if (!todayData || !todayData.byDepartment || !todayData.total || !todayData.total.hourly) return null;
-    var timeSlots = filterByTimeRange(todayData.total.hourly, startTime, endTime);
+    var totalHourly = filterByBusinessHours(todayData.total.hourly, todayData.businessDate);
+    var timeSlots = filterByTimeRange(totalHourly, startTime, endTime);
     if (!timeSlots || !timeSlots.length) return null;
     var timeLabels = timeSlots.map(function (h) { return h.timeLabel || h.timeKey || ''; });
     var deptDatasets = [];
@@ -73,9 +75,10 @@
       var dept = DEPARTMENTS[d];
       var hourly = todayData.byDepartment[dept] && todayData.byDepartment[dept].hourly;
       if (!hourly) continue;
+      var hourlyInHours = filterByBusinessHours(hourly, todayData.businessDate);
       var values = [];
       for (var i = 0; i < timeSlots.length; i++) {
-        var h = findHour(hourly, timeSlots[i].timeKey);
+        var h = findHour(hourlyInHours, timeSlots[i].timeKey);
         values.push(h ? (h.netSales || 0) : 0);
       }
       deptDatasets.push({ name: dept, values: values, color: colors[d % colors.length] });
@@ -344,6 +347,62 @@
     return null;
   }
 
+  var BH_STORAGE_KEY = 'businessHours';
+  var DEFAULT_BH = {};
+  for (var d = 0; d <= 6; d++) DEFAULT_BH[d] = { start: '00:00', end: '24:00' };
+
+  function getBusinessHoursSettings() {
+    if (state.businessHoursSettings && typeof state.businessHoursSettings === 'object') return state.businessHoursSettings;
+    try {
+      var raw = typeof localStorage !== 'undefined' && localStorage.getItem(BH_STORAGE_KEY);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {}
+    return DEFAULT_BH;
+  }
+
+  function parseJsonResponse(res) {
+    var ct = (res.headers.get('Content-Type') || '').toLowerCase();
+    return res.text().then(function (text) {
+      if (ct.indexOf('application/json') !== -1 || (text.trim().charAt(0) === '{') || (text.trim().charAt(0) === '[')) {
+        try { return JSON.parse(text); } catch (e) { throw new Error('Invalid JSON'); }
+      }
+      throw new Error('Server did not return JSON');
+    });
+  }
+
+  function fetchBusinessHours() {
+    fetch('/api/business-hours').then(function (res) { return parseJsonResponse(res); }).then(function (settings) {
+      if (settings && typeof settings === 'object') {
+        state.businessHoursSettings = settings;
+        var startEl = document.getElementById('time-start');
+        var endEl = document.getElementById('time-end');
+        if (startEl && endEl && state.referenceDate) fillTimeSelects(state.referenceDate);
+        renderReport();
+      }
+    }).catch(function () {});
+  }
+
+  function filterByBusinessHours(hourly, businessDate, settings) {
+    if (!hourly || !hourly.length) return hourly;
+    if (!businessDate) return hourly;
+    settings = settings || getBusinessHoursSettings();
+    var dateStr = String(businessDate).trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return hourly;
+    var day = new Date(dateStr + 'T12:00:00').getDay();
+    var daySettings = settings[day];
+    if (!daySettings || (daySettings.start === '00:00' && daySettings.end === '24:00')) return hourly;
+    var startTime = daySettings.start || '00:00';
+    var endTime = daySettings.end || '24:00';
+    return hourly.filter(function (h) {
+      var slotStart = (h.timeKey || '').split('-')[0].trim();
+      if (endTime === '24:00') return slotStart >= startTime;
+      return slotStart >= startTime && slotStart < endTime;
+    });
+  }
+
   function filterByTimeRange(hourly, startTime, endTime) {
     if (!hourly || !hourly.length) return hourly;
     if (startTime === '00:00' && endTime === '24:00') return hourly;
@@ -354,27 +413,60 @@
     });
   }
 
-  function fillTimeSelects() {
+  function getBusinessHoursForDate(businessDate) {
+    if (!businessDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(businessDate).trim())) return { start: '00:00', end: '24:00' };
+    var settings = getBusinessHoursSettings();
+    var day = new Date(String(businessDate).trim() + 'T12:00:00').getDay();
+    var daySettings = settings[day];
+    if (!daySettings) return { start: '00:00', end: '24:00' };
+    return { start: daySettings.start || '00:00', end: daySettings.end || '24:00' };
+  }
+
+  function timeToHour(t) {
+    if (!t || t === '24:00') return 24;
+    var parts = String(t).trim().split(':');
+    return parseInt(parts[0], 10) | 0;
+  }
+
+  function hourToTime(h) {
+    if (h >= 24) return '24:00';
+    return (h < 10 ? '0' : '') + h + ':00';
+  }
+
+  function fillTimeSelects(referenceDate) {
     var startEl = document.getElementById('time-start');
     var endEl = document.getElementById('time-end');
     if (!startEl || !endEl) return;
+    var range = getBusinessHoursForDate(referenceDate);
+    var startH = timeToHour(range.start);
+    var endH = timeToHour(range.end);
+    if (endH < startH) endH = 24;
+    var startOptions = [];
+    var endOptions = [];
+    for (var i = startH; i < endH; i++) {
+      startOptions.push(hourToTime(i));
+    }
+    for (var j = startH + 1; j <= endH; j++) {
+      endOptions.push(hourToTime(j));
+    }
+    if (startOptions.length === 0) startOptions = ['00:00'];
+    if (endOptions.length === 0) endOptions = ['24:00'];
     startEl.innerHTML = '';
     endEl.innerHTML = '';
-    for (var i = 0; i < 24; i++) {
-      var t = (i < 10 ? '0' : '') + i + ':00';
+    startOptions.forEach(function (t) {
       var opt = document.createElement('option');
       opt.value = t;
       opt.textContent = t;
       startEl.appendChild(opt);
-    }
-    for (var j = 1; j <= 24; j++) {
+    });
+    endOptions.forEach(function (t) {
       var o = document.createElement('option');
-      o.value = j === 24 ? '24:00' : (j < 10 ? '0' : '') + j + ':00';
-      o.textContent = o.value;
+      o.value = t;
+      o.textContent = t;
       endEl.appendChild(o);
-    }
-    startEl.value = '00:00';
-    endEl.value = '24:00';
+    });
+    startEl.value = startOptions[0];
+    endEl.value = endOptions[endOptions.length - 1];
   }
 
   function pctRatio(current, base) {
@@ -506,9 +598,12 @@
     var startTime = (document.getElementById('time-start') && document.getElementById('time-start').value) || '00:00';
     var endTime = (document.getElementById('time-end') && document.getElementById('time-end').value) || '24:00';
 
-    var todayHourly = filterByTimeRange(getHourlyData(state.today, dept), startTime, endTime);
-    var yesterdayHourly = filterByTimeRange(getHourlyData(state.yesterday, dept), startTime, endTime);
-    var lastWeekHourly = filterByTimeRange(getHourlyData(state.lastWeek, dept), startTime, endTime);
+    var todayRaw = getHourlyData(state.today, dept);
+    var yesterdayRaw = getHourlyData(state.yesterday, dept);
+    var lastWeekRaw = getHourlyData(state.lastWeek, dept);
+    var todayHourly = filterByTimeRange(filterByBusinessHours(todayRaw, state.today && state.today.businessDate), startTime, endTime);
+    var yesterdayHourly = filterByTimeRange(filterByBusinessHours(yesterdayRaw, state.yesterday && state.yesterday.businessDate), startTime, endTime);
+    var lastWeekHourly = filterByTimeRange(filterByBusinessHours(lastWeekRaw, state.lastWeek && state.lastWeek.businessDate), startTime, endTime);
 
     var tbody = document.getElementById('hourly-tbody');
     var tfoot = document.getElementById('hourly-tfoot');
@@ -615,11 +710,36 @@
     }
   }
 
+  function getTodayYYYYMMDD() {
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
   function refreshOutputDateSelect() {
-    fetch('/api/dates').then(function (res) { return res.json(); }).then(function (body) {
-      var current = state.referenceDate || document.getElementById('output-date').value;
-      fillOutputDateSelect(body.dates || [], current);
-    }).catch(function () {});
+    var sel = document.getElementById('output-date');
+    if (!sel) return;
+    fetch('/api/dates').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
+      var dates = body.dates || [];
+      var todayStr = getTodayYYYYMMDD();
+      var initialDate = state.referenceDate || sel.value || (dates.indexOf(todayStr) !== -1 ? todayStr : (dates.length ? dates[0] : null));
+      fillOutputDateSelect(dates, initialDate);
+      var chosen = sel.value;
+      if (chosen && dates.indexOf(chosen) !== -1) {
+        fetch('/api/report?referenceDate=' + encodeURIComponent(chosen)).then(function (r) {
+          return parseJsonResponse(r).then(function (data) {
+            if (!r.ok) return;
+            state.today = data.today;
+            state.yesterday = data.yesterday || null;
+            state.lastWeek = data.lastWeek || null;
+            state.referenceDate = data.referenceDate;
+            fillTimeSelects(state.referenceDate);
+            renderReport();
+          });
+        }).catch(function () {});
+      } else {
+        renderReport();
+      }
+    }).catch(function () { renderReport(); });
   }
 
   function switchTab(tabName) {
@@ -658,7 +778,7 @@
   }
 
   function refreshDailyDateSelect() {
-    fetch('/api/dates').then(function (res) { return res.json(); }).then(function (body) {
+    fetch('/api/dates').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
       var dates = body.dates || [];
       var sel = document.getElementById('daily-end-date');
       fillDailyEndDateSelect(dates, sel ? sel.value : null);
@@ -682,7 +802,7 @@
     }
     if (emptyEl) emptyEl.hidden = true;
     fetch('/api/daily-summary?referenceDate=' + encodeURIComponent(endDate) + '&days=7').then(function (res) {
-      return res.json().then(function (body) {
+      return parseJsonResponse(res).then(function (body) {
         if (!res.ok) throw new Error(body.error || 'Failed to load daily summary');
         return body;
       });
@@ -894,14 +1014,16 @@
       });
     });
 
-    document.getElementById('department-select').addEventListener('change', renderReport);
-    fillTimeSelects();
+    var departmentSelect = document.getElementById('department-select');
+    if (departmentSelect) departmentSelect.addEventListener('change', renderReport);
+    fillTimeSelects(state.referenceDate);
 
-    document.getElementById('output-date').addEventListener('change', function () {
+    var outputDateEl = document.getElementById('output-date');
+    if (outputDateEl) outputDateEl.addEventListener('change', function () {
       var date = this.value;
       if (!date) return;
       fetch('/api/report?referenceDate=' + encodeURIComponent(date)).then(function (res) {
-        return res.json().then(function (body) {
+        return parseJsonResponse(res).then(function (body) {
           if (!res.ok) throw new Error(body.error || 'Failed to load report');
           return body;
         });
@@ -910,6 +1032,7 @@
         state.yesterday = body.yesterday || null;
         state.lastWeek = body.lastWeek || null;
         state.referenceDate = body.referenceDate;
+        fillTimeSelects(state.referenceDate);
         renderReport();
       }).catch(function () {});
     });
@@ -922,60 +1045,12 @@
     if (timeStart) timeStart.addEventListener('change', renderReport);
     if (timeEnd) timeEnd.addEventListener('change', renderReport);
 
-    document.getElementById('file-files').addEventListener('change', function () {
-      var files = this.files;
-      var names = files.length ? Array.prototype.map.call(files, function (f) { return f.name; }).join(', ') : '';
-      if (files.length > 1) names = files.length + ' files: ' + names;
-      document.getElementById('name-files').textContent = names;
-    });
-
-    document.getElementById('upload-form').addEventListener('submit', function (e) {
-      e.preventDefault();
-      var errEl = document.getElementById('upload-error');
-      errEl.hidden = true;
-      errEl.textContent = '';
-
-      var fileInput = document.getElementById('file-files');
-      var files = fileInput.files;
-      if (!files || files.length === 0) {
-        errEl.textContent = 'Please select at least one file.';
-        errEl.hidden = false;
-        return;
-      }
-
-      var formData = new FormData();
-      for (var i = 0; i < files.length; i++) {
-        formData.append('files', files[i]);
-      }
-
-      fetch('/api/upload', {
-        method: 'POST',
-        body: formData
-      }).then(function (res) {
-        var contentType = (res.headers.get('Content-Type') || '').toLowerCase();
-        return res.text().then(function (text) {
-          if (contentType.indexOf('application/json') === -1) {
-            if (text.indexOf('<!DOCTYPE') !== -1 || text.indexOf('<!doctype') !== -1) {
-              throw new Error('The API is not responding. Please run the server (npm start) and open this page from the server URL.');
-            }
-            throw new Error('Server error: ' + (text || res.status));
-          }
-          var body = JSON.parse(text);
-          if (!res.ok) throw new Error(body.error || 'Upload failed');
-          return body;
-        });
-      }).then(function (body) {
-        state.today = body.today;
-        state.yesterday = body.yesterday || null;
-        state.lastWeek = body.lastWeek || null;
-        state.referenceDate = body.referenceDate;
-        fillOutputDateSelect(body.savedDates || [], body.referenceDate);
-        switchTab('hourly');
-      }).catch(function (err) {
-        errEl.textContent = err.message || 'File upload failed.';
-        errEl.hidden = false;
-      });
-    });
+    /* Report page: load initial data for hourly tab */
+    if (outputDateEl) {
+      fetchBusinessHours();
+      refreshOutputDateSelect();
+      renderReport();
+    }
   }
 
   if (document.readyState === 'loading') {
