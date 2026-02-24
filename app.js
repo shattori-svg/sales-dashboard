@@ -14,6 +14,7 @@
   };
 
   var DEPARTMENTS = ['Grocery', 'Fruit & Vegetable', 'Fish & Seafood', 'Meat', 'Delicatessen', 'Store Management'];
+  var DEPARTMENT_COLORS = ['#9333ea', '#22c55e', '#38bdf8', '#ec4899', '#f97316', '#1f2937'];
 
   var chartInstances = { sales: null, receipts: null, forecastSales: null, forecastReceipts: null, composition: null, dailySales: null, dailyComposition: null, dailyMetrics: null };
 
@@ -74,18 +75,16 @@
     if (!timeSlots || !timeSlots.length) return null;
     var timeLabels = timeSlots.map(function (h) { return h.timeLabel || h.timeKey || ''; });
     var deptDatasets = [];
-    var colors = ['#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#9333ea', '#0d9488'];
     for (var d = 0; d < DEPARTMENTS.length; d++) {
       var dept = DEPARTMENTS[d];
       var hourly = todayData.byDepartment[dept] && todayData.byDepartment[dept].hourly;
-      if (!hourly) continue;
-      var hourlyInHours = filterByBusinessHours(hourly, todayData.businessDate);
+      var hourlyInHours = hourly ? filterByBusinessHours(hourly, todayData.businessDate) : [];
       var values = [];
       for (var i = 0; i < timeSlots.length; i++) {
-        var h = findHour(hourlyInHours, timeSlots[i].timeKey);
+        var h = hourlyInHours && hourlyInHours.length ? findHour(hourlyInHours, timeSlots[i].timeKey) : null;
         values.push(h ? (h.netSales || 0) : 0);
       }
-      deptDatasets.push({ name: dept, values: values, color: colors[d % colors.length] });
+      deptDatasets.push({ name: dept, values: values, color: DEPARTMENT_COLORS[d % DEPARTMENT_COLORS.length] });
     }
     if (deptDatasets.length === 0) return null;
     return { timeLabels: timeLabels, timeSlots: timeSlots, deptDatasets: deptDatasets };
@@ -132,8 +131,7 @@
         maintainAspectRatio: true,
         plugins: {
           legend: {
-            position: 'top',
-            labels: { filter: function (item, ch) { return item.datasetIndex !== 1; } }
+            position: 'top'
           },
           tooltip: {
             callbacks: {
@@ -964,7 +962,6 @@
     }
     if (tabName === 'weekly') {
       refreshWeeklyDateSelect();
-      renderWeeklySummary();
     }
   }
 
@@ -1025,7 +1022,7 @@
       }
       destroyDailyCharts();
       var deptOrder = DEPARTMENTS.slice();
-      var dailyChartColors = ['#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#9333ea', '#0d9488'];
+      var dailyChartColors = DEPARTMENT_COLORS.slice();
       var dateLabels = days.map(function (d) {
         var dt = new Date(d.date + 'T12:00:00');
         var w = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dt.getDay()];
@@ -1233,6 +1230,13 @@
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
 
+  function getMondayOfWeek(dateStr) {
+    var d = new Date(dateStr + 'T12:00:00');
+    var day = d.getDay();
+    var toMonday = (day + 6) % 7;
+    return addDays(dateStr, -toMonday);
+  }
+
   function fillWeeklyEndDateSelect(dates, selectedValue) {
     var el = document.getElementById('weekly-end-date');
     if (!el || el.type !== 'date') return;
@@ -1254,8 +1258,12 @@
       var dates = body.dates || [];
       var el = document.getElementById('weekly-end-date');
       fillWeeklyEndDateSelect(dates, el ? el.value : null);
-      renderWeeklySummary();
-    }).then(function () { hideLoading(); }).catch(function () { hideLoading(); });
+      if (el && el.value) {
+        renderWeeklySummary();
+      } else {
+        hideLoading();
+      }
+    }).catch(function () { hideLoading(); });
   }
 
   function renderWeeklySummary() {
@@ -1272,9 +1280,12 @@
       if (emptyEl) emptyEl.hidden = false;
       return;
     }
+    var mondayOfEndWeek = getMondayOfWeek(endDate);
+    var firstMonday = addDays(mondayOfEndWeek, -(numWeeks - 1) * 7);
+    var apiEndDate = addDays(firstMonday, daysToFetch - 1);
     if (emptyEl) emptyEl.hidden = true;
     showLoading();
-    fetch('/api/daily-summary?referenceDate=' + encodeURIComponent(endDate) + '&days=' + daysToFetch).then(function (res) {
+    fetch('/api/daily-summary?referenceDate=' + encodeURIComponent(apiEndDate) + '&days=' + daysToFetch).then(function (res) {
       return parseJsonResponse(res).then(function (body) {
         if (!res.ok) throw new Error(body.error || 'Failed to load weekly summary');
         return body;
