@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Daily Sales Report (Hourly Sales by Department)</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Daily Sales Report (Hourly Sales by Department)</h1>
+  </header>
+
+  <nav class="tabs">
+    <button type="button" class="tab active" data-tab="input" aria-selected="true">Input</button>
+    <button type="button" class="tab" data-tab="hourly" aria-selected="false">時間別集計</button>
+    <button type="button" class="tab" data-tab="daily" aria-selected="false">日別集計</button>
+  </nav>
+
+  <main>
+    <section id="input-panel" class="panel active">
+      <h2>Data Upload</h2>
+      <p class="hint">Upload one or more Excel files. Each file's BusinessDate in the data is used to assign it as Today, Yesterday, or Last Week (same weekday). DoD and WoW are shown when matching dates are available.</p>
+
+      <form id="upload-form" class="upload-form">
+        <div class="upload-group">
+          <label for="file-files">Excel files <span class="required">Required</span></label>
+          <input type="file" id="file-files" name="files" accept=".xlsx,.xls" multiple required>
+          <span class="file-name" id="name-files"></span>
+        </div>
+        <button type="submit" id="btn-generate" class="btn-primary">Generate Report</button>
+      </form>
+
+      <p id="upload-error" class="error" role="alert" hidden></p>
+    </section>
+
+    <section id="hourly-panel" class="panel">
+      <div class="output-header">
+        <label for="output-date">Output date</label>
+        <select id="output-date" aria-label="Select output date">
+          <option value="">— Select date —</option>
+        </select>
+        <label for="department-select" class="output-header-sep">Display</label>
+        <select id="department-select" aria-label="Select department or total">
+          <option value="Total">Total</option>
+          <option value="Grocery">Grocery</option>
+          <option value="Fruit & Vegetable">Fruit & Vegetable</option>
+          <option value="Fish & Seafood">Fish & Seafood</option>
+          <option value="Meat">Meat</option>
+          <option value="Delicatessen">Delicatessen</option>
+          <option value="Store Management">Store Management</option>
+        </select>
+        <label for="time-start" class="time-range-label">Time range</label>
+        <select id="time-start" aria-label="Start time">
+          <!-- filled by app.js -->
+        </select>
+        <span class="time-range-sep">～</span>
+        <select id="time-end" aria-label="End time">
+          <!-- filled by app.js -->
+        </select>
+      </div>
+
+      <div id="report-title" class="report-title">Total</div>
+
+      <div class="table-wrapper">
+        <table id="hourly-table" class="report-table">
+          <thead>
+            <tr>
+              <th>Time range</th>
+              <th>Gross Sales (THB)</th>
+              <th>Net Sales (THB)</th>
+              <th>DoD</th>
+              <th>WoW</th>
+              <th>Discount Rate</th>
+              <th>Qty of Items Sold</th>
+              <th>Receipt Count</th>
+            </tr>
+          </thead>
+          <tbody id="hourly-tbody">
+            <!-- populated by app.js -->
+          </tbody>
+          <tfoot id="hourly-tfoot">
+            <!-- populated by app.js -->
+          </tfoot>
+        </table>
+      </div>
+
+      <section class="summary-section">
+        <h3>Summary</h3>
+        <table id="summary-table" class="summary-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Today</th>
+              <th>DoD</th>
+              <th>WoW</th>
+            </tr>
+          </thead>
+          <tbody id="summary-tbody">
+            <tr>
+              <td>Sales per Hour</td>
+              <td id="sum-sales-per-hour"></td>
+              <td id="sum-sales-per-hour-dod"></td>
+              <td id="sum-sales-per-hour-wow"></td>
+            </tr>
+            <tr>
+              <td>Transaction per Hour</td>
+              <td id="sum-txn-per-hour"></td>
+              <td id="sum-txn-per-hour-dod"></td>
+              <td id="sum-txn-per-hour-wow"></td>
+            </tr>
+            <tr>
+              <td>Unit Per Transaction</td>
+              <td id="sum-unit-per-txn"></td>
+              <td id="sum-unit-per-txn-dod"></td>
+              <td id="sum-unit-per-txn-wow"></td>
+            </tr>
+            <tr>
+              <td>Average Transaction Price</td>
+              <td id="sum-avg-txn-price"></td>
+              <td id="sum-avg-txn-price-dod"></td>
+              <td id="sum-avg-txn-price-wow"></td>
+            </tr>
+            <tr>
+              <td>Average Selling Price</td>
+              <td id="sum-avg-selling-price"></td>
+              <td id="sum-avg-selling-price-dod"></td>
+              <td id="sum-avg-selling-price-wow"></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="composition-section" id="composition-section">
+        <h3>Department Composition by Time Slot (Share of Net Sales)</h3>
+        <table id="composition-table" class="composition-table" aria-label="Department composition by time slot">
+          <thead>
+            <tr>
+              <th>Time range</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody id="composition-tbody">
+            <!-- populated by app.js -->
+          </tbody>
+          <tfoot id="composition-tfoot">
+            <!-- populated by app.js -->
+          </tfoot>
+        </table>
+        <div class="composition-chart-wrapper">
+          <canvas id="chart-composition" width="400" height="280"></canvas>
+        </div>
+      </section>
+
+      <div class="chart-section" id="chart-section">
+        <div class="chart-wrapper">
+          <h3 class="chart-title">Hourly Net Sales (THB)</h3>
+          <canvas id="chart-sales" width="800" height="320"></canvas>
+        </div>
+        <div class="chart-wrapper">
+          <h3 class="chart-title">Receipt Count by Time Slot</h3>
+          <canvas id="chart-receipts" width="800" height="260"></canvas>
+        </div>
+        <div class="chart-wrapper">
+          <h3 class="chart-title">Forecast (Landing) — Net Sales (THB)</h3>
+          <canvas id="chart-forecast-sales" width="800" height="260"></canvas>
+        </div>
+        <div class="chart-wrapper">
+          <h3 class="chart-title">Forecast (Landing) — Receipt Count</h3>
+          <canvas id="chart-forecast-receipts" width="800" height="260"></canvas>
+        </div>
+      </div>
+
+      <p id="output-empty" class="empty-message" hidden>To view the report, upload files in the "Input" tab and click "Generate Report".</p>
+    </section>
+
+    <section id="daily-panel" class="panel">
+      <h3 class="section-title">Daily aggregation (weekly trend and composition)</h3>
+      <p class="hint">View weekly sales trend and department composition by day.</p>
+      <div class="output-header">
+        <label for="daily-end-date">Week ending (End date)</label>
+        <select id="daily-end-date" aria-label="Select end date for weekly view">
+          <option value="">— Select date —</option>
+        </select>
+      </div>
+      <div id="daily-summary-tables"></div>
+      <p id="daily-empty" class="empty-message" hidden>Select an end date to load the daily summary. Upload data in the Input tab if no dates are available.</p>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
