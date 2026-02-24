@@ -1,7 +1,7 @@
 {
   "name": "sales-reports",
   "version": "1.0.0",
-  "description": "Daily Sales Report (Hourly Sales by Department) - Node.js",
+  "description": "LOPIA Thailand Sales Report - Node.js",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

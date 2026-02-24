@@ -3,27 +3,40 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Daily Sales Report (Hourly Sales by Department)</title>
+  <title>LOPIA Thailand Sales Report</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div id="loading-overlay" class="loading-overlay" aria-live="polite" aria-busy="false" hidden>
+    <div class="loading-content">
+      <span class="loading-spinner" aria-hidden="true"></span>
+      <span class="loading-text" data-i18n="loading">Loading...</span>
+    </div>
+  </div>
   <header>
-    <h1>Daily Sales Report (Hourly Sales by Department)</h1>
+    <h1 data-i18n="app_title">LOPIA Thailand Sales Report</h1>
+    <div class="lang-switcher">
+      <label for="lang-select" class="lang-label" data-i18n="lang_label">Language</label>
+      <select id="lang-select" aria-label="Language">
+        <option value="ja">日本語</option>
+        <option value="en">English</option>
+        <option value="th">ไทย</option>
+      </select>
+    </div>
   </header>
 
   <nav class="tabs">
-    <button type="button" class="tab active" data-tab="hourly" aria-selected="true">時間別集計</button>
-    <button type="button" class="tab" data-tab="daily" aria-selected="false">日別集計</button>
+    <button type="button" class="tab active" data-tab="hourly" aria-selected="true" data-i18n="tab_hourly">Hourly</button>
+    <button type="button" class="tab" data-tab="daily" aria-selected="false" data-i18n="tab_daily">Daily</button>
+    <button type="button" class="tab" data-tab="weekly" aria-selected="false" data-i18n="tab_weekly">Weekly</button>
   </nav>
 
   <main>
     <section id="hourly-panel" class="panel active">
       <div class="output-header">
-        <label for="output-date">Output date</label>
-        <select id="output-date" aria-label="Select output date">
-          <option value="">— Select date —</option>
-        </select>
-        <label for="department-select" class="output-header-sep">Display</label>
+        <label for="output-date" data-i18n="output_date">Output date</label>
+        <input type="date" id="output-date" aria-label="Select output date">
+        <label for="department-select" class="output-header-sep" data-i18n="display">Display</label>
         <select id="department-select" aria-label="Select department or total">
           <option value="Total">Total</option>
           <option value="Grocery">Grocery</option>
@@ -33,7 +46,7 @@
           <option value="Delicatessen">Delicatessen</option>
           <option value="Store Management">Store Management</option>
         </select>
-        <label for="time-start" class="time-range-label">Time range</label>
+        <label for="time-start" class="time-range-label" data-i18n="time_range">Time range</label>
         <select id="time-start" aria-label="Start time">
           <!-- filled by app.js -->
         </select>
@@ -42,6 +55,7 @@
           <!-- filled by app.js -->
         </select>
       </div>
+      <p id="last-upload-time" class="last-upload-time" aria-live="polite"></p>
 
       <div id="report-title" class="report-title">Total</div>
 
@@ -49,14 +63,14 @@
         <table id="hourly-table" class="report-table">
           <thead>
             <tr>
-              <th>Time range</th>
-              <th>Gross Sales (THB)</th>
-              <th>Net Sales (THB)</th>
-              <th>DoD</th>
-              <th>WoW</th>
-              <th>Discount Rate</th>
-              <th>Qty of Items Sold</th>
-              <th>Receipt Count</th>
+              <th data-i18n="time_range_col">Time range</th>
+              <th data-i18n="gross_sales">Gross Sales (Baht)</th>
+              <th data-i18n="net_sales">Net Sales (Baht)</th>
+              <th data-i18n="dod">DoD</th>
+              <th data-i18n="wow">WoW</th>
+              <th data-i18n="discount_rate">Discount Rate</th>
+              <th data-i18n="qty_sold">Qty of Items Sold</th>
+              <th data-i18n="receipt_count">Receipt Count</th>
             </tr>
           </thead>
           <tbody id="hourly-tbody">
@@ -69,43 +83,43 @@
       </div>
 
       <section class="summary-section">
-        <h3>Summary</h3>
+        <h3 data-i18n="summary">Summary</h3>
         <table id="summary-table" class="summary-table">
           <thead>
             <tr>
               <th></th>
-              <th>Today</th>
-              <th>DoD</th>
-              <th>WoW</th>
+              <th data-i18n="today">Today</th>
+              <th data-i18n="dod">DoD</th>
+              <th data-i18n="wow">WoW</th>
             </tr>
           </thead>
           <tbody id="summary-tbody">
             <tr>
-              <td>Sales per Hour</td>
+              <td data-i18n="sales_per_hour">Sales per Hour</td>
               <td id="sum-sales-per-hour"></td>
               <td id="sum-sales-per-hour-dod"></td>
               <td id="sum-sales-per-hour-wow"></td>
             </tr>
             <tr>
-              <td>Transaction per Hour</td>
+              <td data-i18n="txn_per_hour">Transaction per Hour</td>
               <td id="sum-txn-per-hour"></td>
               <td id="sum-txn-per-hour-dod"></td>
               <td id="sum-txn-per-hour-wow"></td>
             </tr>
             <tr>
-              <td>Unit Per Transaction</td>
+              <td data-i18n="unit_per_txn">Unit Per Transaction</td>
               <td id="sum-unit-per-txn"></td>
               <td id="sum-unit-per-txn-dod"></td>
               <td id="sum-unit-per-txn-wow"></td>
             </tr>
             <tr>
-              <td>Average Transaction Price</td>
+              <td data-i18n="avg_txn_price">Average Transaction Price</td>
               <td id="sum-avg-txn-price"></td>
               <td id="sum-avg-txn-price-dod"></td>
               <td id="sum-avg-txn-price-wow"></td>
             </tr>
             <tr>
-              <td>Average Selling Price</td>
+              <td data-i18n="avg_selling_price">Average Selling Price</td>
               <td id="sum-avg-selling-price"></td>
               <td id="sum-avg-selling-price-dod"></td>
               <td id="sum-avg-selling-price-wow"></td>
@@ -115,12 +129,12 @@
       </section>
 
       <section class="composition-section" id="composition-section">
-        <h3>Department Composition by Time Slot (Share of Net Sales)</h3>
+        <h3 data-i18n="composition_title">Department Composition by Time Slot (Share of Net Sales)</h3>
         <table id="composition-table" class="composition-table" aria-label="Department composition by time slot">
           <thead>
             <tr>
-              <th>Time range</th>
-              <th>Total</th>
+              <th data-i18n="time_range_col">Time range</th>
+              <th data-i18n="total">Total</th>
             </tr>
           </thead>
           <tbody id="composition-tbody">
@@ -137,41 +151,57 @@
 
       <div class="chart-section" id="chart-section">
         <div class="chart-wrapper">
-          <h3 class="chart-title">Hourly Net Sales (THB)</h3>
+          <h3 class="chart-title" data-i18n="chart_hourly_net">Hourly Net Sales (Baht)</h3>
           <canvas id="chart-sales" width="800" height="320"></canvas>
         </div>
         <div class="chart-wrapper">
-          <h3 class="chart-title">Receipt Count by Time Slot</h3>
+          <h3 class="chart-title" data-i18n="chart_receipts">Receipt Count by Time Slot</h3>
           <canvas id="chart-receipts" width="800" height="260"></canvas>
         </div>
         <div class="chart-wrapper">
-          <h3 class="chart-title">Forecast (Landing) — Net Sales (THB)</h3>
+          <h3 class="chart-title" data-i18n="chart_forecast_net">Forecast (Landing) — Net Sales (Baht)</h3>
           <canvas id="chart-forecast-sales" width="800" height="260"></canvas>
         </div>
         <div class="chart-wrapper">
-          <h3 class="chart-title">Forecast (Landing) — Receipt Count</h3>
+          <h3 class="chart-title" data-i18n="chart_forecast_receipts">Forecast (Landing) — Receipt Count</h3>
           <canvas id="chart-forecast-receipts" width="800" height="260"></canvas>
         </div>
       </div>
 
-      <p id="output-empty" class="empty-message" hidden>No data for the selected date.</p>
+      <p id="output-empty" class="empty-message" data-i18n="no_data_selected_date" hidden>No data for the selected date.</p>
     </section>
 
     <section id="daily-panel" class="panel">
-      <h3 class="section-title">Daily aggregation (weekly trend and composition)</h3>
-      <p class="hint">View weekly sales trend and department composition by day.</p>
+      <h3 class="section-title" data-i18n="daily_section_title">Daily aggregation (weekly trend and composition)</h3>
+      <p class="hint" data-i18n="daily_hint">View weekly sales trend and department composition by day.</p>
       <div class="output-header">
-        <label for="daily-end-date">Week ending (End date)</label>
-        <select id="daily-end-date" aria-label="Select end date for weekly view">
-          <option value="">— Select date —</option>
-        </select>
+        <label for="daily-end-date" data-i18n="week_ending">Week ending (End date)</label>
+        <input type="date" id="daily-end-date" aria-label="Select end date for daily view">
       </div>
       <div id="daily-summary-tables"></div>
-      <p id="daily-empty" class="empty-message" hidden>Select an end date to load the daily summary.</p>
+      <p id="daily-empty" class="empty-message" data-i18n="daily_empty" hidden>Select an end date to load the daily summary.</p>
+    </section>
+
+    <section id="weekly-panel" class="panel">
+      <h3 class="section-title" data-i18n="weekly_section_title">週別集計</h3>
+      <p class="hint" data-i18n="weekly_hint">週単位で売上・部門別構成を表示します。</p>
+      <div class="output-header">
+        <label for="weekly-end-date" data-i18n="weekly_end_date">週の終了日</label>
+        <input type="date" id="weekly-end-date" aria-label="Select end date for weekly view">
+        <label for="weekly-num-weeks" class="output-header-sep" data-i18n="num_weeks">表示週数</label>
+        <select id="weekly-num-weeks" aria-label="Number of weeks">
+          <option value="2" data-i18n-option="weeks_2">2週間</option>
+          <option value="3" data-i18n-option="weeks_3">3週間</option>
+          <option value="4" selected data-i18n-option="weeks_4">4週間</option>
+        </select>
+      </div>
+      <div id="weekly-summary-tables"></div>
+      <p id="weekly-empty" class="empty-message" data-i18n="weekly_empty" hidden>週の終了日を選択してください。</p>
     </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="i18n.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

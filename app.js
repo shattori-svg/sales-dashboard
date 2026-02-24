@@ -1,6 +1,10 @@
 (function () {
   'use strict';
 
+  function t(key) {
+    return window.i18n && window.i18n.t ? window.i18n.t(key) : key;
+  }
+
   var state = {
     today: null,
     yesterday: null,
@@ -127,7 +131,10 @@
         responsive: true,
         maintainAspectRatio: true,
         plugins: {
-          legend: { position: 'top' },
+          legend: {
+            position: 'top',
+            labels: { filter: function (item, ch) { return item.datasetIndex !== 1; } }
+          },
           tooltip: {
             callbacks: {
               afterLabel: function (ctx) {
@@ -138,22 +145,22 @@
                 }
                 if (slotTotal <= 0) return '';
                 var pct = ((ctx.raw / slotTotal) * 100).toFixed(1);
-                return 'Share: ' + pct + '%';
+                return (t('share_pct').replace('{pct}', pct));
               }
             }
           }
         },
         scales: {
-          x: { title: { display: true, text: 'Time Slot' }, stacked: true },
-          y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Net Sales (THB)' } }
+          x: { title: { display: true, text: t('time_slot') }, stacked: true },
+          y: { stacked: true, beginAtZero: true, title: { display: true, text: t('net_sales') } }
         }
       }
     });
 
     var thead = document.querySelector('#composition-table thead tr');
-    var theadHtml = '<th>Time range</th>';
-    for (var t = 0; t < deptDatasets.length; t++) theadHtml += '<th>' + deptDatasets[t].name + '</th>';
-    theadHtml += '<th>Total</th>';
+    var theadHtml = '<th>' + t('time_range_col') + '</th>';
+    for (var idx = 0; idx < deptDatasets.length; idx++) theadHtml += '<th>' + deptDatasets[idx].name + '</th>';
+    theadHtml += '<th>' + t('total') + '</th>';
     if (thead) thead.innerHTML = theadHtml;
 
     tbody.innerHTML = '';
@@ -180,7 +187,7 @@
         deptTotals.push(sum);
         grandTotal += sum;
       }
-      var footRow = '<tr><td>Total</td>';
+      var footRow = '<tr><td>' + t('total') + '</td>';
       for (var n = 0; n < deptTotals.length; n++) {
         var pct = grandTotal > 0 ? ((deptTotals[n] / grandTotal) * 100).toFixed(1) : '0.0';
         footRow += '<td>' + pct + '%</td>';
@@ -190,15 +197,78 @@
     }
   }
 
-  function computeForecast(values) {
-    var n = values.length;
+  function computeCumulative(values) {
     var out = [];
     var cum = 0;
-    for (var i = 0; i < n; i++) {
+    for (var i = 0; i < values.length; i++) {
       cum += values[i] || 0;
-      out.push(i === 0 ? (values[0] || 0) * n : cum * n / (i + 1));
+      out.push(cum);
     }
     return out;
+  }
+
+  function getLastActualIndex(values) {
+    for (var i = values.length - 1; i >= 0; i--) {
+      if (values[i] != null && Number(values[i]) > 0) return i;
+    }
+    return values.length - 1;
+  }
+
+  function lerp(i, i0, v0, i1, v1) {
+    if (i1 === i0) return v0;
+    return v0 + (v1 - v0) * (i - i0) / (i1 - i0);
+  }
+
+  function computeForecastFromPast(actualCumAtLast, lastActualIndex, totalSlots, yesterdayTotal, lastWeekTotal) {
+    var pastAvg = null;
+    if (yesterdayTotal != null && lastWeekTotal != null) pastAvg = (yesterdayTotal + lastWeekTotal) / 2;
+    else if (yesterdayTotal != null) pastAvg = yesterdayTotal;
+    else if (lastWeekTotal != null) pastAvg = lastWeekTotal;
+    var todayRate = (lastActualIndex >= 0 && actualCumAtLast > 0) ? actualCumAtLast / (lastActualIndex + 1) : 0;
+    var todayProjection = todayRate * totalSlots;
+    var result;
+    if (pastAvg != null && todayProjection > 0) result = 0.5 * todayProjection + 0.5 * pastAvg;
+    else if (pastAvg != null) result = pastAvg;
+    else result = todayProjection || actualCumAtLast;
+    return Math.max(result, actualCumAtLast || 0);
+  }
+
+  function buildForecastChartData(todayValues, yesterdayValues, lastWeekValues) {
+    var n = todayValues.length;
+    if (n === 0) return { actualCum: [], forecastLine: [], forecastLower: [], forecastUpper: [], lastActual: 0 };
+    var cum = computeCumulative(todayValues);
+    var lastActual = getLastActualIndex(todayValues);
+    var yesterdayTotal = yesterdayValues.reduce(function (s, v) { return s + (v != null ? Number(v) : 0); }, 0);
+    var lastWeekTotal = lastWeekValues.reduce(function (s, v) { return s + (v != null ? Number(v) : 0); }, 0);
+    var forecastTotal = computeForecastFromPast(cum[lastActual], lastActual, n, yesterdayTotal, lastWeekTotal);
+    forecastTotal = Math.max(forecastTotal, cum[lastActual]);
+    var margin = 0.15;
+    if (yesterdayTotal > 0 && lastWeekTotal > 0) {
+      var lo = Math.min(yesterdayTotal, lastWeekTotal);
+      var hi = Math.max(yesterdayTotal, lastWeekTotal);
+      margin = Math.max(0.1, (hi - lo) / (forecastTotal || 1));
+    }
+    margin = Math.min(0.25, margin);
+    var forecastLow = Math.max(forecastTotal * (1 - margin), cum[lastActual]);
+    var forecastHigh = Math.max(forecastTotal * (1 + margin), forecastLow);
+    var actualCum = [];
+    var forecastLine = [];
+    var forecastLower = [];
+    var forecastUpper = [];
+    for (var i = 0; i < n; i++) {
+      actualCum.push(i <= lastActual ? cum[i] : null);
+      if (i < lastActual) {
+        forecastLine.push(null);
+        forecastLower.push(null);
+        forecastUpper.push(null);
+      } else {
+        var val = i === lastActual ? cum[lastActual] : lerp(i, lastActual, cum[lastActual], n - 1, forecastTotal);
+        forecastLine.push(val);
+        forecastLower.push(i === lastActual ? cum[lastActual] : lerp(i, lastActual, cum[lastActual], n - 1, forecastLow));
+        forecastUpper.push(i === lastActual ? cum[lastActual] : lerp(i, lastActual, cum[lastActual], n - 1, forecastHigh));
+      }
+    }
+    return { actualCum: actualCum, forecastLine: forecastLine, forecastLower: forecastLower, forecastUpper: forecastUpper, lastActual: lastActual };
   }
 
   function renderCharts(todayHourly, yesterdayHourly, lastWeekHourly) {
@@ -207,8 +277,6 @@
     var labels = todayHourly.map(function (h) { return h.timeLabel || h.timeKey || ''; });
     var todayNet = todayHourly.map(function (h) { return h.netSales || 0; });
     var todayReceipts = todayHourly.map(function (h) { return h.receiptCount || 0; });
-    var forecastNet = computeForecast(todayNet);
-    var forecastReceipts = computeForecast(todayReceipts);
     var yesterdayNet = todayHourly.map(function (h) {
       var y = findHour(yesterdayHourly, h.timeKey);
       return y ? (y.netSales || 0) : null;
@@ -236,13 +304,13 @@
     var hasLastWeek = lastWeekHourly && lastWeekHourly.length > 0;
 
     var salesDatasets = [
-      { label: 'Today', data: todayNet, backgroundColor: 'rgba(37, 99, 235, 0.8)', borderColor: 'rgb(37, 99, 235)', borderWidth: 1 }
+      { label: t('today'), data: todayNet, backgroundColor: 'rgba(37, 99, 235, 0.8)', borderColor: 'rgb(37, 99, 235)', borderWidth: 1 }
     ];
     if (hasYesterday) {
-      salesDatasets.push({ label: 'Yesterday', data: yesterdayNet, backgroundColor: 'rgba(107, 114, 128, 0.6)', borderColor: 'rgb(107, 114, 128)', borderWidth: 1 });
+      salesDatasets.push({ label: t('yesterday'), data: yesterdayNet, backgroundColor: 'rgba(107, 114, 128, 0.6)', borderColor: 'rgb(107, 114, 128)', borderWidth: 1 });
     }
     if (hasLastWeek) {
-      salesDatasets.push({ label: 'Last Week', data: lastWeekNet, backgroundColor: 'rgba(156, 163, 175, 0.5)', borderColor: 'rgb(156, 163, 175)', borderWidth: 1 });
+      salesDatasets.push({ label: t('last_week'), data: lastWeekNet, backgroundColor: 'rgba(156, 163, 175, 0.5)', borderColor: 'rgb(156, 163, 175)', borderWidth: 1 });
     }
 
     chartInstances.sales = new Chart(salesCanvas, {
@@ -254,19 +322,19 @@
         plugins: { legend: { position: 'top' } },
         scales: {
           x: { title: { display: true, text: 'Time Slot' } },
-          y: { beginAtZero: true, title: { display: true, text: 'Net Sales (THB)' } }
+          y: { beginAtZero: true, title: { display: true, text: t('net_sales') } }
         }
       }
     });
 
     var receiptDatasets = [
-      { label: 'Today', data: todayReceipts, backgroundColor: 'rgba(34, 197, 94, 0.8)', borderColor: 'rgb(34, 197, 94)', borderWidth: 1 }
+      { label: t('today'), data: todayReceipts, backgroundColor: 'rgba(34, 197, 94, 0.8)', borderColor: 'rgb(34, 197, 94)', borderWidth: 1 }
     ];
     if (hasYesterday) {
-      receiptDatasets.push({ label: 'Yesterday', data: yesterdayReceipts, backgroundColor: 'rgba(107, 114, 128, 0.6)', borderColor: 'rgb(107, 114, 128)', borderWidth: 1 });
+      receiptDatasets.push({ label: t('yesterday'), data: yesterdayReceipts, backgroundColor: 'rgba(107, 114, 128, 0.6)', borderColor: 'rgb(107, 114, 128)', borderWidth: 1 });
     }
     if (hasLastWeek) {
-      receiptDatasets.push({ label: 'Last Week', data: lastWeekReceipts, backgroundColor: 'rgba(156, 163, 175, 0.5)', borderColor: 'rgb(156, 163, 175)', borderWidth: 1 });
+      receiptDatasets.push({ label: t('last_week'), data: lastWeekReceipts, backgroundColor: 'rgba(156, 163, 175, 0.5)', borderColor: 'rgb(156, 163, 175)', borderWidth: 1 });
     }
 
     chartInstances.receipts = new Chart(receiptsCanvas, {
@@ -277,36 +345,91 @@
         maintainAspectRatio: true,
         plugins: { legend: { position: 'top' } },
         scales: {
-          x: { title: { display: true, text: 'Time Slot' } },
-          y: { beginAtZero: true, title: { display: true, text: 'Receipt Count' } }
+          x: { title: { display: true, text: t('time_slot') } },
+          y: { beginAtZero: true, title: { display: true, text: t('receipt_count') } }
         }
       }
     });
+
+    var forecastSalesData = buildForecastChartData(todayNet, yesterdayNet, lastWeekNet);
+    var forecastReceiptsData = buildForecastChartData(todayReceipts, yesterdayReceipts, lastWeekReceipts);
 
     chartInstances.forecastSales = new Chart(forecastSalesCanvas, {
       type: 'line',
       data: {
         labels: labels,
-        datasets: [{
-          label: 'Forecast (Landing) — Net Sales (THB)',
-          data: forecastNet,
-          borderColor: 'rgb(234, 88, 12)',
-          backgroundColor: 'rgba(234, 88, 12, 0.1)',
-          borderWidth: 2,
-          borderDash: [4, 4],
-          fill: true,
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          tension: 0.2
-        }]
+        datasets: [
+          {
+            label: t('forecast_band'),
+            data: forecastSalesData.forecastLower,
+            borderColor: 'transparent',
+            backgroundColor: 'rgba(234, 88, 12, 0.15)',
+            fill: '+1',
+            pointRadius: 0,
+            pointHoverRadius: 0,
+            tension: 0.2,
+            order: 0
+          },
+          {
+            label: t('forecast_band_upper'),
+            data: forecastSalesData.forecastUpper,
+            borderColor: 'transparent',
+            backgroundColor: 'transparent',
+            fill: false,
+            pointRadius: 0,
+            order: 1
+          },
+          {
+            label: t('forecast_line'),
+            data: forecastSalesData.forecastLine,
+            borderColor: 'rgb(234, 88, 12)',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            borderDash: [6, 4],
+            fill: false,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            tension: 0.2,
+            order: 2
+          },
+          {
+            label: t('actual_cumulative'),
+            data: forecastSalesData.actualCum,
+            borderColor: 'rgb(37, 99, 235)',
+            backgroundColor: 'rgba(37, 99, 235, 0.08)',
+            borderWidth: 2,
+            fill: true,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            tension: 0.2,
+            order: 3
+          }
+        ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: true,
-        plugins: { legend: { position: 'top' } },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { filter: function (item, ch) { return item.datasetIndex !== 1; } }
+          },
+          tooltip: {
+            callbacks: {
+              afterBody: function (ctx) {
+                var i = ctx[0].dataIndex;
+                if (i === forecastSalesData.lastActual && forecastSalesData.lastActual < labels.length - 1) {
+                  return ' — ' + (t('forecast_from_here') || 'Forecast from here');
+                }
+                return '';
+              }
+            }
+          }
+        },
         scales: {
-          x: { title: { display: true, text: 'Time Slot' } },
-          y: { beginAtZero: true, title: { display: true, text: 'Forecast total (THB)' } }
+          x: { title: { display: true, text: t('time_slot') } },
+          y: { beginAtZero: true, title: { display: true, text: t('chart_forecast_net') } }
         }
       }
     });
@@ -315,26 +438,78 @@
       type: 'line',
       data: {
         labels: labels,
-        datasets: [{
-          label: 'Forecast (Landing) — Receipt Count',
-          data: forecastReceipts,
-          borderColor: 'rgb(234, 88, 12)',
-          backgroundColor: 'rgba(234, 88, 12, 0.1)',
-          borderWidth: 2,
-          borderDash: [4, 4],
-          fill: true,
-          pointRadius: 4,
-          pointHoverRadius: 6,
-          tension: 0.2
-        }]
+        datasets: [
+          {
+            label: t('forecast_band'),
+            data: forecastReceiptsData.forecastLower,
+            borderColor: 'transparent',
+            backgroundColor: 'rgba(234, 88, 12, 0.15)',
+            fill: '+1',
+            pointRadius: 0,
+            pointHoverRadius: 0,
+            tension: 0.2,
+            order: 0
+          },
+          {
+            label: t('forecast_band_upper'),
+            data: forecastReceiptsData.forecastUpper,
+            borderColor: 'transparent',
+            backgroundColor: 'transparent',
+            fill: false,
+            pointRadius: 0,
+            order: 1
+          },
+          {
+            label: t('forecast_line'),
+            data: forecastReceiptsData.forecastLine,
+            borderColor: 'rgb(234, 88, 12)',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            borderDash: [6, 4],
+            fill: false,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            tension: 0.2,
+            order: 2
+          },
+          {
+            label: t('actual_cumulative'),
+            data: forecastReceiptsData.actualCum,
+            borderColor: 'rgb(37, 99, 235)',
+            backgroundColor: 'rgba(37, 99, 235, 0.08)',
+            borderWidth: 2,
+            fill: true,
+            pointRadius: 3,
+            pointHoverRadius: 5,
+            tension: 0.2,
+            order: 3
+          }
+        ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: true,
-        plugins: { legend: { position: 'top' } },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: {
+            position: 'top',
+            labels: { filter: function (item, ch) { return item.datasetIndex !== 1; } }
+          },
+          tooltip: {
+            callbacks: {
+              afterBody: function (ctx) {
+                var i = ctx[0].dataIndex;
+                if (i === forecastReceiptsData.lastActual && forecastReceiptsData.lastActual < labels.length - 1) {
+                  return ' — ' + (t('forecast_from_here') || 'Forecast from here');
+                }
+                return '';
+              }
+            }
+          }
+        },
         scales: {
-          x: { title: { display: true, text: 'Time Slot' } },
-          y: { beginAtZero: true, title: { display: true, text: 'Forecast total (count)' } }
+          x: { title: { display: true, text: t('time_slot') } },
+          y: { beginAtZero: true, title: { display: true, text: t('forecast_total_count') } }
         }
       }
     });
@@ -371,6 +546,16 @@
       }
       throw new Error('Server did not return JSON');
     });
+  }
+
+  function showLoading() {
+    var el = document.getElementById('loading-overlay');
+    if (el) { el.hidden = false; el.setAttribute('aria-busy', 'true'); }
+  }
+
+  function hideLoading() {
+    var el = document.getElementById('loading-overlay');
+    if (el) { el.hidden = true; el.setAttribute('aria-busy', 'false'); }
   }
 
   function fetchBusinessHours() {
@@ -561,7 +746,7 @@
     var disc = isTotal && grossSum > 0 ? ((grossSum - netSum) / grossSum) * 100 : null;
 
     return '<tr>' +
-      '<td>Total</td>' +
+      '<td>' + t('total') + '</td>' +
       '<td>' + (isTotal ? formatCurrency(grossSum) : '—') + '</td>' +
       '<td>' + formatCurrency(netSum) + '</td>' +
       '<td>' + formatPct(dod) + '</td>' +
@@ -696,18 +881,17 @@
   }
 
   function fillOutputDateSelect(dates, selectedValue) {
-    var sel = document.getElementById('output-date');
-    if (!sel) return;
-    sel.innerHTML = '<option value="">— Select date —</option>';
-    (dates || []).forEach(function (d) {
-      var opt = document.createElement('option');
-      opt.value = d;
-      opt.textContent = d;
-      sel.appendChild(opt);
-    });
-    if (selectedValue && dates && dates.indexOf(selectedValue) !== -1) {
-      sel.value = selectedValue;
+    var el = document.getElementById('output-date');
+    if (!el || el.type !== 'date') return;
+    var arr = (dates || []).slice().sort();
+    if (arr.length) {
+      el.min = arr[0];
+      el.max = arr[arr.length - 1];
+    } else {
+      el.removeAttribute('min');
+      el.removeAttribute('max');
     }
+    el.value = (selectedValue && dates && dates.indexOf(selectedValue) !== -1) ? selectedValue : (selectedValue || '');
   }
 
   function getTodayYYYYMMDD() {
@@ -715,16 +899,35 @@
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
 
+  function formatLastUploadDisplay(isoString) {
+    if (!isoString) return '';
+    try {
+      var d = new Date(isoString);
+      if (isNaN(d.getTime())) return '';
+      var h = d.getHours();
+      var m = d.getMinutes();
+      var hh = (h < 10 ? '0' : '') + h;
+      var mm = (m < 10 ? '0' : '') + m;
+      return hh + ':' + mm;
+    } catch (e) { return ''; }
+  }
+
   function refreshOutputDateSelect() {
-    var sel = document.getElementById('output-date');
-    if (!sel) return;
+    var el = document.getElementById('output-date');
+    if (!el) return;
+    showLoading();
     fetch('/api/dates').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
       var dates = body.dates || [];
+      var lastEl = document.getElementById('last-upload-time');
+      if (lastEl) {
+        var txt = formatLastUploadDisplay(body.lastUploadedAt);
+        lastEl.textContent = txt ? t('last_upload_label') + txt : '';
+      }
       var todayStr = getTodayYYYYMMDD();
-      var initialDate = state.referenceDate || sel.value || (dates.indexOf(todayStr) !== -1 ? todayStr : (dates.length ? dates[0] : null));
+      var initialDate = state.referenceDate || el.value || (dates.indexOf(todayStr) !== -1 ? todayStr : (dates.length ? dates[0] : null));
       fillOutputDateSelect(dates, initialDate);
-      var chosen = sel.value;
-      if (chosen && dates.indexOf(chosen) !== -1) {
+      var chosen = el.value;
+      if (chosen) {
         fetch('/api/report?referenceDate=' + encodeURIComponent(chosen)).then(function (r) {
           return parseJsonResponse(r).then(function (data) {
             if (!r.ok) return;
@@ -735,11 +938,12 @@
             fillTimeSelects(state.referenceDate);
             renderReport();
           });
-        }).catch(function () {});
+        }).then(function () { hideLoading(); }).catch(function () { hideLoading(); });
       } else {
         renderReport();
+        hideLoading();
       }
-    }).catch(function () { renderReport(); });
+    }).catch(function () { renderReport(); hideLoading(); });
   }
 
   function switchTab(tabName) {
@@ -758,40 +962,45 @@
       refreshDailyDateSelect();
       renderDailySummary();
     }
-  }
-
-  function fillDailyEndDateSelect(dates, selectedValue) {
-    var sel = document.getElementById('daily-end-date');
-    if (!sel) return;
-    sel.innerHTML = '<option value="">— Select date —</option>';
-    (dates || []).forEach(function (d) {
-      var opt = document.createElement('option');
-      opt.value = d;
-      opt.textContent = d;
-      sel.appendChild(opt);
-    });
-    if (selectedValue && dates && dates.indexOf(selectedValue) !== -1) {
-      sel.value = selectedValue;
-    } else if (dates && dates.length) {
-      sel.value = dates[0];
+    if (tabName === 'weekly') {
+      refreshWeeklyDateSelect();
+      renderWeeklySummary();
     }
   }
 
+  function fillDailyEndDateSelect(dates, selectedValue) {
+    var el = document.getElementById('daily-end-date');
+    if (!el || el.type !== 'date') return;
+    var arr = (dates || []).slice().sort();
+    if (arr.length) {
+      el.min = arr[0];
+      el.max = arr[arr.length - 1];
+    } else {
+      el.removeAttribute('min');
+      el.removeAttribute('max');
+    }
+    var val = (selectedValue && dates && dates.indexOf(selectedValue) !== -1) ? selectedValue : (dates && dates.length ? dates[0] : '');
+    el.value = val || '';
+  }
+
   function refreshDailyDateSelect() {
+    showLoading();
     fetch('/api/dates').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
       var dates = body.dates || [];
-      var sel = document.getElementById('daily-end-date');
-      fillDailyEndDateSelect(dates, sel ? sel.value : null);
-      if (dates.length && (!sel || !sel.value)) {
+      var el = document.getElementById('daily-end-date');
+      fillDailyEndDateSelect(dates, el ? el.value : null);
+      if (dates.length && el && el.value) {
         renderDailySummary();
       } else {
         renderDailySummary();
+        hideLoading();
       }
-    }).catch(function () {});
+    }).catch(function () { hideLoading(); });
   }
 
   function renderDailySummary() {
-    var endDate = document.getElementById('daily-end-date') && document.getElementById('daily-end-date').value;
+    var endDateEl = document.getElementById('daily-end-date');
+    var endDate = endDateEl ? endDateEl.value : '';
     var container = document.getElementById('daily-summary-tables');
     var emptyEl = document.getElementById('daily-empty');
     if (!container) return;
@@ -801,6 +1010,7 @@
       return;
     }
     if (emptyEl) emptyEl.hidden = true;
+    showLoading();
     fetch('/api/daily-summary?referenceDate=' + encodeURIComponent(endDate) + '&days=7').then(function (res) {
       return parseJsonResponse(res).then(function (body) {
         if (!res.ok) throw new Error(body.error || 'Failed to load daily summary');
@@ -810,7 +1020,7 @@
       var days = body.days || [];
       if (days.length === 0) {
         container.innerHTML = '';
-        if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = 'No data for the selected period.'; }
+        if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = t('daily_no_data'); }
         return;
       }
       destroyDailyCharts();
@@ -830,9 +1040,9 @@
       });
       totalRow.push(grandTotalSales);
 
-      var table1 = '<section class="summary-section"><h3>Sales by Department (Net Sales)</h3><table class="report-table daily-table"><thead><tr><th>Department</th>';
+      var table1 = '<section class="summary-section"><h3>' + t('daily_sales_by_dept') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('department') + '</th>';
       dateLabels.forEach(function (l) { table1 += '<th>' + l + '</th>'; });
-      table1 += '<th>Grand Total</th></tr></thead><tbody>';
+      table1 += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
       deptOrder.forEach(function (dept) {
         var rowTotal = 0;
         table1 += '<tr><td>' + dept + '</td>';
@@ -843,13 +1053,13 @@
         });
         table1 += '<td>' + formatInt(rowTotal) + '</td></tr>';
       });
-      table1 += '<tr class="total-row"><td>Grand Total</td>';
+      table1 += '<tr class="total-row"><td>' + t('total_header') + '</td>';
       totalRow.forEach(function (v) { table1 += '<td>' + formatInt(v) + '</td>'; });
       table1 += '</tr></tbody></table></section>';
 
-      var table1b = '<section class="summary-section"><h3>Department composition by day (share of net sales %)</h3><table class="report-table daily-table"><thead><tr><th>Department</th>';
+      var table1b = '<section class="summary-section"><h3>' + t('daily_composition_pct') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('department') + '</th>';
       dateLabels.forEach(function (l) { table1b += '<th>' + l + '</th>'; });
-      table1b += '<th>Grand Total</th></tr></thead><tbody>';
+      table1b += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
       deptOrder.forEach(function (dept) {
         table1b += '<tr><td>' + dept + '</td>';
         days.forEach(function (d) {
@@ -861,7 +1071,7 @@
         var deptGrand = days.reduce(function (s, day) { return s + ((day.byDepartment && day.byDepartment[dept]) ? day.byDepartment[dept] : 0); }, 0);
         table1b += '<td>' + (grandTotalSales ? (deptGrand / grandTotalSales * 100).toFixed(1) : '—') + '%</td></tr>';
       });
-      table1b += '<tr class="total-row"><td>Total</td>';
+      table1b += '<tr class="total-row"><td>' + t('total_header') + '</td>';
       days.forEach(function (d) { table1b += '<td>100%</td>'; });
       table1b += '<td>100%</td></tr></tbody></table></section>';
 
@@ -891,35 +1101,44 @@
       var totalReceipts = days.reduce(function (acc, d) { return acc + (d.receiptCount || 0); }, 0);
       var totalQty = days.reduce(function (acc, d) { return acc + (d.quantitySold || 0); }, 0);
 
-      var table2 = '<section class="summary-section"><h3>Key metrics</h3><table class="report-table daily-table"><thead><tr><th>Metric</th>';
+      var weeklyTotalHtml = '<section class="summary-section weekly-total-section"><h3>' + t('weekly_total_section') + '</h3><table class="report-table daily-table weekly-total-table"><tbody>';
+      weeklyTotalHtml += '<tr><td>' + t('total_net_sales') + '</td><td>' + formatInt(grandTotalSales) + ' ' + t('currency_unit') + '</td></tr>';
+      weeklyTotalHtml += '<tr><td>' + t('total_receipts') + '</td><td>' + formatInt(totalReceipts) + '</td></tr>';
+      weeklyTotalHtml += '<tr><td>' + t('total_qty_sold') + '</td><td>' + formatInt(totalQty) + '</td></tr>';
+      weeklyTotalHtml += '<tr><td>' + t('total_hours') + '</td><td>' + formatInt(totalHours) + ' h</td></tr>';
+      weeklyTotalHtml += '<tr><td>' + t('sales_per_hour_label') + '</td><td>' + formatInt(totalHours ? Math.round(grandTotalSales / totalHours) : 0) + ' ' + t('currency_unit') + '</td></tr>';
+      weeklyTotalHtml += '<tr><td>' + t('avg_receipt_value') + '</td><td>' + (totalReceipts ? formatInt(Math.round(grandTotalSales / totalReceipts)) : '—') + ' ' + t('currency_unit') + '</td></tr>';
+      weeklyTotalHtml += '</tbody></table></section>';
+
+      var table2 = '<section class="summary-section"><h3>' + t('key_metrics') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('metric') + '</th>';
       dateLabels.forEach(function (l) { table2 += '<th>' + l + '</th>'; });
-      table2 += '<th>Grand Total</th></tr></thead><tbody>';
-      table2 += '<tr><td>Sales per hour (JPY)</td>';
+      table2 += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
+      table2 += '<tr><td>' + t('sales_per_hour') + ' (' + t('currency_unit') + ')</td>';
       salesPerHour.forEach(function (v) { table2 += '<td>' + formatInt(v) + '</td>'; });
       table2 += '<td>' + formatInt(totalHours ? Math.round(grandTotalSales / totalHours) : 0) + '</td></tr>';
-      table2 += '<tr><td>Receipts per hour</td>';
+      table2 += '<tr><td>' + t('receipts_per_hour') + '</td>';
       receiptsPerHour.forEach(function (v) { table2 += '<td>' + formatInt(v) + '</td>'; });
       table2 += '<td>' + formatInt(totalHours ? Math.round(totalReceipts / totalHours) : 0) + '</td></tr>';
-      table2 += '<tr><td>Receipt count</td>';
+      table2 += '<tr><td>' + t('receipt_count') + '</td>';
       receiptCounts.forEach(function (v) { table2 += '<td>' + formatInt(v) + '</td>'; });
       table2 += '<td>' + formatInt(totalReceipts) + '</td></tr>';
-      table2 += '<tr><td>Avg receipt value (JPY)</td>';
+      table2 += '<tr><td>' + t('avg_receipt_value') + ' (' + t('currency_unit') + ')</td>';
       avgReceipt.forEach(function (v) { table2 += '<td>' + formatInt(v) + '</td>'; });
       table2 += '<td>' + (totalReceipts ? formatInt(Math.round(grandTotalSales / totalReceipts)) : '—') + '</td></tr>';
-      table2 += '<tr><td>Items per receipt</td>';
+      table2 += '<tr><td>' + t('items_per_receipt') + '</td>';
       itemsPerReceipt.forEach(function (v) { table2 += '<td>' + v + '</td>'; });
       table2 += '<td>' + (totalReceipts ? (totalQty / totalReceipts).toFixed(1) : '—') + '</td></tr>';
-      table2 += '<tr><td>Quantity sold</td>';
+      table2 += '<tr><td>' + t('quantity_sold') + '</td>';
       qtySold.forEach(function (v) { table2 += '<td>' + formatInt(v) + '</td>'; });
       table2 += '<td>' + formatInt(totalQty) + '</td></tr>';
-      table2 += '<tr><td>Avg item price (JPY)</td>';
+      table2 += '<tr><td>' + t('avg_item_price') + ' (' + t('currency_unit') + ')</td>';
       avgItemPrice.forEach(function (v) { table2 += '<td>' + formatInt(v) + '</td>'; });
       table2 += '<td>' + (totalQty ? formatInt(Math.round(grandTotalSales / totalQty)) : '—') + '</td></tr>';
       table2 += '</tbody></table></section>';
 
-      var chartSectionHtml = '<section class="summary-section chart-section"><h3 class="chart-title">Weekly sales by department (Net Sales)</h3><div class="chart-wrapper"><canvas id="daily-chart-sales"></canvas></div><h3 class="chart-title">Department composition by day (%)</h3><div class="chart-wrapper"><canvas id="daily-chart-composition"></canvas></div><h3 class="chart-title">Key metrics trend</h3><div class="chart-wrapper"><canvas id="daily-chart-metrics"></canvas></div></section>';
+      var chartSectionHtml = '<section class="summary-section chart-section"><h3 class="chart-title">' + t('daily_sales_by_dept') + '</h3><div class="chart-wrapper"><canvas id="daily-chart-sales"></canvas></div><h3 class="chart-title">' + t('daily_composition_pct') + '</h3><div class="chart-wrapper"><canvas id="daily-chart-composition"></canvas></div><h3 class="chart-title">' + t('key_metrics_trend') + '</h3><div class="chart-wrapper"><canvas id="daily-chart-metrics"></canvas></div></section>';
 
-      container.innerHTML = table1 + table1b + chartSectionHtml + table2;
+      container.innerHTML = weeklyTotalHtml + table1 + table1b + chartSectionHtml + table2;
 
       if (typeof Chart !== 'undefined') {
         var shortLabels = days.map(function (d) {
@@ -945,8 +1164,8 @@
               maintainAspectRatio: true,
               plugins: { legend: { position: 'top' } },
               scales: {
-                x: { stacked: true, title: { display: true, text: 'Date' } },
-                y: { stacked: true, beginAtZero: true, title: { display: true, text: 'Net Sales (JPY)' } }
+                x: { stacked: true, title: { display: true, text: t('date_label') } },
+                y: { stacked: true, beginAtZero: true, title: { display: true, text: t('net_sales') } }
               }
             }
           });
@@ -971,7 +1190,7 @@
                 tooltip: { callbacks: { label: function (ctx) { return (ctx.raw || 0).toFixed(1) + '%'; } } }
               },
               scales: {
-                x: { stacked: true, title: { display: true, text: 'Date' } },
+                x: { stacked: true, title: { display: true, text: t('date_label') } },
                 y: { stacked: true, min: 0, max: 100, title: { display: true, text: 'Share (%)' } }
               }
             }
@@ -983,7 +1202,7 @@
             data: {
               labels: shortLabels,
               datasets: [
-                { label: 'Sales per hour (JPY)', data: salesPerHour, borderColor: 'rgb(37, 99, 235)', backgroundColor: 'rgba(37, 99, 235, 0.1)', borderWidth: 2, fill: true, tension: 0.2, pointRadius: 4, yAxisID: 'y' },
+                { label: 'Sales per hour (' + t('currency_unit') + ')', data: salesPerHour, borderColor: 'rgb(37, 99, 235)', backgroundColor: 'rgba(37, 99, 235, 0.1)', borderWidth: 2, fill: true, tension: 0.2, pointRadius: 4, yAxisID: 'y' },
                 { label: 'Receipt count', data: receiptCounts, borderColor: 'rgb(34, 197, 94)', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderWidth: 2, fill: false, tension: 0.2, pointRadius: 4, yAxisID: 'y1' }
               ]
             },
@@ -993,17 +1212,176 @@
               interaction: { mode: 'index', intersect: false },
               plugins: { legend: { position: 'top' } },
               scales: {
-                x: { title: { display: true, text: 'Date' } },
-                y: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: 'Sales per hour (JPY)' } },
+                x: { title: { display: true, text: t('date_label') } },
+                y: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: 'Sales per hour (' + t('currency_unit') + ')' } },
                 y1: { type: 'linear', position: 'right', beginAtZero: true, title: { display: true, text: 'Receipt count' }, grid: { drawOnChartArea: false } }
               }
             }
           });
         }
       }
-    }).catch(function () {
+    }).then(function () { hideLoading(); }).catch(function () {
       container.innerHTML = '';
-      if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = 'Failed to load daily summary.'; }
+      if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = t('daily_load_failed'); }
+      hideLoading();
+    });
+  }
+
+  function addDays(dateStr, delta) {
+    var d = new Date(dateStr + 'T12:00:00');
+    d.setDate(d.getDate() + delta);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  function fillWeeklyEndDateSelect(dates, selectedValue) {
+    var el = document.getElementById('weekly-end-date');
+    if (!el || el.type !== 'date') return;
+    var arr = (dates || []).slice().sort();
+    if (arr.length) {
+      el.min = arr[0];
+      el.max = arr[arr.length - 1];
+    } else {
+      el.removeAttribute('min');
+      el.removeAttribute('max');
+    }
+    var val = (selectedValue && dates && dates.indexOf(selectedValue) !== -1) ? selectedValue : (dates && dates.length ? dates[0] : '');
+    el.value = val || '';
+  }
+
+  function refreshWeeklyDateSelect() {
+    showLoading();
+    fetch('/api/dates').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
+      var dates = body.dates || [];
+      var el = document.getElementById('weekly-end-date');
+      fillWeeklyEndDateSelect(dates, el ? el.value : null);
+      renderWeeklySummary();
+    }).then(function () { hideLoading(); }).catch(function () { hideLoading(); });
+  }
+
+  function renderWeeklySummary() {
+    var endDateEl = document.getElementById('weekly-end-date');
+    var endDate = endDateEl ? endDateEl.value : '';
+    var numWeeksEl = document.getElementById('weekly-num-weeks');
+    var numWeeks = numWeeksEl ? Math.min(4, Math.max(2, parseInt(numWeeksEl.value, 10) || 4)) : 4;
+    var daysToFetch = numWeeks * 7;
+    var container = document.getElementById('weekly-summary-tables');
+    var emptyEl = document.getElementById('weekly-empty');
+    if (!container) return;
+    if (!endDate) {
+      container.innerHTML = '';
+      if (emptyEl) emptyEl.hidden = false;
+      return;
+    }
+    if (emptyEl) emptyEl.hidden = true;
+    showLoading();
+    fetch('/api/daily-summary?referenceDate=' + encodeURIComponent(endDate) + '&days=' + daysToFetch).then(function (res) {
+      return parseJsonResponse(res).then(function (body) {
+        if (!res.ok) throw new Error(body.error || 'Failed to load weekly summary');
+        return body;
+      });
+    }).then(function (body) {
+      var days = body.days || [];
+      if (days.length === 0) {
+        container.innerHTML = '';
+        if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = t('weekly_no_data'); }
+        return;
+      }
+      var weeks = [];
+      for (var w = 0; w < numWeeks; w++) {
+        var chunk = days.slice(w * 7, (w + 1) * 7);
+        if (chunk.length === 0) break;
+        var totalNetSales = 0, receiptCount = 0, quantitySold = 0;
+        var byDepartment = {};
+        DEPARTMENTS.forEach(function (dept) { byDepartment[dept] = 0; });
+        chunk.forEach(function (d) {
+          totalNetSales += d.totalNetSales || 0;
+          receiptCount += d.receiptCount || 0;
+          quantitySold += d.quantitySold || 0;
+          DEPARTMENTS.forEach(function (dept) {
+            byDepartment[dept] += (d.byDepartment && d.byDepartment[dept]) ? d.byDepartment[dept] : 0;
+          });
+        });
+        var startD = chunk[0].date;
+        var endD = chunk[chunk.length - 1].date;
+        weeks.push({
+          label: startD + ' ～ ' + endD,
+          shortLabel: startD.slice(5) + '～' + endD.slice(5),
+          totalNetSales: totalNetSales,
+          receiptCount: receiptCount,
+          quantitySold: quantitySold,
+          byDepartment: byDepartment
+        });
+      }
+      if (weeks.length === 0) {
+        container.innerHTML = '';
+        if (emptyEl) emptyEl.hidden = false;
+        return;
+      }
+      var sumNetSales = 0, sumReceipts = 0, sumQty = 0;
+      weeks.forEach(function (w) {
+        sumNetSales += w.totalNetSales || 0;
+        sumReceipts += w.receiptCount || 0;
+        sumQty += w.quantitySold || 0;
+      });
+      var table1 = '<section class="summary-section"><h3>' + t('weekly_net_title') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th><th>' + t('net_sales_thb') + '</th><th>' + t('wow') + '</th><th>' + t('receipt_count') + '</th><th>' + t('qty_sold_short') + '</th></tr></thead><tbody>';
+      weeks.forEach(function (w, i) {
+        var prev = weeks[i - 1];
+        var wow = prev && prev.totalNetSales ? Math.round((w.totalNetSales / prev.totalNetSales) * 100) : '—';
+        table1 += '<tr><td>' + w.label + '</td><td>' + formatInt(w.totalNetSales) + '</td><td>' + (wow === '—' ? wow : wow + '%') + '</td><td>' + formatInt(w.receiptCount) + '</td><td>' + formatInt(w.quantitySold) + '</td></tr>';
+      });
+      table1 += '<tr class="total-row"><td>' + t('total') + '</td><td>' + formatInt(sumNetSales) + '</td><td>—</td><td>' + formatInt(sumReceipts) + '</td><td>' + formatInt(sumQty) + '</td></tr></tbody></table></section>';
+
+      var deptTotals = {};
+      DEPARTMENTS.forEach(function (d) { deptTotals[d] = 0; });
+      weeks.forEach(function (w) {
+        DEPARTMENTS.forEach(function (dept) {
+          deptTotals[dept] += w.byDepartment[dept] || 0;
+        });
+      });
+      var grandTotalAll = 0;
+      DEPARTMENTS.forEach(function (d) { grandTotalAll += deptTotals[d] || 0; });
+      var table2 = '<section class="summary-section"><h3>' + t('sales_by_dept') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
+      DEPARTMENTS.forEach(function (d) { table2 += '<th>' + d + '</th>'; });
+      table2 += '<th>' + t('total') + '</th></tr></thead><tbody>';
+      weeks.forEach(function (w) {
+        table2 += '<tr><td>' + w.shortLabel + '</td>';
+        var rowTotal = 0;
+        DEPARTMENTS.forEach(function (dept) {
+          var v = w.byDepartment[dept] || 0;
+          rowTotal += v;
+          table2 += '<td>' + formatInt(v) + '</td>';
+        });
+        table2 += '<td>' + formatInt(rowTotal) + '</td></tr>';
+      });
+      table2 += '<tr class="total-row"><td>' + t('total') + '</td>';
+      DEPARTMENTS.forEach(function (d) { table2 += '<td>' + formatInt(deptTotals[d]) + '</td>'; });
+      table2 += '<td>' + formatInt(grandTotalAll) + '</td></tr></tbody></table></section>';
+
+      var table3 = '<section class="summary-section"><h3>' + t('dept_composition_pct') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
+      DEPARTMENTS.forEach(function (d) { table3 += '<th>' + d + '</th>'; });
+      table3 += '<th>' + t('total') + '</th></tr></thead><tbody>';
+      weeks.forEach(function (w) {
+        var weekTotal = w.totalNetSales || 1;
+        table3 += '<tr><td>' + w.shortLabel + '</td>';
+        DEPARTMENTS.forEach(function (dept) {
+          var v = w.byDepartment[dept] || 0;
+          var pct = weekTotal ? ((v / weekTotal) * 100).toFixed(1) : '—';
+          table3 += '<td>' + pct + '%</td>';
+        });
+        table3 += '<td>100%</td></tr>';
+      });
+      table3 += '<tr class="total-row"><td>' + t('total') + '</td>';
+      DEPARTMENTS.forEach(function (d) {
+        var pct = grandTotalAll ? ((deptTotals[d] || 0) / grandTotalAll * 100).toFixed(1) : '—';
+        table3 += '<td>' + pct + '%</td>';
+      });
+      table3 += '<td>100%</td></tr></tbody></table></section>';
+
+      container.innerHTML = table1 + table2 + table3;
+    }).then(function () { hideLoading(); }).catch(function () {
+      container.innerHTML = '';
+      if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = t('weekly_load_failed'); }
+      hideLoading();
     });
   }
 
@@ -1022,6 +1400,7 @@
     if (outputDateEl) outputDateEl.addEventListener('change', function () {
       var date = this.value;
       if (!date) return;
+      showLoading();
       fetch('/api/report?referenceDate=' + encodeURIComponent(date)).then(function (res) {
         return parseJsonResponse(res).then(function (body) {
           if (!res.ok) throw new Error(body.error || 'Failed to load report');
@@ -1034,16 +1413,30 @@
         state.referenceDate = body.referenceDate;
         fillTimeSelects(state.referenceDate);
         renderReport();
-      }).catch(function () {});
+      }).then(function () { hideLoading(); }).catch(function () { hideLoading(); });
     });
 
     var dailyEndEl = document.getElementById('daily-end-date');
     if (dailyEndEl) dailyEndEl.addEventListener('change', renderDailySummary);
 
+    var weeklyEndEl = document.getElementById('weekly-end-date');
+    var weeklyNumEl = document.getElementById('weekly-num-weeks');
+    if (weeklyEndEl) weeklyEndEl.addEventListener('change', renderWeeklySummary);
+    if (weeklyNumEl) weeklyNumEl.addEventListener('change', renderWeeklySummary);
+
     var timeStart = document.getElementById('time-start');
     var timeEnd = document.getElementById('time-end');
     if (timeStart) timeStart.addEventListener('change', renderReport);
     if (timeEnd) timeEnd.addEventListener('change', renderReport);
+
+    window.addEventListener('languageChange', function () {
+      fillTimeSelects(state.referenceDate);
+      renderReport();
+      var dailyEnd = document.getElementById('daily-end-date');
+      if (dailyEnd && dailyEnd.value) renderDailySummary();
+      var weeklyEnd = document.getElementById('weekly-end-date');
+      if (weeklyEnd && weeklyEnd.value) renderWeeklySummary();
+    });
 
     /* Report page: load initial data for hourly tab */
     if (outputDateEl) {

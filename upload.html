@@ -3,16 +3,37 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Data Upload — Daily Sales Report</title>
+  <title>Data Upload — LOPIA Thailand Sales Report</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
-    <h1>Daily Sales Report — Data Upload</h1>
+    <h1>LOPIA Thailand Sales Report — Data Upload</h1>
   </header>
 
+  <nav class="tabs" aria-label="Upload and settings">
+    <button type="button" class="tab active" data-tab="upload" aria-selected="true">アップロード</button>
+    <button type="button" class="tab" data-tab="settings" aria-selected="false">各種設定</button>
+  </nav>
+
   <main>
-    <section class="panel active" style="max-width: 560px;">
+    <section id="upload-panel" class="panel active" style="max-width: 560px;">
+      <p class="hint"><a href="/">← Back to Report</a></p>
+      <h2>Data Upload</h2>
+      <p class="hint">Upload one or more Excel files. Each file's BusinessDate is used to assign it as Today, Yesterday, or Last Week. Only users with this page URL can upload data.</p>
+
+      <div class="upload-form">
+        <div class="upload-group">
+          <label for="file-files">Excel files <span class="required">Required</span></label>
+          <input type="file" id="file-files" name="files" accept=".xlsx,.xls" multiple>
+          <span class="file-name" id="name-files"></span>
+        </div>
+      </div>
+
+      <p id="upload-error" class="error" role="alert" hidden></p>
+    </section>
+
+    <section id="settings-panel" class="panel" style="max-width: 560px;">
       <p class="hint"><a href="/">← Back to Report</a></p>
       <h2>Settings — Business Hours (営業時間)</h2>
       <p class="hint">Set business hours per weekday. Only time slots within these hours are shown on the report. Other times are hidden.</p>
@@ -25,7 +46,6 @@
           </tr>
         </thead>
         <tbody id="business-hours-tbody">
-          <!-- Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6, Sun=0 -->
           <tr><td>月 (Mon)</td><td><select id="bh-start-1" class="bh-time"></select></td><td><select id="bh-end-1" class="bh-time"></select></td></tr>
           <tr><td>火 (Tue)</td><td><select id="bh-start-2" class="bh-time"></select></td><td><select id="bh-end-2" class="bh-time"></select></td></tr>
           <tr><td>水 (Wed)</td><td><select id="bh-start-3" class="bh-time"></select></td><td><select id="bh-end-3" class="bh-time"></select></td></tr>
@@ -37,19 +57,6 @@
       </table>
       <button type="button" id="btn-save-business-hours" class="btn-primary" style="margin-top: 0.5rem;">Save to database</button>
       <p id="bh-save-status" class="hint" style="margin-top: 0.25rem;" aria-live="polite"></p>
-
-      <h2 style="margin-top: 1.5rem;">Data Upload</h2>
-      <p class="hint">Upload one or more Excel files. Each file's BusinessDate is used to assign it as Today, Yesterday, or Last Week. Only users with this page URL can upload data.</p>
-
-      <div class="upload-form">
-        <div class="upload-group">
-          <label for="file-files">Excel files <span class="required">Required</span></label>
-          <input type="file" id="file-files" name="files" accept=".xlsx,.xls" multiple>
-          <span class="file-name" id="name-files"></span>
-        </div>
-      </div>
-
-      <p id="upload-error" class="error" role="alert" hidden></p>
     </section>
   </main>
 

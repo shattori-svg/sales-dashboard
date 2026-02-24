@@ -79,6 +79,23 @@
     return settings;
   }
 
+  function switchUploadTab(tabName) {
+    document.querySelectorAll('.tabs .tab').forEach(function (btn) {
+      var isActive = btn.getAttribute('data-tab') === tabName;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    document.querySelectorAll('main .panel').forEach(function (panel) {
+      panel.classList.toggle('active', panel.id === tabName + '-panel');
+    });
+  }
+
+  document.querySelectorAll('.tabs .tab').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      switchUploadTab(btn.getAttribute('data-tab'));
+    });
+  });
+
   initBusinessHoursUI();
 
   var btnSaveBh = document.getElementById('btn-save-business-hours');

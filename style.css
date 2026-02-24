@@ -28,6 +28,49 @@
   box-sizing: border-box;
 }
 
+/* Loading overlay — full-screen cover */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.loading-overlay[hidden] {
+  display: none;
+}
+
+.loading-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  background: var(--surface);
+  padding: var(--space-lg) var(--space-xl);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: loading-spin 0.7s linear infinite;
+}
+
+@keyframes loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: var(--font-size);
+  color: var(--text);
+}
+
 body {
   font-family: "Segoe UI", "Meiryo", sans-serif;
   margin: 0;
@@ -40,6 +83,11 @@ body {
 
 /* Header */
 header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
   background: var(--surface);
   padding: var(--space-md) var(--space-lg);
   border-bottom: 1px solid var(--border);
@@ -49,6 +97,31 @@ header h1 {
   margin: 0;
   font-size: 1.125rem;
   font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+
+.lang-switcher {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-shrink: 0;
+}
+
+.lang-label {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.lang-switcher select {
+  font-size: var(--font-size-sm);
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
 }
 
 .header-link {
@@ -240,6 +313,8 @@ main {
 }
 
 #output-date,
+#daily-end-date,
+#weekly-end-date,
 #department-select,
 #time-start,
 #time-end {
@@ -251,6 +326,8 @@ main {
 }
 
 #output-date,
+#daily-end-date,
+#weekly-end-date,
 #department-select {
   min-width: 160px;
 }
@@ -344,6 +421,11 @@ main {
 .report-table th:first-child,
 .report-table td:first-child {
   min-width: 7rem;
+}
+
+.report-table tr.total-row td {
+  font-weight: 600;
+  background: var(--total-bg);
 }
 
 .summary-table {
@@ -477,7 +559,9 @@ main {
   #department-select,
   #time-start,
   #time-end,
-  #daily-end-date {
+  #output-date,
+  #daily-end-date,
+  #weekly-end-date {
     min-width: 0;
     width: 100%;
     max-width: 100%;
@@ -577,7 +661,9 @@ main {
     max-height: 200px;
   }
 
-  #daily-end-date {
+  #output-date,
+  #daily-end-date,
+  #weekly-end-date {
     min-height: 44px;
     font-size: 16px;
     width: 100%;
