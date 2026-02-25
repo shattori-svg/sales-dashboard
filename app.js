@@ -556,6 +556,52 @@
     if (el) { el.hidden = true; el.setAttribute('aria-busy', 'false'); }
   }
 
+  function tableToCsv(tableEl) {
+    if (!tableEl || !tableEl.rows || !tableEl.rows.length) return '';
+    var rows = [];
+    for (var i = 0; i < tableEl.rows.length; i++) {
+      var row = tableEl.rows[i];
+      var cells = [];
+      for (var j = 0; j < row.cells.length; j++) {
+        var text = (row.cells[j].textContent || '').trim().replace(/"/g, '""');
+        if (/[",\n\r]/.test(text)) text = '"' + text + '"';
+        cells.push(text);
+      }
+      rows.push(cells.join(','));
+    }
+    return '\uFEFF' + rows.join('\r\n');
+  }
+
+  function downloadCsv(filename, csvString) {
+    if (!csvString) return;
+    var blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function exportPanelTablesCsv(containerId, baseName, selectedOption) {
+    var container = document.getElementById(containerId);
+    if (!container) return;
+    var tables = container.querySelectorAll('table.report-table');
+    if (tables.length === 0) return;
+    var index = selectedOption !== undefined && selectedOption !== 'all' ? parseInt(selectedOption, 10) : -1;
+    if (index >= 0 && index < tables.length) {
+      downloadCsv(baseName + '_' + (index + 1) + '.csv', tableToCsv(tables[index]));
+      return;
+    }
+    if (tables.length === 1) {
+      downloadCsv(baseName + '.csv', tableToCsv(tables[0]));
+      return;
+    }
+    tables.forEach(function (t, i) {
+      var name = baseName + '_' + (i + 1) + '.csv';
+      downloadCsv(name, tableToCsv(t));
+    });
+  }
+
   function fetchBusinessHours() {
     fetch('/api/business-hours').then(function (res) { return parseJsonResponse(res); }).then(function (settings) {
       if (settings && typeof settings === 'object') {
@@ -965,6 +1011,36 @@
     }
   }
 
+  function addDaysToDate(dateStr, days) {
+    var d = new Date(dateStr + 'T12:00:00');
+    d.setUTCDate(d.getUTCDate() + days);
+    var y = d.getUTCFullYear();
+    var m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    var day = String(d.getUTCDate()).padStart(2, '0');
+    return y + '-' + m + '-' + day;
+  }
+
+  function fillDailyStartDateSelect(dates, selectedValue, suggestedEndDate) {
+    var el = document.getElementById('daily-start-date');
+    if (!el || el.type !== 'date') return;
+    var arr = (dates || []).slice().sort();
+    if (arr.length) {
+      el.min = arr[0];
+      el.max = arr[arr.length - 1];
+    } else {
+      el.removeAttribute('min');
+      el.removeAttribute('max');
+    }
+    var defaultStart = '';
+    if (arr.length && suggestedEndDate) {
+      defaultStart = addDaysToDate(suggestedEndDate, -7);
+      if (defaultStart < arr[0]) defaultStart = arr[0];
+    } else if (arr.length) {
+      defaultStart = arr[0];
+    }
+    el.value = (selectedValue && arr.indexOf(selectedValue) !== -1) ? selectedValue : (defaultStart || '');
+  }
+
   function fillDailyEndDateSelect(dates, selectedValue) {
     var el = document.getElementById('daily-end-date');
     if (!el || el.type !== 'date') return;
@@ -976,17 +1052,23 @@
       el.removeAttribute('min');
       el.removeAttribute('max');
     }
-    var val = (selectedValue && dates && dates.indexOf(selectedValue) !== -1) ? selectedValue : (dates && dates.length ? dates[0] : '');
-    el.value = val || '';
+    var defaultEnd = arr.length ? arr[arr.length - 1] : '';
+    el.value = (selectedValue && arr.indexOf(selectedValue) !== -1) ? selectedValue : (defaultEnd || '');
   }
 
   function refreshDailyDateSelect() {
     showLoading();
     fetch('/api/dates').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
       var dates = body.dates || [];
-      var el = document.getElementById('daily-end-date');
-      fillDailyEndDateSelect(dates, el ? el.value : null);
-      if (dates.length && el && el.value) {
+      var startEl = document.getElementById('daily-start-date');
+      var endEl = document.getElementById('daily-end-date');
+      var arr = (dates || []).slice().sort();
+      var endDefault = arr.length ? arr[arr.length - 1] : '';
+      var endValue = (endEl && endEl.value && arr.indexOf(endEl.value) !== -1) ? endEl.value : endDefault;
+      fillDailyEndDateSelect(dates, endValue);
+      var actualEnd = endEl ? endEl.value : endDefault;
+      fillDailyStartDateSelect(dates, startEl ? startEl.value : null, actualEnd);
+      if (dates.length && endEl && endEl.value) {
         renderDailySummary();
       } else {
         renderDailySummary();
@@ -996,7 +1078,9 @@
   }
 
   function renderDailySummary() {
+    var startDateEl = document.getElementById('daily-start-date');
     var endDateEl = document.getElementById('daily-end-date');
+    var startDate = startDateEl ? startDateEl.value : '';
     var endDate = endDateEl ? endDateEl.value : '';
     var container = document.getElementById('daily-summary-tables');
     var emptyEl = document.getElementById('daily-empty');
@@ -1008,7 +1092,13 @@
     }
     if (emptyEl) emptyEl.hidden = true;
     showLoading();
-    fetch('/api/daily-summary?referenceDate=' + encodeURIComponent(endDate) + '&days=7').then(function (res) {
+    var url = '/api/daily-summary?referenceDate=' + encodeURIComponent(endDate);
+    if (startDate && startDate <= endDate) {
+      url += '&startDate=' + encodeURIComponent(startDate);
+    } else {
+      url += '&days=7';
+    }
+    fetch(url).then(function (res) {
       return parseJsonResponse(res).then(function (body) {
         if (!res.ok) throw new Error(body.error || 'Failed to load daily summary');
         return body;
@@ -1098,7 +1188,7 @@
       var totalReceipts = days.reduce(function (acc, d) { return acc + (d.receiptCount || 0); }, 0);
       var totalQty = days.reduce(function (acc, d) { return acc + (d.quantitySold || 0); }, 0);
 
-      var weeklyTotalHtml = '<section class="summary-section weekly-total-section"><h3>' + t('weekly_total_section') + '</h3><table class="report-table daily-table weekly-total-table"><tbody>';
+      var weeklyTotalHtml = '<section class="summary-section weekly-total-section"><h3>' + t('period_total_section') + '</h3><table class="report-table daily-table weekly-total-table"><tbody>';
       weeklyTotalHtml += '<tr><td>' + t('total_net_sales') + '</td><td>' + formatInt(grandTotalSales) + ' ' + t('currency_unit') + '</td></tr>';
       weeklyTotalHtml += '<tr><td>' + t('total_receipts') + '</td><td>' + formatInt(totalReceipts) + '</td></tr>';
       weeklyTotalHtml += '<tr><td>' + t('total_qty_sold') + '</td><td>' + formatInt(totalQty) + '</td></tr>';
@@ -1427,7 +1517,9 @@
       }).then(function () { hideLoading(); }).catch(function () { hideLoading(); });
     });
 
+    var dailyStartEl = document.getElementById('daily-start-date');
     var dailyEndEl = document.getElementById('daily-end-date');
+    if (dailyStartEl) dailyStartEl.addEventListener('change', renderDailySummary);
     if (dailyEndEl) dailyEndEl.addEventListener('change', renderDailySummary);
 
     var weeklyEndEl = document.getElementById('weekly-end-date');
@@ -1448,6 +1540,43 @@
       var weeklyEnd = document.getElementById('weekly-end-date');
       if (weeklyEnd && weeklyEnd.value) renderWeeklySummary();
     });
+
+    var btnHourlyCsv = document.getElementById('btn-hourly-csv');
+    if (btnHourlyCsv) {
+      btnHourlyCsv.addEventListener('click', function () {
+        var sel = document.getElementById('hourly-export-select');
+        var opt = sel ? sel.value : 'hourly';
+        var dateStr = state.referenceDate || '';
+        if (opt === 'summary') {
+          var summaryTable = document.getElementById('summary-table');
+          if (summaryTable) downloadCsv('hourly_summary_' + dateStr + '.csv', tableToCsv(summaryTable));
+        } else if (opt === 'all') {
+          var hourlyTable = document.getElementById('hourly-table');
+          if (hourlyTable) downloadCsv('hourly_report_' + dateStr + '.csv', tableToCsv(hourlyTable));
+          var summaryTable = document.getElementById('summary-table');
+          if (summaryTable) downloadCsv('hourly_summary_' + dateStr + '.csv', tableToCsv(summaryTable));
+        } else {
+          var table = document.getElementById('hourly-table');
+          if (table) downloadCsv('hourly_report_' + dateStr + '.csv', tableToCsv(table));
+        }
+      });
+    }
+    var btnDailyCsv = document.getElementById('btn-daily-csv');
+    if (btnDailyCsv) {
+      btnDailyCsv.addEventListener('click', function () {
+        var sel = document.getElementById('daily-export-select');
+        var opt = sel ? sel.value : 'all';
+        exportPanelTablesCsv('daily-summary-tables', 'daily_summary', opt);
+      });
+    }
+    var btnWeeklyCsv = document.getElementById('btn-weekly-csv');
+    if (btnWeeklyCsv) {
+      btnWeeklyCsv.addEventListener('click', function () {
+        var sel = document.getElementById('weekly-export-select');
+        var opt = sel ? sel.value : 'all';
+        exportPanelTablesCsv('weekly-summary-tables', 'weekly_summary', opt);
+      });
+    }
 
     /* Report page: load initial data for hourly tab */
     if (outputDateEl) {

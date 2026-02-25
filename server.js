@@ -113,17 +113,39 @@ function buildDailySummaryForReport(dateStr, report) {
   };
 }
 
+function parseDateYMD(str) {
+  if (!str || !/^\d{4}-\d{2}-\d{2}$/.test(String(str).trim())) return null;
+  const d = new Date(String(str).trim() + 'T12:00:00Z');
+  return isNaN(d.getTime()) ? null : d;
+}
+
 app.get('/api/daily-summary', async (req, res) => {
   try {
     const refStr = req.query.referenceDate;
-    const days = Math.min(31, Math.max(1, parseInt(req.query.days, 10) || 7));
-    if (!refStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(refStr).trim())) {
-      return res.status(400).json({ error: 'Query parameter referenceDate (YYYY-MM-DD) is required.' });
+    const startStr = req.query.startDate ? String(req.query.startDate).trim() : null;
+    let daysList = [];
+    if (startStr && refStr && /^\d{4}-\d{2}-\d{2}$/.test(startStr) && /^\d{4}-\d{2}-\d{2}$/.test(String(refStr).trim())) {
+      const startD = parseDateYMD(startStr);
+      const endD = parseDateYMD(refStr);
+      if (startD && endD && startD <= endD) {
+        const maxDays = 31;
+        for (let d = new Date(startD); d <= endD && daysList.length < maxDays; d.setUTCDate(d.getUTCDate() + 1)) {
+          const y = d.getUTCFullYear();
+          const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+          const day = String(d.getUTCDate()).padStart(2, '0');
+          daysList.push(y + '-' + m + '-' + day);
+        }
+      }
     }
-    const endDate = String(refStr).trim();
-    const daysList = [];
-    for (let i = days - 1; i >= 0; i--) {
-      daysList.push(addDays(endDate, -i));
+    if (daysList.length === 0) {
+      const days = Math.min(31, Math.max(1, parseInt(req.query.days, 10) || 7));
+      if (!refStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(refStr).trim())) {
+        return res.status(400).json({ error: 'Query parameter referenceDate (YYYY-MM-DD) is required.' });
+      }
+      const endDate = String(refStr).trim();
+      for (let i = days - 1; i >= 0; i--) {
+        daysList.push(addDays(endDate, -i));
+      }
     }
     const summaries = [];
     for (const d of daysList) {

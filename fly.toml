@@ -1,0 +1,23 @@
+# Fly.io deployment — Sales Reports
+# See https://fly.io/docs/reference/configuration/
+
+app = "sales-reports"
+
+[build]
+
+[env]
+  PORT = "3333"
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port = 3333
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

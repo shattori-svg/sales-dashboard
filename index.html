@@ -54,6 +54,13 @@
         <select id="time-end" aria-label="End time">
           <!-- filled by app.js -->
         </select>
+        <label for="hourly-export-select" class="output-header-sep" data-i18n="output_data">出力データ</label>
+        <select id="hourly-export-select" aria-label="Select data to export">
+          <option value="hourly" data-i18n-option="export_option_hourly_table">時間別表</option>
+          <option value="summary" data-i18n-option="export_option_summary">サマリー</option>
+          <option value="all" data-i18n-option="output_all">すべて</option>
+        </select>
+        <button type="button" id="btn-hourly-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
       </div>
       <p id="last-upload-time" class="last-upload-time" aria-live="polite"></p>
 
@@ -175,8 +182,19 @@
       <h3 class="section-title" data-i18n="daily_section_title">Daily aggregation (weekly trend and composition)</h3>
       <p class="hint" data-i18n="daily_hint">View weekly sales trend and department composition by day.</p>
       <div class="output-header">
-        <label for="daily-end-date" data-i18n="week_ending">Week ending (End date)</label>
+        <label for="daily-start-date" data-i18n="daily_start_date">Start date</label>
+        <input type="date" id="daily-start-date" aria-label="Select start date for daily view">
+        <label for="daily-end-date" class="output-header-sep" data-i18n="daily_end_date">End date</label>
         <input type="date" id="daily-end-date" aria-label="Select end date for daily view">
+        <label for="daily-export-select" class="output-header-sep" data-i18n="output_data">出力データ</label>
+        <select id="daily-export-select" aria-label="Select data to export">
+          <option value="all" data-i18n-option="output_all">すべて</option>
+          <option value="0" data-i18n-option="period_total_section">期間合計</option>
+          <option value="1" data-i18n-option="daily_sales_by_dept">部門別売上</option>
+          <option value="2" data-i18n-option="daily_composition_pct">部門構成%</option>
+          <option value="3" data-i18n-option="key_metrics">主要指標</option>
+        </select>
+        <button type="button" id="btn-daily-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
       </div>
       <div id="daily-summary-tables"></div>
       <p id="daily-empty" class="empty-message" data-i18n="daily_empty" hidden>Select an end date to load the daily summary.</p>
@@ -194,6 +212,14 @@
           <option value="3" data-i18n-option="weeks_3">3週間</option>
           <option value="4" selected data-i18n-option="weeks_4">4週間</option>
         </select>
+        <label for="weekly-export-select" class="output-header-sep" data-i18n="output_data">出力データ</label>
+        <select id="weekly-export-select" aria-label="Select data to export">
+          <option value="all" data-i18n-option="output_all">すべて</option>
+          <option value="0" data-i18n-option="weekly_net_title">週別 Net Sales</option>
+          <option value="1" data-i18n-option="sales_by_dept">部門別売上</option>
+          <option value="2" data-i18n-option="dept_composition_pct">部門構成%</option>
+        </select>
+        <button type="button" id="btn-weekly-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
       </div>
       <div id="weekly-summary-tables"></div>
       <p id="weekly-empty" class="empty-message" data-i18n="weekly_empty" hidden>週の終了日を選択してください。</p>

@@ -292,6 +292,23 @@ main {
   background: var(--accent-hover);
 }
 
+.btn-csv {
+  align-self: flex-start;
+  padding: var(--space-sm) var(--space-lg);
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  font-size: var(--font-size);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-csv:hover {
+  background: var(--accent);
+  color: white;
+}
+
 .error {
   color: var(--error);
   font-size: var(--font-size-sm);
@@ -312,24 +329,47 @@ main {
   font-size: var(--font-size);
 }
 
-#output-date,
-#daily-end-date,
-#weekly-end-date,
-#department-select,
-#time-start,
-#time-end {
+/* 日付・ドロップダウンを同一スタイルに統一 */
+.output-header select,
+.output-header input[type="date"] {
   padding: var(--space-sm) var(--space-md);
   font-size: var(--font-size);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
+  color: var(--text);
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-md) center;
+  padding-right: 2rem;
+}
+
+.output-header input[type="date"] {
+  background-image: none;
+  padding-right: var(--space-md);
+}
+
+.output-header select::-ms-expand {
+  display: none;
 }
 
 #output-date,
+#daily-start-date,
 #daily-end-date,
 #weekly-end-date,
-#department-select {
+#department-select,
+#hourly-export-select,
+#daily-export-select,
+#weekly-export-select,
+#weekly-num-weeks {
   min-width: 160px;
+}
+
+#time-start,
+#time-end {
+  min-width: 100px;
 }
 
 .output-header-sep {
@@ -581,13 +621,8 @@ main {
     margin-left: 0;
   }
 
-  #output-date,
-  #department-select,
-  #time-start,
-  #time-end,
-  #output-date,
-  #daily-end-date,
-  #weekly-end-date {
+  .output-header select,
+  .output-header input[type="date"] {
     min-width: 0;
     width: 100%;
     max-width: 100%;
@@ -687,9 +722,8 @@ main {
     max-height: 200px;
   }
 
-  #output-date,
-  #daily-end-date,
-  #weekly-end-date {
+  .output-header select,
+  .output-header input[type="date"] {
     min-height: 44px;
     font-size: 16px;
     width: 100%;
