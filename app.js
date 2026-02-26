@@ -820,18 +820,21 @@
     '</tr>';
   }
 
-  function computeSummary(hourly) {
+  /** receiptByTimeKey: optional map of timeKey -> receiptCount (from Total). fallbackTotalReceipt: use when receiptSum is 0 (e.g. CSV without hourly 00 Receipt_Count). */
+  function computeSummary(hourly, receiptByTimeKey, fallbackTotalReceipt) {
     if (!hourly || !hourly.length) return null;
     var netSum = 0, receiptSum = 0, qtySum = 0;
     var hoursWithSales = 0;
     hourly.forEach(function (h) {
       var n = h.netSales || 0;
       netSum += n;
-      receiptSum += h.receiptCount || 0;
+      var rc = h.receiptCount != null ? h.receiptCount : (receiptByTimeKey && receiptByTimeKey[h.timeKey] != null) ? receiptByTimeKey[h.timeKey] : 0;
+      receiptSum += rc;
       qtySum += h.quantitySold || 0;
       if (n > 0) hoursWithSales++;
     });
     if (hoursWithSales === 0) hoursWithSales = 1;
+    if (receiptSum === 0 && fallbackTotalReceipt != null && fallbackTotalReceipt > 0) receiptSum = fallbackTotalReceipt;
     return {
       salesPerHour: netSum / hoursWithSales,
       txnPerHour: receiptSum / hoursWithSales,
@@ -902,9 +905,28 @@
     var compositionData = getDepartmentCompositionByTime(state.today, startTime, endTime);
     renderComposition(compositionData);
 
-    var sumToday = computeSummary(todayHourly);
-    var sumYesterday = yesterdayHourly ? computeSummary(yesterdayHourly) : null;
-    var sumLastWeek = lastWeekHourly ? computeSummary(lastWeekHourly) : null;
+    var totalTodayRaw = getHourlyData(state.today, 'Total');
+    var totalYesterdayRaw = state.yesterday ? getHourlyData(state.yesterday, 'Total') : null;
+    var totalLastWeekRaw = state.lastWeek ? getHourlyData(state.lastWeek, 'Total') : null;
+    var totalTodayFiltered = totalTodayRaw ? filterByTimeRange(filterByBusinessHours(totalTodayRaw, state.today && state.today.businessDate), startTime, endTime) : null;
+    var totalYesterdayFiltered = totalYesterdayRaw ? filterByTimeRange(filterByBusinessHours(totalYesterdayRaw, state.yesterday && state.yesterday.businessDate), startTime, endTime) : null;
+    var totalLastWeekFiltered = totalLastWeekRaw ? filterByTimeRange(filterByBusinessHours(totalLastWeekRaw, state.lastWeek && state.lastWeek.businessDate), startTime, endTime) : null;
+    function receiptMap(hourly) {
+      if (!hourly) return null;
+      var m = {};
+      hourly.forEach(function (h) { if (h.timeKey != null && (h.receiptCount != null || h.receiptCount === 0)) m[h.timeKey] = h.receiptCount; });
+      return Object.keys(m).length ? m : null;
+    }
+    var receiptToday = receiptMap(totalTodayFiltered);
+    var receiptYesterday = receiptMap(totalYesterdayFiltered);
+    var receiptLastWeek = receiptMap(totalLastWeekFiltered);
+    var fallbackReceiptToday = (state.today && state.today.total && state.today.total.totalRow && (state.today.total.totalRow.receiptCount != null)) ? state.today.total.totalRow.receiptCount : null;
+    var fallbackReceiptYesterday = (state.yesterday && state.yesterday.total && state.yesterday.total.totalRow && (state.yesterday.total.totalRow.receiptCount != null)) ? state.yesterday.total.totalRow.receiptCount : null;
+    var fallbackReceiptLastWeek = (state.lastWeek && state.lastWeek.total && state.lastWeek.total.totalRow && (state.lastWeek.total.totalRow.receiptCount != null)) ? state.lastWeek.total.totalRow.receiptCount : null;
+
+    var sumToday = computeSummary(todayHourly, receiptToday, isTotal ? fallbackReceiptToday : null);
+    var sumYesterday = yesterdayHourly ? computeSummary(yesterdayHourly, receiptYesterday, isTotal ? fallbackReceiptYesterday : null) : null;
+    var sumLastWeek = lastWeekHourly ? computeSummary(lastWeekHourly, receiptLastWeek, isTotal ? fallbackReceiptLastWeek : null) : null;
 
     function setSummary(id, val, dodId, wowId) {
       var el = document.getElementById(id);
@@ -1548,7 +1570,21 @@
     refreshWeeklyDateSelect();
   }
 
+    function updateLogoutVisibility() {
+    fetch('/api/auth/status')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var el = document.getElementById('logout-link');
+        if (el) el.style.display = data.loggedIn ? '' : 'none';
+      })
+      .catch(function () {
+        var el = document.getElementById('logout-link');
+        if (el) el.style.display = 'none';
+      });
+  }
+
   function init() {
+    updateLogoutVisibility();
     document.querySelectorAll('.tab').forEach(function (btn) {
       btn.addEventListener('click', function () {
         switchTab(btn.getAttribute('data-tab'));

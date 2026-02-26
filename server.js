@@ -95,6 +95,12 @@ if (AUTH_ENABLED) {
 }
 
 app.use(requireAuth);
+app.get('/api/auth/status', (req, res) => {
+  res.json({
+    authEnabled: AUTH_ENABLED,
+    loggedIn: !!(AUTH_ENABLED && req.session && req.session.loggedIn),
+  });
+});
 app.use(express.static(path.join(__dirname)));
 
 app.get('/setup', (req, res) => {
