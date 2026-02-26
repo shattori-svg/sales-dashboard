@@ -4,9 +4,8 @@
  * Reads "Daily Sales Report (Hourly Sales by Department)" Excel and outputs
  * CSV in the agreed format:
  * Business_Date, Store_Id, Start_Time, End_Time, Department_Code, Net_Sales, Gross_Sales, Quantity_Sold, Receipt_Count
- * - Department_Code 00 = day total row (only row with empty Start_Time/End_Time)
+ * - Department_Code 00 = day total row (empty Start_Time/End_Time) + hourly total rows (one per time slot)
  * - 01-06 = department (Grocery, Fruit & Vegetable, Fish & Seafood, Meat, Delicatessen, Store Management)
- * - No hourly Total rows; store totals are derived from department sums.
  */
 
 const fs = require('fs');
@@ -51,7 +50,7 @@ function run(inputPath, outputPath) {
   const rows = [];
   rows.push('Business_Date,Store_Id,Start_Time,End_Time,Department_Code,Net_Sales,Gross_Sales,Quantity_Sold,Receipt_Count');
 
-  // 1) Day total row (Department_Code 00)
+  // 1) Day total row (Department_Code 00, empty Start_Time/End_Time)
   const tr = data.total.totalRow;
   if (tr) {
     rows.push([
@@ -67,7 +66,24 @@ function run(inputPath, outputPath) {
     ].join(','));
   }
 
-  // 2) Hourly department rows (01-06). One row per (timeSlot, department).
+  // 2) Hourly Total rows (Department_Code 00, one per time slot). Receipt_Count is store-level only.
+  const totalHourly = data.total.hourly || [];
+  for (const h of totalHourly) {
+    const [startTime = '', endTime = ''] = (h.timeKey || '').split('-');
+    rows.push([
+      escapeCsv(businessDate),
+      escapeCsv(storeId),
+      escapeCsv(startTime.trim()),
+      escapeCsv(endTime.trim()),
+      '00',
+      escapeCsv(h.netSales),
+      escapeCsv(h.grossSales != null ? h.grossSales : ''),
+      escapeCsv(h.quantitySold),
+      escapeCsv(h.receiptCount),
+    ].join(','));
+  }
+
+  // 3) Hourly department rows (01-06). One row per (timeSlot, department). No Receipt_Count (Total only).
   const byDept = data.byDepartment || {};
   for (const [deptName, code] of Object.entries(DEPARTMENT_NAME_TO_CODE)) {
     const deptData = byDept[deptName];
@@ -83,7 +99,7 @@ function run(inputPath, outputPath) {
         escapeCsv(h.netSales),
         escapeCsv(h.grossSales != null ? h.grossSales : ''),
         escapeCsv(h.quantitySold),
-        escapeCsv(h.receiptCount),
+        '',  // Receipt_Count: Total only, leave empty for department rows
       ].join(','));
     }
   }

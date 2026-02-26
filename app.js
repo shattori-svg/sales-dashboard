@@ -754,6 +754,7 @@
     var wow = lastWeekHour ? pctRatio(net, lastWeekHour.netSales) : null;
     var disc = isTotal && gross != null && gross > 0 ? discountRate(gross, net) : null;
 
+    var receiptCell = isTotal ? formatInt(hour.receiptCount) : '—';
     return '<tr>' +
       '<td>' + (hour.timeLabel || '') + '</td>' +
       '<td>' + (isTotal && hour.grossSales != null ? formatCurrency(hour.grossSales) : (hour.grossSales != null ? formatCurrency(hour.grossSales) : '—')) + '</td>' +
@@ -762,7 +763,7 @@
       '<td>' + formatPct(wow) + '</td>' +
       '<td>' + (disc != null ? formatPct1(disc) : '—') + '</td>' +
       '<td>' + formatInt(hour.quantitySold) + '</td>' +
-      '<td>' + formatInt(hour.receiptCount) + '</td>' +
+      '<td>' + receiptCell + '</td>' +
     '</tr>';
   }
 
@@ -805,6 +806,7 @@
     var dod = netSumY > 0 ? Math.round((netSum / netSumY) * 100) : null;
     var wow = netSumW > 0 ? Math.round((netSum / netSumW) * 100) : null;
     var disc = isTotal && grossSum > 0 ? ((grossSum - netSum) / grossSum) * 100 : null;
+    var receiptCell = isTotal ? formatInt(receiptSum) : '—';
 
     return '<tr>' +
       '<td>' + t('total') + '</td>' +
@@ -814,7 +816,7 @@
       '<td>' + formatPct(wow) + '</td>' +
       '<td>' + (disc != null ? formatPct1(disc) : '—') + '</td>' +
       '<td>' + formatInt(qtySum) + '</td>' +
-      '<td>' + formatInt(receiptSum) + '</td>' +
+      '<td>' + receiptCell + '</td>' +
     '</tr>';
   }
 

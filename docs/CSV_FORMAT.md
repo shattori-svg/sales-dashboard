@@ -1,0 +1,37 @@
+# CSV 連携フォーマット
+
+この形式の CSV は、Setup 画面からのアップロードおよび `POST /api/upload`（multipart/form-data、`files` に CSV ファイル）で取り込みできます。
+
+## ヘッダー（1行目）
+
+```
+Business_Date,Store_Id,Start_Time,End_Time,Department_Code,Net_Sales,Gross_Sales,Quantity_Sold,Receipt_Count
+```
+
+- **Business_Date**: 営業日（YYYY-MM-DD）
+- **Store_Id**: 店舗ID（必須。例: 1001）
+- **Start_Time**, **End_Time**: 時間帯（例: 10:00, 11:00）。空欄の行は日計行
+- **Department_Code**: 00＝店舗合計、01～06＝部門
+- **Net_Sales**, **Gross_Sales**: 正味売上・総売上（数値）
+- **Quantity_Sold**: 販売数量
+- **Receipt_Count**: レシート数（Total のみ。部門行は空欄可）
+
+## 部門コード
+
+| コード | 部門 |
+|--------|------|
+| 00 | 店舗合計（日計行は Start_Time/End_Time 空。時間帯別は各時間に 00 の行） |
+| 01 | Grocery |
+| 02 | Fruit & Vegetable |
+| 03 | Fish & Seafood |
+| 04 | Meat |
+| 05 | Delicatessen |
+| 06 | Store Management |
+
+## 行の並び例
+
+1. 日計 1 行（Start_Time, End_Time 空、Department_Code 00）
+2. 時間帯別 Total（各時間帯ごとに Department_Code 00、Receipt_Count あり）
+3. 時間帯別・部門別（01～06、Receipt_Count は空欄）
+
+文字コード: UTF-8（BOM あり可）。区切り: カンマ。

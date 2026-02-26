@@ -79,6 +79,57 @@ function findStoreColumn(headerRow) {
   return -1;
 }
 
+/** Find column index by header: first column where cell (lowercased) includes any of the patterns and none of the exclude patterns. Returns -1 if not found. */
+function findExcelColumn(headerRow, patterns, exclude) {
+  if (!headerRow || !Array.isArray(headerRow) || !patterns || !patterns.length) return -1;
+  const lower = (x) => (x == null ? '' : String(x).toLowerCase().trim());
+  for (let i = 0; i < headerRow.length; i++) {
+    const cell = lower(headerRow[i]);
+    if (exclude && exclude.some((e) => cell.includes(e))) continue;
+    for (const p of patterns) {
+      if (cell.includes(p) || cell === p) return i;
+    }
+  }
+  return -1;
+}
+
+/** Resolve Excel column indices from header row; fall back to COL defaults when not found. */
+function resolveExcelColumns(headerRow) {
+  const idx = (patterns, defaultVal, exclude) => {
+    const i = findExcelColumn(headerRow, patterns, exclude);
+    return i >= 0 ? i : defaultVal;
+  };
+  return {
+    startTime: idx(['start time', 'start_time'], COL.Start_Time),
+    endTime: idx(['end time', 'end_time'], COL.End_Time),
+    businessDate: findBusinessDateColumn(headerRow),
+    storeCol: findStoreColumn(headerRow),
+    hourlyReceiptCount: idx(['hourly receipt', 'receipt count'], COL.HourlyReceiptCount),
+    hourlyGrossSales: idx(['hourly gross', 'gross sales'], COL.HourlyGrossSales),
+    hourlyNetSales: idx(['hourly net', 'net sales'], COL.HourlyNetSales),
+    hourlyQuantitySold: idx(['hourly quantity', 'quantity sold'], COL.HourlyQuantitySold),
+    departmentName: (() => {
+      const a = findExcelColumn(headerRow, ['department_name', 'department name', '部門名']);
+      if (a >= 0) return a;
+      const b = findExcelColumn(headerRow, ['department', '部門', 'dept'], ['code']);
+      return b >= 0 ? b : COL.Department_Name;
+    })(),
+    netSales: idx(['net sales'], COL.NetSales, ['hourly', 'total']),
+    quantitySold: idx(['quantity sold'], COL.QuantitySold, ['hourly', 'total']),
+    totalReceiptCount: idx(['total receipt'], COL.TotalReceiptCount),
+    totalGrossSales: idx(['total gross'], COL.TotalGrossSales),
+    totalNetSales: idx(['total net'], COL.TotalNetSales),
+    totalQuantitySold: idx(['total quantity'], COL.TotalQuantitySold),
+  };
+}
+
+/** True if value looks like a time (e.g. 10:00, 9:30). Avoids treating date/store as time. */
+function isTimeLike(v) {
+  if (v === null || v === undefined) return false;
+  const s = String(v).trim();
+  return /^\d{1,2}:\d{2}(:\d{2})?$/.test(s) || /^\d{1,2}:\d{2}\s*[aApP]?[mM]?$/.test(s);
+}
+
 /** Slugify store name for use as storeId (lowercase, spaces to hyphen, alphanumeric + hyphen). */
 function slugifyStoreId(name) {
   if (name == null || String(name).trim() === '') return 'default';
@@ -126,8 +177,7 @@ function parseSheet(buffer) {
   if (!rows.length) return null;
 
   const headerRow = rows[0];
-  const businessDateCol = findBusinessDateColumn(headerRow);
-  const storeCol = findStoreColumn(headerRow);
+  const c = resolveExcelColumns(headerRow);
 
   const total = { hourly: [], totalRow: null };
   const byDept = {};
@@ -140,37 +190,42 @@ function parseSheet(buffer) {
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (businessDate == null && row[businessDateCol] != null && String(row[businessDateCol]).trim() !== '') {
-      businessDate = parseBusinessDate(row[businessDateCol]);
+    if (businessDate == null && row[c.businessDate] != null && String(row[c.businessDate]).trim() !== '') {
+      businessDate = parseBusinessDate(row[c.businessDate]);
     }
-    if (storeName == null && storeCol >= 0 && row[storeCol] != null && String(row[storeCol]).trim() !== '') {
-      storeName = String(row[storeCol]).trim();
+    if (storeName == null && c.storeCol >= 0 && row[c.storeCol] != null && String(row[c.storeCol]).trim() !== '') {
+      storeName = String(row[c.storeCol]).trim();
     }
-    const startTime = row[COL.Start_Time];
-    const endTime = row[COL.End_Time];
+    const startTime = row[c.startTime];
+    const endTime = row[c.endTime];
+    const startStr = startTime != null ? String(startTime).trim() : '';
+    const endStr = endTime != null ? String(endTime).trim() : '';
+    const isEmpty = !startStr && !endStr;
+    const isTimeLikeRow = isTimeLike(startTime) && isTimeLike(endTime);
 
-    if (startTime === null || startTime === undefined || startTime === 'NULL' || String(startTime).trim() === '') {
-      if (row[COL.TotalReceiptCount] != null && toNum(row[COL.TotalReceiptCount]) != null) {
+    if (isEmpty || !isTimeLikeRow) {
+      const hasTotalReceipt = row[c.totalReceiptCount] != null && toNum(row[c.totalReceiptCount]) != null;
+      if ((isEmpty || hasTotalReceipt) && hasTotalReceipt) {
         total.totalRow = {
-          receiptCount: toNum(row[COL.TotalReceiptCount]),
-          grossSales: toNum(row[COL.TotalGrossSales]),
-          netSales: toNum(row[COL.TotalNetSales]),
-          quantitySold: toNum(row[COL.TotalQuantitySold]),
+          receiptCount: toNum(row[c.totalReceiptCount]),
+          grossSales: toNum(row[c.totalGrossSales]),
+          netSales: toNum(row[c.totalNetSales]),
+          quantitySold: toNum(row[c.totalQuantitySold]),
         };
       }
       continue;
     }
 
-    let gross = toNum(row[COL.HourlyGrossSales]);
-    let net = toNum(row[COL.HourlyNetSales]);
-    let receiptCount = toNum(row[COL.HourlyReceiptCount]);
-    let qty = toNum(row[COL.HourlyQuantitySold]);
+    let gross = toNum(row[c.hourlyGrossSales]);
+    let net = toNum(row[c.hourlyNetSales]);
+    let receiptCount = toNum(row[c.hourlyReceiptCount]);
+    let qty = toNum(row[c.hourlyQuantitySold]);
     if (gross == null) gross = 0;
     if (net == null) net = 0;
     if (receiptCount == null) receiptCount = 0;
     if (qty == null) qty = 0;
 
-    const timeKey = String(startTime).trim() + '-' + String(endTime).trim();
+    const timeKey = startStr + '-' + endStr;
     const existingTotal = total.hourly.find((h) => h.timeKey === timeKey);
     if (!existingTotal) {
       total.hourly.push({
@@ -183,10 +238,10 @@ function parseSheet(buffer) {
       });
     }
 
-    const deptName = row[COL.Department_Name];
+    const deptName = row[c.departmentName];
     if (deptName && byDept[deptName]) {
-      const deptNet = toNum(row[COL.NetSales]) || 0;
-      const deptQty = toNum(row[COL.QuantitySold]) || 0;
+      const deptNet = toNum(row[c.netSales]) || 0;
+      const deptQty = toNum(row[c.quantitySold]) || 0;
       byDept[deptName].hourly.push({
         timeKey,
         timeLabel: formatTimeRange(startTime, endTime),
@@ -261,6 +316,7 @@ function parseCsv(buffer) {
     byDept[d] = { hourly: [] };
   });
   const slotTotals = new Map();
+  const hourlyTotalRows = [];
 
   for (let i = 1; i < lines.length; i++) {
     const cells = parseCsvLine(lines[i]);
@@ -293,6 +349,18 @@ function parseCsv(buffer) {
     const quantitySold = getNum(iQty) || 0;
     const receiptCount = getNum(iReceipt) || 0;
 
+    if (deptCode === '00') {
+      hourlyTotalRows.push({
+        timeKey,
+        timeLabel,
+        grossSales: grossSales != null ? grossSales : null,
+        netSales,
+        quantitySold,
+        receiptCount,
+      });
+      continue;
+    }
+
     const deptName = DEPARTMENT_CODE_TO_NAME[deptCode];
     if (deptName && byDept[deptName]) {
       byDept[deptName].hourly.push({
@@ -301,7 +369,7 @@ function parseCsv(buffer) {
         grossSales: grossSales != null ? grossSales : null,
         netSales,
         quantitySold,
-        receiptCount,
+        receiptCount: null,
       });
       if (!slotTotals.has(timeKey)) {
         slotTotals.set(timeKey, { netSales: 0, quantitySold: 0, receiptCount, timeLabel });
@@ -312,16 +380,20 @@ function parseCsv(buffer) {
     }
   }
 
-  slotTotals.forEach((agg, timeKey) => {
-    total.hourly.push({
-      timeKey,
-      timeLabel: agg.timeLabel,
-      grossSales: null,
-      netSales: agg.netSales,
-      quantitySold: agg.quantitySold,
-      receiptCount: agg.receiptCount,
+  if (hourlyTotalRows.length > 0) {
+    total.hourly = hourlyTotalRows;
+  } else {
+    slotTotals.forEach((agg, timeKey) => {
+      total.hourly.push({
+        timeKey,
+        timeLabel: agg.timeLabel,
+        grossSales: null,
+        netSales: agg.netSales,
+        quantitySold: agg.quantitySold,
+        receiptCount: agg.receiptCount,
+      });
     });
-  });
+  }
 
   total.hourly.sort(sortByTimeKey);
   Object.keys(byDept).forEach((k) => {

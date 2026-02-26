@@ -21,7 +21,7 @@
     <section id="upload-panel" class="panel active" style="max-width: 560px;">
       <p class="hint"><a href="/">← Back to Report</a></p>
       <h2>Data Upload</h2>
-      <p class="hint">Upload one or more Excel files. Store and Business Date are read from each file; each file is saved under the store indicated in the file. Only users with this page URL can upload data.</p>
+      <p class="hint">Upload Excel or CSV. CSV format: Business_Date, Store_Id, Start_Time, End_Time, Department_Code (00=total, 01–06=dept), Net_Sales, Gross_Sales, Quantity_Sold, Receipt_Count. See <a href="docs/CSV_FORMAT.md">docs/CSV_FORMAT.md</a>. Same format can be POSTed to <code>/api/upload</code> (multipart, field <code>files</code>).</p>
 
       <div class="upload-form">
         <div class="upload-group">
