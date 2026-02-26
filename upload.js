@@ -90,6 +90,43 @@
     });
   }
 
+  function formatReceivedAt(isoStr) {
+    if (!isoStr) return '—';
+    try {
+      var d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
+      var y = d.getFullYear();
+      var m = String(d.getMonth() + 1).padStart(2, '0');
+      var day = String(d.getDate()).padStart(2, '0');
+      var h = String(d.getHours()).padStart(2, '0');
+      var min = String(d.getMinutes()).padStart(2, '0');
+      var s = String(d.getSeconds()).padStart(2, '0');
+      return y + '-' + m + '-' + day + ' ' + h + ':' + min + ':' + s;
+    } catch (e) { return isoStr; }
+  }
+
+  function loadUploadLog() {
+    var tbody = document.getElementById('upload-log-tbody');
+    var emptyEl = document.getElementById('upload-log-empty');
+    if (!tbody) return;
+    if (emptyEl) emptyEl.textContent = '読み込み中…';
+    fetch('/api/upload-log').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
+      var logs = body.logs || [];
+      tbody.innerHTML = '';
+      logs.forEach(function (row) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + formatReceivedAt(row.receivedAt).replace(/</g, '&lt;') + '</td>' +
+          '<td>' + (row.storeId || '').replace(/</g, '&lt;') + '</td>' +
+          '<td>' + (row.businessDate || '').replace(/</g, '&lt;') + '</td>';
+        tbody.appendChild(tr);
+      });
+      if (emptyEl) emptyEl.textContent = logs.length === 0 ? 'データがありません。' : '';
+    }).catch(function () {
+      tbody.innerHTML = '';
+      if (emptyEl) emptyEl.textContent = '読み込みに失敗しました。';
+    });
+  }
+
   document.querySelectorAll('.tabs .tab').forEach(function (btn) {
     btn.addEventListener('click', function () {
       switchUploadTab(btn.getAttribute('data-tab'));
@@ -141,6 +178,7 @@
       var tab = btn.getAttribute('data-tab');
       switchUploadTab(tab);
       if (tab === 'stores') loadStoresMaster();
+      if (tab === 'log') loadUploadLog();
     });
   });
 

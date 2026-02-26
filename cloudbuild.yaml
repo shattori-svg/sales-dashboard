@@ -1,0 +1,31 @@
+# Cloud Build: Docker イメージをビルドして Cloud Run にデプロイ
+# トリガーで「リポジトリに含まれる cloudbuild.yaml」を指定して使用
+#
+# 変数: トリガーで SERVICE_NAME / _REGION を定義するか、以下を編集してください。
+substitutions:
+  _SERVICE_NAME: lopia-thailand-sales-manage
+  _REGION: asia-northeast1
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${SHORT_SHA}', '.']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${SHORT_SHA}']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - '${_SERVICE_NAME}'
+      - '--image'
+      - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${SHORT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+
+images:
+  - 'gcr.io/${PROJECT_ID}/${_SERVICE_NAME}:${SHORT_SHA}'

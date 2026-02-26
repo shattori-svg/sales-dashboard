@@ -2,16 +2,20 @@
 
 この形式の CSV は、Setup 画面からのアップロードおよび `POST /api/upload`（multipart/form-data、`files` に CSV ファイル）で取り込みできます。
 
+## 列の並び順
+
+**売上日 → 店舗 → 部門 → 時間 → 各実績値** の順とすること。
+
 ## ヘッダー（1行目）
 
 ```
-Business_Date,Store_Id,Start_Time,End_Time,Department_Code,Net_Sales,Gross_Sales,Quantity_Sold,Receipt_Count
+Business_Date,Store_Id,Department_Code,Start_Time,End_Time,Net_Sales,Gross_Sales,Quantity_Sold,Receipt_Count
 ```
 
 - **Business_Date**: 営業日（YYYY-MM-DD）
 - **Store_Id**: 店舗ID（必須。例: 1001）
-- **Start_Time**, **End_Time**: 時間帯（例: 10:00, 11:00）。空欄の行は日計行
 - **Department_Code**: 00＝店舗合計、01～06＝部門
+- **Start_Time**, **End_Time**: 時間帯（HH:MM のみ。例: 10:00, 11:00）。空欄の行は日計行
 - **Net_Sales**, **Gross_Sales**: 正味売上・総売上（数値）
 - **Quantity_Sold**: 販売数量
 - **Receipt_Count**: レシート数（Total のみ。部門行は空欄可）

@@ -112,11 +112,21 @@ server {
 
 ## 6. Google Cloud にデプロイする
 
-### 6.1 Cloud Run（コンテナ）
+### 6.1 Cloud Run（コンテナ）— Git 経由が推奨
 
-- このリポジトリには **Dockerfile** があるので、Cloud Build でイメージをビルドし、Cloud Run にデプロイできます。
-- Cloud Run の **環境変数**に `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `LOGIN_PASSWORD` 等を設定。
-- 本番では **Supabase** を使い、SQLite は使いません（Cloud Run のディスクは一時的であるため、元々 SQLite は不向き）。
+**通常の運用（Git 経由）**
+
+1. コードをコミットして `main` に push する。
+2. Cloud Build のトリガーが設定されていれば、自動でビルド・Cloud Run へデプロイされる。
+3. ビルド状況は **Cloud Console** → **Cloud Build** → **履歴** で確認。
+
+詳細なコマンド例・トリガー初回設定は、ルートの **[DEPLOY.md](../DEPLOY.md)** の「デプロイ手順（Git 経由）」を参照してください。
+
+**技術メモ**
+
+- リポジトリに **Dockerfile** があるため、Cloud Build でイメージをビルドし、Cloud Run にデプロイできる。
+- Cloud Run の **環境変数**（変数とシークレット）に `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `LOGIN_PASSWORD` 等を設定する。
+- 本番では **Supabase** を使い、SQLite は使わない（Cloud Run のディスクは一時的であるため）。
 
 ### 6.2 GCE（VM）で Node + nginx
 
@@ -136,4 +146,5 @@ server {
 | **DB** | 本番は **SQLite を使わず Supabase**（既存コードのまま利用可能） |
 | **Render** | 簡易・検証用には可。本番・多アクセス用途では上記構成を推奨 |
 
-簡易デプロイ手順（Render / Railway / Fly.io）はルートの **DEPLOY.md** を参照してください。
+- **Git 経由のデプロイ手順**（push から Cloud Run まで）: ルートの **DEPLOY.md** の「デプロイ手順（Git 経由）」を参照。
+- 簡易ホスティング（Render / Railway / Fly.io）も **DEPLOY.md** に記載。

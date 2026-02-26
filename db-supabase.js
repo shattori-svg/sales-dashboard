@@ -99,6 +99,23 @@ function getAvailableDates(storeId = 'default') {
     });
 }
 
+function getUploadLog(limit = 200) {
+  const cap = Math.min(Number(limit) || 200, 500);
+  return supabase
+    .from(TABLE)
+    .select('store_id, business_date, created_at')
+    .order('created_at', { ascending: false })
+    .limit(cap)
+    .then(({ data: rows, error }) => {
+      if (error) throw error;
+      return (rows || []).map((r) => ({
+        storeId: r.store_id,
+        businessDate: r.business_date,
+        receivedAt: r.created_at,
+      }));
+    });
+}
+
 function businessHoursKey(storeId) {
   const sid = normStoreId(storeId);
   return sid === 'default' ? BUSINESS_HOURS_KEY : 'bh:' + sid;
@@ -150,6 +167,7 @@ module.exports = {
   saveReport,
   getReport,
   getAvailableDates,
+  getUploadLog,
   getBusinessHours,
   saveBusinessHours,
 };

@@ -283,7 +283,7 @@ const DEPARTMENT_CODE_TO_NAME = {
 /**
  * Parse CSV in agreed format. Returns same shape as parseSheet():
  * { businessDate, storeId, storeName, total: { hourly, totalRow }, byDepartment }.
- * Header: Business_Date,Store_Id,Start_Time,End_Time,Department_Code,Net_Sales,Gross_Sales,Quantity_Sold,Receipt_Count
+ * Header (column order): Business_Date,Store_Id,Department_Code,Start_Time,End_Time,Net_Sales,Gross_Sales,Quantity_Sold,Receipt_Count
  */
 function parseCsv(buffer) {
   const text = (buffer instanceof Buffer ? buffer.toString('utf8') : String(buffer))

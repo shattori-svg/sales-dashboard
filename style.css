@@ -535,23 +535,41 @@ main {
   background: var(--total-bg);
 }
 
-/* Department tables (weekly/daily): fixed layout, equal column widths */
+/* Department tables (weekly/daily) */
 .report-table.daily-table {
-  table-layout: fixed;
+  table-layout: auto;
 }
 
 .report-table.daily-table th:first-child,
 .report-table.daily-table td:first-child {
-  width: 14%;
   min-width: 6rem;
+  max-width: 12rem;
   box-sizing: border-box;
 }
 
 .report-table.daily-table th:last-child,
 .report-table.daily-table td:last-child {
-  width: 10%;
-  min-width: 4.5rem;
+  min-width: 5rem;
   box-sizing: border-box;
+}
+
+/* 日別の日付列: 最小幅で数値がはみ出さないようにし、横スクロールで対応 */
+.report-table.daily-table th:nth-child(n+2):not(:last-child),
+.report-table.daily-table td:nth-child(n+2):not(:last-child) {
+  min-width: 5.5rem;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+/* 日別・週別の広い表を横スクロール可能にする */
+.daily-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: var(--space-sm);
+}
+
+.daily-table-wrapper .daily-table {
+  margin-bottom: 0;
 }
 
 .summary-table {

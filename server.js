@@ -9,7 +9,7 @@ const multer = require('multer');
 const { parseSheet, parseCsv } = require('./parser');
 const useSupabase = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 const db = useSupabase ? require('./db-supabase') : require('./db');
-const { getStores, saveStores, saveReport, getReport, getAvailableDates, getBusinessHours, saveBusinessHours } = db;
+const { getStores, saveStores, saveReport, getReport, getAvailableDates, getUploadLog, getBusinessHours, saveBusinessHours } = db;
 
 const app = express();
 const PORT = process.env.PORT || 3333;
@@ -181,6 +181,17 @@ app.get('/api/dates', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message || 'Failed to get dates.' });
+  }
+});
+
+app.get('/api/upload-log', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
+    const logs = await getUploadLog(limit);
+    res.json({ logs });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to get upload log.' });
   }
 });
 

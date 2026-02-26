@@ -28,6 +28,14 @@
     var el = document.getElementById('store-select');
     return el && el.value ? el.value : 'default';
   }
+  function getDailyStoreId() {
+    var el = document.getElementById('daily-store-select');
+    return el && el.value ? el.value : 'default';
+  }
+  function getWeeklyStoreId() {
+    var el = document.getElementById('weekly-store-select');
+    return el && el.value ? el.value : 'default';
+  }
 
   var DEPARTMENTS = ['Grocery', 'Fruit & Vegetable', 'Fish & Seafood', 'Meat', 'Delicatessen', 'Store Management'];
   var DEPARTMENT_COLORS = ['#9333ea', '#22c55e', '#38bdf8', '#ec4899', '#f97316', '#1f2937'];
@@ -1110,7 +1118,7 @@
 
   function refreshDailyDateSelect() {
     showLoading();
-    var storeId = getSelectedStoreId();
+    var storeId = getDailyStoreId();
     fetch('/api/dates?storeId=' + encodeURIComponent(storeId)).then(function (res) { return parseJsonResponse(res); }).then(function (body) {
       var dates = body.dates || [];
       var startEl = document.getElementById('daily-start-date');
@@ -1145,7 +1153,7 @@
     }
     if (emptyEl) emptyEl.hidden = true;
     showLoading();
-    var storeId = getSelectedStoreId();
+    var storeId = getDailyStoreId();
     var url = '/api/daily-summary?referenceDate=' + encodeURIComponent(endDate) + '&storeId=' + encodeURIComponent(storeId);
     if (startDate && startDate <= endDate) {
       url += '&startDate=' + encodeURIComponent(startDate);
@@ -1181,7 +1189,7 @@
       });
       totalRow.push(grandTotalSales);
 
-      var table1 = '<section class="summary-section"><h3>' + t('daily_sales_by_dept') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('department') + '</th>';
+      var table1 = '<section class="summary-section"><h3>' + t('daily_sales_by_dept') + '</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('department') + '</th>';
       dateLabels.forEach(function (l) { table1 += '<th>' + l + '</th>'; });
       table1 += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
       deptOrder.forEach(function (dept) {
@@ -1196,9 +1204,9 @@
       });
       table1 += '<tr class="total-row"><td>' + t('total_header') + '</td>';
       totalRow.forEach(function (v) { table1 += '<td>' + formatInt(v) + '</td>'; });
-      table1 += '</tr></tbody></table></section>';
+      table1 += '</tr></tbody></table></div></section>';
 
-      var table1b = '<section class="summary-section"><h3>' + t('daily_composition_pct') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('department') + '</th>';
+      var table1b = '<section class="summary-section"><h3>' + t('daily_composition_pct') + '</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('department') + '</th>';
       dateLabels.forEach(function (l) { table1b += '<th>' + l + '</th>'; });
       table1b += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
       deptOrder.forEach(function (dept) {
@@ -1214,7 +1222,7 @@
       });
       table1b += '<tr class="total-row"><td>' + t('total_header') + '</td>';
       days.forEach(function (d) { table1b += '<td>100%</td>'; });
-      table1b += '<td>100%</td></tr></tbody></table></section>';
+      table1b += '<td>100%</td></tr></tbody></table></div></section>';
 
       var salesPerHour = days.map(function (d) {
         var h = d.hoursCount || 1;
@@ -1251,7 +1259,7 @@
       weeklyTotalHtml += '<tr><td>' + t('avg_receipt_value') + '</td><td>' + (totalReceipts ? formatInt(Math.round(grandTotalSales / totalReceipts)) : '—') + ' ' + t('currency_unit') + '</td></tr>';
       weeklyTotalHtml += '</tbody></table></section>';
 
-      var table2 = '<section class="summary-section"><h3>' + t('key_metrics') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('metric') + '</th>';
+      var table2 = '<section class="summary-section"><h3>' + t('key_metrics') + '</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('metric') + '</th>';
       dateLabels.forEach(function (l) { table2 += '<th>' + l + '</th>'; });
       table2 += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
       table2 += '<tr><td>' + t('sales_per_hour') + ' (' + t('currency_unit') + ')</td>';
@@ -1275,7 +1283,7 @@
       table2 += '<tr><td>' + t('avg_item_price') + ' (' + t('currency_unit') + ')</td>';
       avgItemPrice.forEach(function (v) { table2 += '<td>' + formatInt(v) + '</td>'; });
       table2 += '<td>' + (totalQty ? formatInt(Math.round(grandTotalSales / totalQty)) : '—') + '</td></tr>';
-      table2 += '</tbody></table></section>';
+      table2 += '</tbody></table></div></section>';
 
       var chartSectionHtml = '<section class="summary-section chart-section"><h3 class="chart-title">' + t('daily_sales_by_dept') + '</h3><div class="chart-wrapper"><canvas id="daily-chart-sales"></canvas></div><h3 class="chart-title">' + t('daily_composition_pct') + '</h3><div class="chart-wrapper"><canvas id="daily-chart-composition"></canvas></div><h3 class="chart-title">' + t('key_metrics_trend') + '</h3><div class="chart-wrapper"><canvas id="daily-chart-metrics"></canvas></div></section>';
 
@@ -1398,7 +1406,7 @@
 
   function refreshWeeklyDateSelect() {
     showLoading();
-    var storeId = getSelectedStoreId();
+    var storeId = getWeeklyStoreId();
     fetch('/api/dates?storeId=' + encodeURIComponent(storeId)).then(function (res) { return parseJsonResponse(res); }).then(function (body) {
       var dates = body.dates || [];
       var el = document.getElementById('weekly-end-date');
@@ -1430,7 +1438,7 @@
     var apiEndDate = addDays(firstMonday, daysToFetch - 1);
     if (emptyEl) emptyEl.hidden = true;
     showLoading();
-    var storeId = getSelectedStoreId();
+    var storeId = getWeeklyStoreId();
     fetch('/api/daily-summary?referenceDate=' + encodeURIComponent(apiEndDate) + '&days=' + daysToFetch + '&storeId=' + encodeURIComponent(storeId)).then(function (res) {
       return parseJsonResponse(res).then(function (body) {
         if (!res.ok) throw new Error(body.error || 'Failed to load weekly summary');
@@ -1544,20 +1552,33 @@
 
   function fillStoreSelect() {
     var sel = document.getElementById('store-select');
+    var dailySel = document.getElementById('daily-store-select');
+    var weeklySel = document.getElementById('weekly-store-select');
     if (!sel) return Promise.resolve();
     return fetch('/api/stores').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
       var stores = body.stores || [];
       if (stores.length === 0) stores = [{ id: 'default', name: 'Default' }];
-      sel.innerHTML = '';
-      stores.forEach(function (s) {
-        var opt = document.createElement('option');
-        opt.value = s.id;
-        opt.textContent = s.name || s.id;
-        sel.appendChild(opt);
-      });
+      function fillOne(selectEl) {
+        if (!selectEl) return;
+        var currentVal = selectEl.value;
+        selectEl.innerHTML = '';
+        stores.forEach(function (s) {
+          var opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = s.name || s.id;
+          selectEl.appendChild(opt);
+        });
+        if (currentVal && stores.some(function (s) { return s.id === currentVal; })) selectEl.value = currentVal;
+      }
+      fillOne(sel);
+      fillOne(dailySel);
+      fillOne(weeklySel);
       state.storeId = getSelectedStoreId();
     }).catch(function () {
-      sel.innerHTML = '<option value="default">Default</option>';
+      var def = '<option value="default">Default</option>';
+      if (sel) sel.innerHTML = def;
+      if (dailySel) dailySel.innerHTML = def;
+      if (weeklySel) weeklySel.innerHTML = def;
       state.storeId = 'default';
     });
   }
@@ -1566,8 +1587,6 @@
     state.storeId = getSelectedStoreId();
     fetchBusinessHours();
     refreshOutputDateSelect();
-    refreshDailyDateSelect();
-    refreshWeeklyDateSelect();
   }
 
     function updateLogoutVisibility() {
@@ -1619,11 +1638,15 @@
       }).then(function () { hideLoading(); }).catch(function () { hideLoading(); });
     });
 
+    var dailyStoreEl = document.getElementById('daily-store-select');
+    if (dailyStoreEl) dailyStoreEl.addEventListener('change', function () { refreshDailyDateSelect(); });
     var dailyStartEl = document.getElementById('daily-start-date');
     var dailyEndEl = document.getElementById('daily-end-date');
     if (dailyStartEl) dailyStartEl.addEventListener('change', renderDailySummary);
     if (dailyEndEl) dailyEndEl.addEventListener('change', renderDailySummary);
 
+    var weeklyStoreEl = document.getElementById('weekly-store-select');
+    if (weeklyStoreEl) weeklyStoreEl.addEventListener('change', function () { refreshWeeklyDateSelect(); });
     var weeklyEndEl = document.getElementById('weekly-end-date');
     var weeklyNumEl = document.getElementById('weekly-num-weeks');
     if (weeklyEndEl) weeklyEndEl.addEventListener('change', renderWeeklySummary);

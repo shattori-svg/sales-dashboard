@@ -2,8 +2,8 @@
 
 /**
  * Reads "Daily Sales Report (Hourly Sales by Department)" Excel and outputs
- * CSV in the agreed format:
- * Business_Date, Store_Id, Start_Time, End_Time, Department_Code, Net_Sales, Gross_Sales, Quantity_Sold, Receipt_Count
+ * CSV in the agreed format (column order: 売上日→店舗→部門→時間→実績):
+ * Business_Date, Store_Id, Department_Code, Start_Time, End_Time, Net_Sales, Gross_Sales, Quantity_Sold, Receipt_Count
  * - Department_Code 00 = day total row (empty Start_Time/End_Time) + hourly total rows (one per time slot)
  * - 01-06 = department (Grocery, Fruit & Vegetable, Fish & Seafood, Meat, Delicatessen, Store Management)
  */
@@ -48,7 +48,7 @@ function run(inputPath, outputPath) {
   const businessDate = data.businessDate || '';
 
   const rows = [];
-  rows.push('Business_Date,Store_Id,Start_Time,End_Time,Department_Code,Net_Sales,Gross_Sales,Quantity_Sold,Receipt_Count');
+  rows.push('Business_Date,Store_Id,Department_Code,Start_Time,End_Time,Net_Sales,Gross_Sales,Quantity_Sold,Receipt_Count');
 
   // 1) Day total row (Department_Code 00, empty Start_Time/End_Time)
   const tr = data.total.totalRow;
@@ -56,9 +56,9 @@ function run(inputPath, outputPath) {
     rows.push([
       escapeCsv(businessDate),
       escapeCsv(storeId),
-      '',
-      '',
       '00',
+      '',
+      '',
       escapeCsv(tr.netSales),
       escapeCsv(tr.grossSales),
       escapeCsv(tr.quantitySold),
@@ -73,9 +73,9 @@ function run(inputPath, outputPath) {
     rows.push([
       escapeCsv(businessDate),
       escapeCsv(storeId),
+      '00',
       escapeCsv(startTime.trim()),
       escapeCsv(endTime.trim()),
-      '00',
       escapeCsv(h.netSales),
       escapeCsv(h.grossSales != null ? h.grossSales : ''),
       escapeCsv(h.quantitySold),
@@ -93,9 +93,9 @@ function run(inputPath, outputPath) {
       rows.push([
         escapeCsv(businessDate),
         escapeCsv(storeId),
+        code,
         escapeCsv(startTime.trim()),
         escapeCsv(endTime.trim()),
-        code,
         escapeCsv(h.netSales),
         escapeCsv(h.grossSales != null ? h.grossSales : ''),
         escapeCsv(h.quantitySold),
@@ -111,6 +111,8 @@ function run(inputPath, outputPath) {
   console.log('Rows:', rows.length - 1);
 }
 
-const input = process.argv[2] || path.join(__dirname, '..', 'Daily Sales Report (Hourly Sales by Department) (34).xlsx');
+// Usage: node excel-to-csv.js [input.xlsx] [output.csv]
+// Example: node excel-to-csv.js "Daily Sales Report (Hourly Sales by Department) (52).xlsx"
+const input = process.argv[2] || path.join(__dirname, '..', 'Daily Sales Report (Hourly Sales by Department) (52).xlsx');
 const output = process.argv[3];
 run(input, output);

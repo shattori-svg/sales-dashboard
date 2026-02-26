@@ -201,7 +201,13 @@
       <h3 class="section-title" data-i18n="daily_section_title">Daily aggregation (weekly trend and composition)</h3>
       <p class="hint" data-i18n="daily_hint">View weekly sales trend and department composition by day.</p>
       <div class="output-header">
-        <label for="daily-start-date" data-i18n="daily_start_date">Start date</label>
+        <span class="output-header-item">
+          <label for="daily-store-select" class="store-label" data-i18n="store">店舗</label>
+          <select id="daily-store-select" aria-label="Select store for daily view">
+            <option value="default">Default</option>
+          </select>
+        </span>
+        <label for="daily-start-date" class="output-header-sep" data-i18n="daily_start_date">Start date</label>
         <input type="date" id="daily-start-date" aria-label="Select start date for daily view">
         <label for="daily-end-date" class="output-header-sep" data-i18n="daily_end_date">End date</label>
         <input type="date" id="daily-end-date" aria-label="Select end date for daily view">
@@ -223,7 +229,13 @@
       <h3 class="section-title" data-i18n="weekly_section_title">週別集計</h3>
       <p class="hint" data-i18n="weekly_hint">週単位で売上・部門別構成を表示します。</p>
       <div class="output-header">
-        <label for="weekly-end-date" data-i18n="weekly_end_date">週の終了日</label>
+        <span class="output-header-item">
+          <label for="weekly-store-select" class="store-label" data-i18n="store">店舗</label>
+          <select id="weekly-store-select" aria-label="Select store for weekly view">
+            <option value="default">Default</option>
+          </select>
+        </span>
+        <label for="weekly-end-date" class="output-header-sep" data-i18n="weekly_end_date">週の終了日</label>
         <input type="date" id="weekly-end-date" aria-label="Select end date for weekly view">
         <label for="weekly-num-weeks" class="output-header-sep" data-i18n="num_weeks">表示週数</label>
         <select id="weekly-num-weeks" aria-label="Number of weeks">

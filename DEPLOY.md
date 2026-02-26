@@ -1,8 +1,59 @@
 # Deploying to the cloud
 
-This app can run on any Node.js host. Below are steps for common platforms.
+このアプリは任意の Node.js ホストで動作します。以下は代表的なプラットフォームの手順です。
 
-## 本番・多数アクセス時（推奨）
+---
+
+## デプロイ手順（Git 経由・推奨）
+
+本番で **Google Cloud Run** を使う場合、Git に push するだけでデプロイできます。
+
+### 1. 日々のデプロイ（コードを反映するとき）
+
+アプリの変更をコミットして `main` に push します。Cloud Build トリガーを設定済みなら、push 後に自動でビルド・デプロイされます。
+
+```bash
+# 変更をステージ（*.xlsx / *.csv は .gitignore で除外されます）
+git add .gitignore app.js server.js index.html parser.js ...
+# または一括: git add -A   （不要なファイルは .gitignore で除外）
+
+git status   # 確認
+
+git commit -m "説明メッセージ"
+git push origin main
+```
+
+**PowerShell（Windows）の例:**
+
+```powershell
+cd "c:\path\to\Sales_reports"
+git add .gitignore app.js server.js index.html
+git commit -m "機能追加: ..."
+git push origin main
+```
+
+- ビルド状況: [Google Cloud Console](https://console.cloud.google.com/) → **Cloud Build** → **履歴**
+- デプロイ先: **Cloud Run** → 対象サービス → **URL** で確認
+
+### 2. 初回のみ: Cloud Build トリガーの設定
+
+Git push で自動デプロイするには、GCP でトリガーを 1 回だけ作成します。
+
+1. [Cloud Console](https://console.cloud.google.com/) でプロジェクトを選択。
+2. **Cloud Build** → **トリガー** → **トリガーを作成**。
+3. 設定例:
+   - **名前**: 任意（例: `deploy-sales-report`）
+   - **イベント**: ブランチに push したとき
+   - **ソース**: このリポジトリ（GitHub 連携済み）
+   - **ブランチ**: `^main$`
+   - **構成**: **Cloud Build 構成ファイル（リポジトリに含まれる）** を選び、`cloudbuild.yaml` を指定（ルートにあります）。
+4. 保存後、上記「1. 日々のデプロイ」の push で自動デプロイされます。
+
+`cloudbuild.yaml` ではサービス名・リージョンの既定値が `lopia-thailand-sales-manage` / `asia-northeast1` です。変更する場合はファイル内の `_SERVICE_NAME` と `_REGION` を編集するか、トリガーの「 substitution 変数」で上書きできます。
+
+---
+
+## 本番・多数アクセス時（推奨構成）
 
 **守屋さんアドバイス**: Render だけだと多数アクセスで負荷がかかるため、本番では次の構成を推奨します。
 
@@ -14,12 +65,14 @@ This app can run on any Node.js host. Below are steps for common platforms.
 
 ---
 
-## Prerequisites
+## 前提
 
-- Git repository (e.g. GitHub) with this project
-- Node.js 18+ (set in `package.json` engines)
+- このプロジェクトの **Git リポジトリ**（GitHub 等）があること
+- Node.js 18+（`package.json` の engines を参照）
 
-**SQLite** (`data/sales.db`) はローカル・検証向け。本番や複数インスタンスでは **Supabase** を利用してください（下記 Environment variables 参照）。PaaS の一時ディスクでは SQLite のデータは再起動で消える場合があります。
+**SQLite**（`data/sales.db`）はローカル・検証向けです。本番や複数インスタンスでは **Supabase** を利用してください（下記 Environment variables 参照）。PaaS の一時ディスクでは SQLite のデータは再起動で消える場合があります。
+
+**注意**: `.gitignore` で `*.xlsx` / `*.csv` を除外しているため、レポート用ファイルは push されません。デプロイに含めたいファイルだけ `git add` してください。
 
 ---
 
@@ -73,24 +126,20 @@ This app can run on any Node.js host. Below are steps for common platforms.
 
 ## Google Cloud Run
 
-**A) リポジトリ連携（推奨）**  
-GitHub に Cloud Build トリガーを設定している場合、main に push すると自動でビルド・デプロイされます。
-
-```bash
-git add -A
-git commit -m "your message"
-git push origin main
-```
+**A) Git 経由（推奨）**  
+上記「デプロイ手順（Git 経由）」のとおり、`main` に push すると Cloud Build が走り、Cloud Run に自動デプロイされます。トリガー未設定の場合は「初回のみ: Cloud Build トリガーの設定」を実施してください。
 
 **B) 手動デプロイ**  
-[Google Cloud SDK](https://cloud.google.com/sdk/docs/install) をインストール後、プロジェクトで:
+gcloud が使える環境で、リポジトリのルートで実行します。
 
 ```bash
-gcloud config set project lopia-thailand-sales-manage
-gcloud run deploy lopia-thailand-sales-manage --source . --region asia-northeast1
+gcloud config set project <あなたのプロジェクトID>
+gcloud run deploy lopia-thailand-sales-manage --source . --region asia-northeast1 --allow-unauthenticated
 ```
 
-環境変数（Supabase 等）は Cloud Run の「変数とシークレット」で設定してください。
+- `--source .` でカレントディレクトリから Dockerfile を使ってビルドし、そのイメージを Cloud Run にデプロイします。
+- プロジェクト名・リージョン（例: `asia-northeast1`）は環境に合わせて変更してください。
+- **環境変数**: Cloud Run の **変数とシークレット** で `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `LOGIN_PASSWORD` 等を設定してください。
 
 ---
 
@@ -109,10 +158,10 @@ gcloud run deploy lopia-thailand-sales-manage --source . --region asia-northeast
 
 ---
 
-## After deployment
+## デプロイ後
 
-1. Open the app URL in a browser.
-2. Use **Input** to upload Excel files and generate reports.
-3. Use **時間別集計** and **日別集計** tabs to view data.
+1. Cloud Run のサービス URL をブラウザで開く。
+2. **Setup** から Excel/CSV をアップロードしてレポートを生成する。
+3. **時間別集計**・**日別集計**・**週別集計** タブでデータを確認する。
 
-If the platform uses an ephemeral filesystem, uploaded data will disappear on restart; use a persistent disk or external database for long-term storage.
+一時ディスクの環境では再起動でアップロードデータが消えるため、本番では **Supabase** 等の永続 DB を利用してください。

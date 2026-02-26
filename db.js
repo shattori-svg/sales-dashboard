@@ -105,6 +105,13 @@ function getAvailableDates(storeId = 'default') {
   return Promise.resolve(rows.map((r) => r.business_date));
 }
 
+function getUploadLog(limit = 200) {
+  const rows = db.prepare(
+    'SELECT store_id AS storeId, business_date AS businessDate, created_at AS receivedAt FROM reports ORDER BY created_at DESC LIMIT ?'
+  ).all(Math.min(Number(limit) || 200, 500));
+  return Promise.resolve(rows);
+}
+
 const BUSINESS_HOURS_KEY = 'business_hours';
 
 function businessHoursKey(storeId) {
@@ -146,6 +153,7 @@ module.exports = {
   saveReport,
   getReport,
   getAvailableDates,
+  getUploadLog,
   getBusinessHours,
   saveBusinessHours,
 };

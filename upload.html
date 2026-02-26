@@ -13,6 +13,7 @@
 
   <nav class="tabs" aria-label="Setup sections">
     <button type="button" class="tab active" data-tab="upload" aria-selected="true">アップロード</button>
+    <button type="button" class="tab" data-tab="log" aria-selected="false">データ受信ログ</button>
     <button type="button" class="tab" data-tab="stores" aria-selected="false">店舗マスター</button>
     <button type="button" class="tab" data-tab="settings" aria-selected="false">各種設定</button>
   </nav>
@@ -32,6 +33,26 @@
       </div>
 
       <p id="upload-error" class="error" role="alert" hidden></p>
+    </section>
+
+    <section id="log-panel" class="panel" style="max-width: 720px;">
+      <p class="hint"><a href="/">← Back to Report</a></p>
+      <h2>データ受信ログ</h2>
+      <p class="hint">アップロードされたデータの受信日時・店舗・取引日を一覧表示します。新しい順です。</p>
+      <div class="table-wrapper">
+        <table class="report-table" aria-label="Data reception log">
+          <thead>
+            <tr>
+              <th>受信日時</th>
+              <th>店舗 ID</th>
+              <th>取引日</th>
+            </tr>
+          </thead>
+          <tbody id="upload-log-tbody">
+          </tbody>
+        </table>
+      </div>
+      <p id="upload-log-empty" class="hint" aria-live="polite">読み込み中…</p>
     </section>
 
     <section id="stores-panel" class="panel" style="max-width: 640px;">
