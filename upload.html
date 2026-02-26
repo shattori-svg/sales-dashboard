@@ -3,16 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Data Upload — LOPIA Thailand Sales Report</title>
+  <title>Setup — LOPIA Thailand Sales Report</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
-    <h1>LOPIA Thailand Sales Report — Data Upload</h1>
+    <h1>LOPIA Thailand Sales Report — Setup</h1>
   </header>
 
-  <nav class="tabs" aria-label="Upload and settings">
+  <nav class="tabs" aria-label="Setup sections">
     <button type="button" class="tab active" data-tab="upload" aria-selected="true">アップロード</button>
+    <button type="button" class="tab" data-tab="stores" aria-selected="false">店舗マスター</button>
     <button type="button" class="tab" data-tab="settings" aria-selected="false">各種設定</button>
   </nav>
 
@@ -20,7 +21,7 @@
     <section id="upload-panel" class="panel active" style="max-width: 560px;">
       <p class="hint"><a href="/">← Back to Report</a></p>
       <h2>Data Upload</h2>
-      <p class="hint">Upload one or more Excel files. Each file's BusinessDate is used to assign it as Today, Yesterday, or Last Week. Only users with this page URL can upload data.</p>
+      <p class="hint">Upload one or more Excel files. Store and Business Date are read from each file; each file is saved under the store indicated in the file. Only users with this page URL can upload data.</p>
 
       <div class="upload-form">
         <div class="upload-group">
@@ -31,6 +32,26 @@
       </div>
 
       <p id="upload-error" class="error" role="alert" hidden></p>
+    </section>
+
+    <section id="stores-panel" class="panel" style="max-width: 640px;">
+      <p class="hint"><a href="/">← Back to Report</a></p>
+      <h2>店舗マスター (Store Master)</h2>
+      <p class="hint">登録した店舗がレポート・アップロードの店舗選択に表示されます。ID は半角英数字で一意にしてください。</p>
+      <table class="report-table" aria-label="Store list">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>店舗名 (Name)</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="stores-tbody">
+        </tbody>
+      </table>
+      <button type="button" id="btn-add-store" class="btn-primary" style="margin-top: 0.5rem;">行を追加</button>
+      <button type="button" id="btn-save-stores" class="btn-primary" style="margin-top: 0.5rem; margin-left: 0.5rem;">保存</button>
+      <p id="stores-save-status" class="hint" style="margin-top: 0.25rem;" aria-live="polite"></p>
     </section>
 
     <section id="settings-panel" class="panel" style="max-width: 560px;">

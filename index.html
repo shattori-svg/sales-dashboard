@@ -15,13 +15,16 @@
   </div>
   <header>
     <h1 data-i18n="app_title">LOPIA Thailand Sales Report</h1>
-    <div class="lang-switcher">
-      <label for="lang-select" class="lang-label" data-i18n="lang_label">Language</label>
-      <select id="lang-select" aria-label="Language">
-        <option value="ja">日本語</option>
-        <option value="en">English</option>
-        <option value="th">ไทย</option>
-      </select>
+    <div class="header-actions">
+      <div class="lang-switcher">
+        <label for="lang-select" class="lang-label" data-i18n="lang_label">Language</label>
+        <select id="lang-select" aria-label="Language">
+          <option value="ja">日本語</option>
+          <option value="en">English</option>
+          <option value="th">ไทย</option>
+        </select>
+      </div>
+      <a href="/logout" id="logout-link" class="logout-link" data-i18n="logout">ログアウト</a>
     </div>
   </header>
 
@@ -34,33 +37,49 @@
   <main>
     <section id="hourly-panel" class="panel active">
       <div class="output-header">
-        <label for="output-date" data-i18n="output_date">Output date</label>
-        <input type="date" id="output-date" aria-label="Select output date">
-        <label for="department-select" class="output-header-sep" data-i18n="display">Display</label>
-        <select id="department-select" aria-label="Select department or total">
-          <option value="Total">Total</option>
-          <option value="Grocery">Grocery</option>
-          <option value="Fruit & Vegetable">Fruit & Vegetable</option>
-          <option value="Fish & Seafood">Fish & Seafood</option>
-          <option value="Meat">Meat</option>
-          <option value="Delicatessen">Delicatessen</option>
-          <option value="Store Management">Store Management</option>
-        </select>
-        <label for="time-start" class="time-range-label" data-i18n="time_range">Time range</label>
-        <select id="time-start" aria-label="Start time">
-          <!-- filled by app.js -->
-        </select>
-        <span class="time-range-sep">～</span>
-        <select id="time-end" aria-label="End time">
-          <!-- filled by app.js -->
-        </select>
-        <label for="hourly-export-select" class="output-header-sep" data-i18n="output_data">出力データ</label>
-        <select id="hourly-export-select" aria-label="Select data to export">
-          <option value="hourly" data-i18n-option="export_option_hourly_table">時間別表</option>
-          <option value="summary" data-i18n-option="export_option_summary">サマリー</option>
-          <option value="all" data-i18n-option="output_all">すべて</option>
-        </select>
-        <button type="button" id="btn-hourly-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
+        <span class="output-header-item">
+          <label for="store-select" class="store-label" data-i18n="store">店舗</label>
+          <select id="store-select" aria-label="Select store">
+            <option value="default">Default</option>
+          </select>
+        </span>
+        <span class="output-header-item">
+          <label for="department-select" class="output-header-sep" data-i18n="department">Department</label>
+          <select id="department-select" aria-label="Select department or total">
+            <option value="Total">Total</option>
+            <option value="Grocery">Grocery</option>
+            <option value="Fruit & Vegetable">Fruit & Vegetable</option>
+            <option value="Fish & Seafood">Fish & Seafood</option>
+            <option value="Meat">Meat</option>
+            <option value="Delicatessen">Delicatessen</option>
+            <option value="Store Management">Store Management</option>
+          </select>
+        </span>
+        <span class="output-header-item">
+          <label for="output-date" class="output-header-sep" data-i18n="output_date">Output date</label>
+          <input type="date" id="output-date" aria-label="Select output date">
+        </span>
+        <span class="output-header-item output-header-time-range">
+          <label for="time-start" class="time-range-label" data-i18n="time_range">Time range</label>
+          <select id="time-start" aria-label="Start time">
+            <!-- filled by app.js -->
+          </select>
+          <span class="time-range-sep">～</span>
+          <select id="time-end" aria-label="End time">
+            <!-- filled by app.js -->
+          </select>
+        </span>
+        <span class="output-header-item">
+          <label for="hourly-export-select" class="output-header-sep" data-i18n="output_data">出力データ</label>
+          <select id="hourly-export-select" aria-label="Select data to export">
+            <option value="hourly" data-i18n-option="export_option_hourly_table">時間別表</option>
+            <option value="summary" data-i18n-option="export_option_summary">サマリー</option>
+            <option value="all" data-i18n-option="output_all">すべて</option>
+          </select>
+        </span>
+        <span class="output-header-item">
+          <button type="button" id="btn-hourly-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
+        </span>
       </div>
       <p id="last-upload-time" class="last-upload-time" aria-live="polite"></p>
 

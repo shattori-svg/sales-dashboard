@@ -68,6 +68,29 @@ function findBusinessDateColumn(headerRow) {
   return COL.BusinessDate;
 }
 
+/** Find column index for Store from header row (row 0). Returns -1 if not found. */
+function findStoreColumn(headerRow) {
+  if (!headerRow || !Array.isArray(headerRow)) return -1;
+  const lower = (x) => (x == null ? '' : String(x).toLowerCase().trim());
+  for (let i = 0; i < headerRow.length; i++) {
+    const cell = lower(headerRow[i]);
+    if (cell === 'store' || cell === 'store name' || cell === 'store name 2' || cell === '店舗' || cell === 'location' || (cell.includes('store') && !cell.includes('management'))) return i;
+  }
+  return -1;
+}
+
+/** Slugify store name for use as storeId (lowercase, spaces to hyphen, alphanumeric + hyphen). */
+function slugifyStoreId(name) {
+  if (name == null || String(name).trim() === '') return 'default';
+  return String(name)
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9\-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'default';
+}
+
 function formatTimeRange(start, end) {
   const s = start != null ? String(start).trim() : '';
   const e = end != null ? String(end).trim() : '';
@@ -102,7 +125,9 @@ function parseSheet(buffer) {
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: null });
   if (!rows.length) return null;
 
-  const businessDateCol = findBusinessDateColumn(rows[0]);
+  const headerRow = rows[0];
+  const businessDateCol = findBusinessDateColumn(headerRow);
+  const storeCol = findStoreColumn(headerRow);
 
   const total = { hourly: [], totalRow: null };
   const byDept = {};
@@ -111,11 +136,15 @@ function parseSheet(buffer) {
   });
 
   let businessDate = null;
+  let storeName = null;
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (businessDate == null && row[businessDateCol] != null && String(row[businessDateCol]).trim() !== '') {
       businessDate = parseBusinessDate(row[businessDateCol]);
+    }
+    if (storeName == null && storeCol >= 0 && row[storeCol] != null && String(row[storeCol]).trim() !== '') {
+      storeName = String(row[storeCol]).trim();
     }
     const startTime = row[COL.Start_Time];
     const endTime = row[COL.End_Time];
@@ -174,7 +203,14 @@ function parseSheet(buffer) {
     byDept[k].hourly.sort(sortByTimeKey);
   });
 
-  return { businessDate, total, byDepartment: byDept };
+  const storeId = storeName ? slugifyStoreId(storeName) : 'default';
+  return {
+    businessDate,
+    storeId: storeId || 'default',
+    storeName: storeName || 'Default',
+    total,
+    byDepartment: byDept,
+  };
 }
 
 module.exports = { parseSheet };

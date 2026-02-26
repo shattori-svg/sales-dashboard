@@ -101,6 +101,25 @@ header h1 {
   min-width: 0;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.logout-link {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.logout-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .lang-switcher {
   display: flex;
   align-items: center;
@@ -236,6 +255,22 @@ main {
   min-width: 5rem;
 }
 
+.store-id-input,
+.store-name-input {
+  width: 100%;
+  max-width: 14rem;
+  box-sizing: border-box;
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--font-size-sm);
+}
+.btn-delete-store {
+  font-size: var(--font-size-sm);
+  padding: var(--space-xs) var(--space-sm);
+  cursor: pointer;
+}
+
 .upload-form {
   display: flex;
   flex-direction: column;
@@ -324,6 +359,26 @@ main {
   margin-bottom: var(--space-lg);
 }
 
+/* 各項目を1単位で折り返し（Store, Department, Output date, Time range がバラけないように） */
+.output-header-item {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+/* Time range: keep label + start + ～ + end on one line (no wrap inside) */
+.output-header-time-range {
+  gap: var(--space-xs);
+  white-space: nowrap;
+}
+
+.output-header-time-range #time-start,
+.output-header-time-range #time-end {
+  flex-shrink: 0;
+}
+
 .output-header label {
   font-weight: 500;
   font-size: var(--font-size);
@@ -373,11 +428,16 @@ main {
 }
 
 .output-header-sep {
-  margin-left: var(--space-md);
+  margin-left: 0;
+}
+
+.output-header-item + .output-header-item .output-header-sep,
+.output-header-item + .output-header-item .time-range-label {
+  margin-left: 0;
 }
 
 .time-range-label {
-  margin-left: var(--space-sm);
+  margin-left: 0;
 }
 
 .time-range-sep {

@@ -4,14 +4,19 @@ require('dotenv').config();
 
 const path = require('path');
 const express = require('express');
+const session = require('express-session');
 const multer = require('multer');
 const { parseSheet } = require('./parser');
 const useSupabase = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 const db = useSupabase ? require('./db-supabase') : require('./db');
-const { saveReport, getReport, getAvailableDates, getBusinessHours, saveBusinessHours } = db;
+const { getStores, saveStores, saveReport, getReport, getAvailableDates, getBusinessHours, saveBusinessHours } = db;
 
 const app = express();
 const PORT = process.env.PORT || 3333;
+
+const LOGIN_PASSWORD = process.env.LOGIN_PASSWORD ? String(process.env.LOGIN_PASSWORD).trim() : '';
+const LOGIN_USER = process.env.LOGIN_USER ? String(process.env.LOGIN_USER).trim() : '';
+const AUTH_ENABLED = LOGIN_PASSWORD.length > 0;
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -28,21 +33,110 @@ function addDays(dateStr, days) {
 }
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname)));
+app.use(express.urlencoded({ extended: true }));
 
-app.get('/upload', (req, res) => {
-  res.sendFile(path.join(__dirname, 'upload.html'), (err) => {
-    if (err) res.status(500).send('Upload page not found');
-  });
-});
+if (AUTH_ENABLED) {
+  app.use(
+    session({
+      secret: process.env.SESSION_SECRET || LOGIN_PASSWORD,
+      resave: false,
+      saveUninitialized: false,
+      name: 'sales_report_sid',
+      cookie: { httpOnly: true, maxAge: 24 * 60 * 60 * 1000 },
+    })
+  );
+}
+
+function requireAuth(req, res, next) {
+  if (!AUTH_ENABLED) return next();
+  if (req.session && req.session.loggedIn) return next();
+  const isApi = req.path.startsWith('/api/');
+  if (isApi) return res.status(401).json({ error: 'Unauthorized' });
+  res.redirect('/login');
+}
 
 app.get('/health', (req, res) => {
   res.status(200).json({ ok: true });
 });
 
+if (AUTH_ENABLED) {
+  app.get('/login', (req, res) => {
+    if (req.session && req.session.loggedIn) return res.redirect('/');
+    res.sendFile(path.join(__dirname, 'login.html'), (err) => {
+      if (err) res.status(500).send('Login page not found');
+    });
+  });
+
+  app.post('/login', (req, res) => {
+    const password = (req.body.password || '').trim();
+    const user = (req.body.username || '').trim();
+    const ok =
+      password === LOGIN_PASSWORD && (LOGIN_USER === '' || user === LOGIN_USER);
+    if (ok) {
+      req.session.loggedIn = true;
+      return res.redirect('/');
+    }
+    res.redirect('/login?error=1');
+  });
+
+  app.post('/logout', (req, res) => {
+    req.session.destroy(() => {});
+    res.redirect('/login');
+  });
+
+  app.get('/logout', (req, res) => {
+    req.session.destroy(() => {});
+    res.redirect('/login');
+  });
+} else {
+  app.get('/login', (req, res) => res.redirect('/'));
+  app.get('/logout', (req, res) => res.redirect('/'));
+  app.post('/logout', (req, res) => res.redirect('/'));
+}
+
+app.use(requireAuth);
+app.use(express.static(path.join(__dirname)));
+
+app.get('/setup', (req, res) => {
+  res.sendFile(path.join(__dirname, 'upload.html'), (err) => {
+    if (err) res.status(500).send('Setup page not found');
+  });
+});
+app.get('/upload', (req, res) => res.redirect('/setup'));
+
+app.get('/api/stores', async (req, res) => {
+  try {
+    const stores = await getStores();
+    res.json({ stores });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to get stores.' });
+  }
+});
+
+app.put('/api/stores', async (req, res) => {
+  try {
+    const stores = req.body && req.body.stores;
+    if (!Array.isArray(stores)) {
+      return res.status(400).json({ error: 'Body must be { stores: [ { id, name }, ... ] }.' });
+    }
+    const normalized = stores.map((s) => ({
+      id: String(s && s.id != null ? s.id : '').trim() || 'default',
+      name: String(s && s.name != null ? s.name : '').trim() || 'Store',
+    }));
+    if (normalized.length === 0) normalized.push({ id: 'default', name: 'Default' });
+    await saveStores(normalized);
+    res.json({ stores: normalized });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Failed to save stores.' });
+  }
+});
+
 app.get('/api/business-hours', async (req, res) => {
   try {
-    const settings = await getBusinessHours();
+    const storeId = (req.query.storeId || 'default').trim() || 'default';
+    const settings = await getBusinessHours(storeId);
     res.json(settings);
   } catch (err) {
     console.error(err);
@@ -52,8 +146,9 @@ app.get('/api/business-hours', async (req, res) => {
 
 app.put('/api/business-hours', async (req, res) => {
   try {
-    const settings = req.body;
-    if (!settings || typeof settings !== 'object') {
+    const storeId = (req.query.storeId || req.body.storeId || 'default').trim() || 'default';
+    const settings = req.body && req.body.settings ? req.body.settings : req.body;
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
       return res.status(400).json({ error: 'Body must be an object (e.g. { "0": { "start": "09:00", "end": "21:00" }, ... }).' });
     }
     const normalized = {};
@@ -64,7 +159,7 @@ app.put('/api/business-hours', async (req, res) => {
         end: (day && day.end) ? String(day.end).trim() : '24:00',
       };
     }
-    await saveBusinessHours(normalized);
+    await saveBusinessHours(normalized, storeId);
     res.json(normalized);
   } catch (err) {
     console.error(err);
@@ -74,7 +169,8 @@ app.put('/api/business-hours', async (req, res) => {
 
 app.get('/api/dates', async (req, res) => {
   try {
-    const dates = await getAvailableDates();
+    const storeId = (req.query.storeId || 'default').trim() || 'default';
+    const dates = await getAvailableDates(storeId);
     res.json({ dates });
   } catch (err) {
     console.error(err);
@@ -121,6 +217,7 @@ function parseDateYMD(str) {
 
 app.get('/api/daily-summary', async (req, res) => {
   try {
+    const storeId = (req.query.storeId || 'default').trim() || 'default';
     const refStr = req.query.referenceDate;
     const startStr = req.query.startDate ? String(req.query.startDate).trim() : null;
     let daysList = [];
@@ -149,7 +246,7 @@ app.get('/api/daily-summary', async (req, res) => {
     }
     const summaries = [];
     for (const d of daysList) {
-      const report = await getReport(d);
+      const report = await getReport(d, storeId);
       const sum = report ? buildDailySummaryForReport(d, report) : null;
       if (sum) summaries.push(sum);
     }
@@ -162,6 +259,7 @@ app.get('/api/daily-summary', async (req, res) => {
 
 app.get('/api/report', async (req, res) => {
   try {
+    const storeId = (req.query.storeId || 'default').trim() || 'default';
     const refDateStr = req.query.referenceDate;
     if (!refDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(refDateStr).trim())) {
       return res.status(400).json({ error: 'Query parameter referenceDate (YYYY-MM-DD) is required.' });
@@ -169,12 +267,12 @@ app.get('/api/report', async (req, res) => {
     const date = String(refDateStr).trim();
     const yesterdayStr = addDays(date, -1);
     const lastWeekStr = addDays(date, -7);
-    const today = await getReport(date);
+    const today = await getReport(date, storeId);
     if (!today) {
       return res.status(404).json({ error: 'No report found for date ' + date + '.' });
     }
-    const yesterday = await getReport(yesterdayStr);
-    const lastWeek = await getReport(lastWeekStr);
+    const yesterday = await getReport(yesterdayStr, storeId);
+    const lastWeek = await getReport(lastWeekStr, storeId);
     res.json({ today, yesterday: yesterday || null, lastWeek: lastWeek || null, referenceDate: date });
   } catch (err) {
     console.error(err);
@@ -192,9 +290,18 @@ app.post('/api/upload', upload.array('files', 10), async (req, res) => {
     const parsed = [];
     for (const f of files) {
       if (!f.buffer) continue;
-      const data = parseSheet(f.buffer);
+      let data;
+      try {
+        data = parseSheet(f.buffer);
+      } catch (parseErr) {
+        const msg = parseErr && (parseErr.message || String(parseErr));
+        console.error('Parse error for file:', f.originalname || 'unknown', msg, parseErr && parseErr.stack);
+        return res.status(400).json({ error: 'Failed to parse Excel: ' + (msg || 'Invalid or unsupported file.') });
+      }
       if (data && data.total && data.total.hourly && data.total.hourly.length > 0 && data.businessDate) {
-        parsed.push({ businessDate: data.businessDate, data });
+        const storeId = (data.storeId && String(data.storeId).trim()) || 'default';
+        const storeName = (data.storeName && String(data.storeName).trim()) || 'Default';
+        parsed.push({ businessDate: data.businessDate, data, storeId, storeName });
       }
     }
 
@@ -213,17 +320,20 @@ app.post('/api/upload', upload.array('files', 10), async (req, res) => {
     const yesterdayStr = addDays(refDateStr, -1);
     const lastWeekStr = addDays(refDateStr, -7);
 
-    let today = null;
-    let yesterday = null;
-    let lastWeek = null;
-
-    for (const { businessDate, data } of parsed) {
-      await saveReport(businessDate, data);
-      console.log('Saved to DB:', businessDate);
-      if (businessDate === refDateStr) today = data;
-      else if (businessDate === yesterdayStr) yesterday = data;
-      else if (businessDate === lastWeekStr) lastWeek = data;
+    for (const { businessDate, data, storeId, storeName } of parsed) {
+      await saveReport(businessDate, data, storeId);
+      console.log('Saved to DB:', storeId, businessDate);
     }
+
+    const refItem = parsed.find((p) => p.businessDate === refDateStr);
+    const refStoreId = refItem ? refItem.storeId : parsed[0].storeId;
+    let today = (refItem && refItem.data) || null;
+    let yesterday = parsed.find((p) => p.businessDate === yesterdayStr && p.storeId === refStoreId);
+    let lastWeek = parsed.find((p) => p.businessDate === lastWeekStr && p.storeId === refStoreId);
+    yesterday = yesterday ? yesterday.data : null;
+    lastWeek = lastWeek ? lastWeek.data : null;
+
+    const storesSeen = new Map(parsed.map((p) => [p.storeId, p.storeName]));
 
     if (!today) {
       return res.status(400).json({
@@ -231,11 +341,22 @@ app.post('/api/upload', upload.array('files', 10), async (req, res) => {
       });
     }
 
-    const savedDates = await getAvailableDates();
-    res.json({ today, yesterday, lastWeek, referenceDate: refDateStr, savedDates });
+    const existingStores = await getStores();
+    const byId = new Map(existingStores.map((s) => [s.id, s]));
+    storesSeen.forEach((name, id) => {
+      if (!byId.has(id)) byId.set(id, { id, name });
+    });
+    const merged = Array.from(byId.values());
+    if (merged.length > 0) await saveStores(merged);
+
+    const savedDates = await getAvailableDates(refStoreId);
+    res.json({ today, yesterday, lastWeek, referenceDate: refDateStr, savedDates, storeId: refStoreId });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error processing files: ' + (err.message || err) });
+    const msg = err && (err.message || String(err));
+    const stack = err && err.stack;
+    console.error('Upload error:', msg);
+    if (stack) console.error(stack);
+    res.status(500).json({ error: 'Error processing files: ' + (msg || 'Unknown error') });
   }
 });
 

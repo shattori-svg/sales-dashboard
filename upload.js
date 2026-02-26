@@ -96,6 +96,105 @@
     });
   });
 
+  function loadStoresMaster() {
+    var tbody = document.getElementById('stores-tbody');
+    if (!tbody) return;
+    fetch('/api/stores').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
+      var stores = body.stores || [];
+      if (stores.length === 0) stores = [{ id: 'default', name: 'Default' }];
+      tbody.innerHTML = '';
+      stores.forEach(function (s) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td><input type="text" class="store-id-input" value="' + (s.id || '').replace(/"/g, '&quot;') + '" placeholder="e.g. default" maxlength="32"></td>' +
+          '<td><input type="text" class="store-name-input" value="' + (s.name || '').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '" placeholder="店舗名"></td>' +
+          '<td><button type="button" class="btn-delete-store">削除</button></td>';
+        var deleteBtn = tr.querySelector('.btn-delete-store');
+        var idInput = tr.querySelector('.store-id-input');
+        if (deleteBtn) deleteBtn.addEventListener('click', function () {
+          if (tbody.querySelectorAll('tr').length <= 1) return;
+          tr.remove();
+        });
+        tbody.appendChild(tr);
+      });
+    }).catch(function () {
+      tbody.innerHTML = '<tr><td><input type="text" class="store-id-input" value="default" placeholder="ID"></td><td><input type="text" class="store-name-input" value="Default" placeholder="店舗名"></td><td><button type="button" class="btn-delete-store">削除</button></td></tr>';
+    });
+  }
+
+  function collectStoresFromTable() {
+    var tbody = document.getElementById('stores-tbody');
+    if (!tbody) return [];
+    var rows = tbody.querySelectorAll('tr');
+    var list = [];
+    for (var i = 0; i < rows.length; i++) {
+      var idIn = rows[i].querySelector('.store-id-input');
+      var nameIn = rows[i].querySelector('.store-name-input');
+      var id = idIn ? String(idIn.value || '').trim() : '';
+      var name = nameIn ? String(nameIn.value || '').trim() : '';
+      if (id) list.push({ id: id, name: name || id });
+    }
+    return list;
+  }
+
+  document.querySelectorAll('.tabs .tab').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var tab = btn.getAttribute('data-tab');
+      switchUploadTab(tab);
+      if (tab === 'stores') loadStoresMaster();
+    });
+  });
+
+  var btnAddStore = document.getElementById('btn-add-store');
+  var btnSaveStores = document.getElementById('btn-save-stores');
+  var storesSaveStatus = document.getElementById('stores-save-status');
+  if (btnAddStore) {
+    btnAddStore.addEventListener('click', function () {
+      var tbody = document.getElementById('stores-tbody');
+      if (!tbody) return;
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td><input type="text" class="store-id-input" value="" placeholder="e.g. S001" maxlength="32"></td>' +
+        '<td><input type="text" class="store-name-input" value="" placeholder="店舗名"></td>' +
+        '<td><button type="button" class="btn-delete-store">削除</button></td>';
+      tr.querySelector('.btn-delete-store').addEventListener('click', function () {
+        if (tbody.querySelectorAll('tr').length <= 1) return;
+        tr.remove();
+      });
+      tbody.appendChild(tr);
+    });
+  }
+  if (btnSaveStores && storesSaveStatus) {
+    btnSaveStores.addEventListener('click', function () {
+      var list = collectStoresFromTable();
+      var ids = {};
+      for (var j = 0; j < list.length; j++) {
+        if (ids[list[j].id]) {
+          storesSaveStatus.textContent = 'ID が重複しています: ' + list[j].id;
+          return;
+        }
+        ids[list[j].id] = true;
+      }
+      if (list.length === 0) {
+        storesSaveStatus.textContent = '少なくとも1件の店舗を登録してください。';
+        return;
+      }
+      storesSaveStatus.textContent = '保存中…';
+      fetch('/api/stores', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stores: list })
+      }).then(function (res) {
+        return parseJsonResponse(res).then(function (data) {
+          if (!res.ok) throw new Error(data.error || 'Save failed');
+          return data;
+        });
+      }).then(function () {
+        storesSaveStatus.textContent = '保存しました。';
+      }).catch(function (err) {
+        storesSaveStatus.textContent = err.message || '保存に失敗しました。';
+      });
+    });
+  }
+
   initBusinessHoursUI();
 
   var btnSaveBh = document.getElementById('btn-save-business-hours');

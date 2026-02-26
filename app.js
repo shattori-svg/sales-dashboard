@@ -1,6 +1,16 @@
 (function () {
   'use strict';
 
+  if (typeof window !== 'undefined' && window.fetch) {
+    var origFetch = window.fetch;
+    window.fetch = function (url, opts) {
+      return origFetch.apply(this, arguments).then(function (res) {
+        if (res.status === 401) window.location.href = '/login';
+        return res;
+      });
+    };
+  }
+
   function t(key) {
     return window.i18n && window.i18n.t ? window.i18n.t(key) : key;
   }
@@ -10,8 +20,14 @@
     yesterday: null,
     lastWeek: null,
     referenceDate: null,
-    businessHoursSettings: null
+    businessHoursSettings: null,
+    storeId: 'default'
   };
+
+  function getSelectedStoreId() {
+    var el = document.getElementById('store-select');
+    return el && el.value ? el.value : 'default';
+  }
 
   var DEPARTMENTS = ['Grocery', 'Fruit & Vegetable', 'Fish & Seafood', 'Meat', 'Delicatessen', 'Store Management'];
   var DEPARTMENT_COLORS = ['#9333ea', '#22c55e', '#38bdf8', '#ec4899', '#f97316', '#1f2937'];
@@ -603,7 +619,8 @@
   }
 
   function fetchBusinessHours() {
-    fetch('/api/business-hours').then(function (res) { return parseJsonResponse(res); }).then(function (settings) {
+    var storeId = getSelectedStoreId();
+    fetch('/api/business-hours?storeId=' + encodeURIComponent(storeId)).then(function (res) { return parseJsonResponse(res); }).then(function (settings) {
       if (settings && typeof settings === 'object') {
         state.businessHoursSettings = settings;
         var startEl = document.getElementById('time-start');
@@ -848,6 +865,9 @@
       tbody.innerHTML = '';
       tfoot.innerHTML = '';
       emptyMsg.hidden = false;
+      var dateEl = document.getElementById('output-date');
+      var hasDate = dateEl && dateEl.value && dateEl.value.trim() !== '';
+      emptyMsg.textContent = hasDate ? t('no_data_selected_date') : t('no_data_for_store');
       tableWrapper.style.display = 'none';
       summarySection.style.display = 'none';
       if (chartSection) chartSection.classList.add('hidden');
@@ -931,11 +951,12 @@
     if (arr.length) {
       el.min = arr[0];
       el.max = arr[arr.length - 1];
+      el.value = (selectedValue && arr.indexOf(selectedValue) !== -1) ? selectedValue : (selectedValue || arr[arr.length - 1] || '');
     } else {
       el.removeAttribute('min');
       el.removeAttribute('max');
+      el.value = '';
     }
-    el.value = (selectedValue && dates && dates.indexOf(selectedValue) !== -1) ? selectedValue : (selectedValue || '');
   }
 
   function getTodayYYYYMMDD() {
@@ -960,8 +981,15 @@
     var el = document.getElementById('output-date');
     if (!el) return;
     showLoading();
-    fetch('/api/dates').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
+    var storeId = getSelectedStoreId();
+    fetch('/api/dates?storeId=' + encodeURIComponent(storeId)).then(function (res) { return parseJsonResponse(res); }).then(function (body) {
       var dates = body.dates || [];
+      if (dates.length === 0) {
+        state.today = null;
+        state.yesterday = null;
+        state.lastWeek = null;
+        state.referenceDate = null;
+      }
       var lastEl = document.getElementById('last-upload-time');
       if (lastEl) {
         var txt = formatLastUploadDisplay(body.lastUploadedAt);
@@ -972,7 +1000,7 @@
       fillOutputDateSelect(dates, initialDate);
       var chosen = el.value;
       if (chosen) {
-        fetch('/api/report?referenceDate=' + encodeURIComponent(chosen)).then(function (r) {
+        fetch('/api/report?referenceDate=' + encodeURIComponent(chosen) + '&storeId=' + encodeURIComponent(storeId)).then(function (r) {
           return parseJsonResponse(r).then(function (data) {
             if (!r.ok) return;
             state.today = data.today;
@@ -1058,7 +1086,8 @@
 
   function refreshDailyDateSelect() {
     showLoading();
-    fetch('/api/dates').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
+    var storeId = getSelectedStoreId();
+    fetch('/api/dates?storeId=' + encodeURIComponent(storeId)).then(function (res) { return parseJsonResponse(res); }).then(function (body) {
       var dates = body.dates || [];
       var startEl = document.getElementById('daily-start-date');
       var endEl = document.getElementById('daily-end-date');
@@ -1092,7 +1121,8 @@
     }
     if (emptyEl) emptyEl.hidden = true;
     showLoading();
-    var url = '/api/daily-summary?referenceDate=' + encodeURIComponent(endDate);
+    var storeId = getSelectedStoreId();
+    var url = '/api/daily-summary?referenceDate=' + encodeURIComponent(endDate) + '&storeId=' + encodeURIComponent(storeId);
     if (startDate && startDate <= endDate) {
       url += '&startDate=' + encodeURIComponent(startDate);
     } else {
@@ -1344,7 +1374,8 @@
 
   function refreshWeeklyDateSelect() {
     showLoading();
-    fetch('/api/dates').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
+    var storeId = getSelectedStoreId();
+    fetch('/api/dates?storeId=' + encodeURIComponent(storeId)).then(function (res) { return parseJsonResponse(res); }).then(function (body) {
       var dates = body.dates || [];
       var el = document.getElementById('weekly-end-date');
       fillWeeklyEndDateSelect(dates, el ? el.value : null);
@@ -1375,7 +1406,8 @@
     var apiEndDate = addDays(firstMonday, daysToFetch - 1);
     if (emptyEl) emptyEl.hidden = true;
     showLoading();
-    fetch('/api/daily-summary?referenceDate=' + encodeURIComponent(apiEndDate) + '&days=' + daysToFetch).then(function (res) {
+    var storeId = getSelectedStoreId();
+    fetch('/api/daily-summary?referenceDate=' + encodeURIComponent(apiEndDate) + '&days=' + daysToFetch + '&storeId=' + encodeURIComponent(storeId)).then(function (res) {
       return parseJsonResponse(res).then(function (body) {
         if (!res.ok) throw new Error(body.error || 'Failed to load weekly summary');
         return body;
@@ -1486,12 +1518,43 @@
     });
   }
 
+  function fillStoreSelect() {
+    var sel = document.getElementById('store-select');
+    if (!sel) return Promise.resolve();
+    return fetch('/api/stores').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
+      var stores = body.stores || [];
+      if (stores.length === 0) stores = [{ id: 'default', name: 'Default' }];
+      sel.innerHTML = '';
+      stores.forEach(function (s) {
+        var opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name || s.id;
+        sel.appendChild(opt);
+      });
+      state.storeId = getSelectedStoreId();
+    }).catch(function () {
+      sel.innerHTML = '<option value="default">Default</option>';
+      state.storeId = 'default';
+    });
+  }
+
+  function onStoreChange() {
+    state.storeId = getSelectedStoreId();
+    fetchBusinessHours();
+    refreshOutputDateSelect();
+    refreshDailyDateSelect();
+    refreshWeeklyDateSelect();
+  }
+
   function init() {
     document.querySelectorAll('.tab').forEach(function (btn) {
       btn.addEventListener('click', function () {
         switchTab(btn.getAttribute('data-tab'));
       });
     });
+
+    var storeSelectEl = document.getElementById('store-select');
+    if (storeSelectEl) storeSelectEl.addEventListener('change', onStoreChange);
 
     var departmentSelect = document.getElementById('department-select');
     if (departmentSelect) departmentSelect.addEventListener('change', renderReport);
@@ -1502,7 +1565,8 @@
       var date = this.value;
       if (!date) return;
       showLoading();
-      fetch('/api/report?referenceDate=' + encodeURIComponent(date)).then(function (res) {
+      var storeId = getSelectedStoreId();
+      fetch('/api/report?referenceDate=' + encodeURIComponent(date) + '&storeId=' + encodeURIComponent(storeId)).then(function (res) {
         return parseJsonResponse(res).then(function (body) {
           if (!res.ok) throw new Error(body.error || 'Failed to load report');
           return body;
@@ -1578,12 +1642,14 @@
       });
     }
 
-    /* Report page: load initial data for hourly tab */
-    if (outputDateEl) {
+    /* Report page: load stores then initial data */
+    fillStoreSelect().then(function () {
       fetchBusinessHours();
-      refreshOutputDateSelect();
-      renderReport();
-    }
+      if (outputDateEl) {
+        refreshOutputDateSelect();
+        renderReport();
+      }
+    });
   }
 
   if (document.readyState === 'loading') {

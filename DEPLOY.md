@@ -2,16 +2,28 @@
 
 This app can run on any Node.js host. Below are steps for common platforms.
 
+## 本番・多数アクセス時（推奨）
+
+**守屋さんアドバイス**: Render だけだと多数アクセスで負荷がかかるため、本番では次の構成を推奨します。
+
+- **前段に nginx**（リバースプロキシ・SSL終端）
+- **DB は SQLite にしない** → **Supabase** を使う（環境変数 `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` を設定）
+- **ホストは Azure Web App または Google Cloud** で本番化
+
+詳細は ** [docs/PRODUCTION_DEPLOY.md](docs/PRODUCTION_DEPLOY.md)** を参照してください。
+
+---
+
 ## Prerequisites
 
 - Git repository (e.g. GitHub) with this project
 - Node.js 18+ (set in `package.json` engines)
 
-The app uses **SQLite** (`data/sales.db`). On many PaaS platforms the filesystem is **ephemeral**: data is lost when the instance restarts or redeploys. For persistent data, use a platform that offers persistent disk or consider switching to a managed database later.
+**SQLite** (`data/sales.db`) はローカル・検証向け。本番や複数インスタンスでは **Supabase** を利用してください（下記 Environment variables 参照）。PaaS の一時ディスクでは SQLite のデータは再起動で消える場合があります。
 
 ---
 
-## Render
+## Render（簡易・検証向け）
 
 1. Go to [render.com](https://render.com) and sign in (GitHub).
 2. **New** → **Web Service**.
@@ -59,6 +71,29 @@ The app uses **SQLite** (`data/sales.db`). On many PaaS platforms the filesystem
 
 ---
 
+## Google Cloud Run
+
+**A) リポジトリ連携（推奨）**  
+GitHub に Cloud Build トリガーを設定している場合、main に push すると自動でビルド・デプロイされます。
+
+```bash
+git add -A
+git commit -m "your message"
+git push origin main
+```
+
+**B) 手動デプロイ**  
+[Google Cloud SDK](https://cloud.google.com/sdk/docs/install) をインストール後、プロジェクトで:
+
+```bash
+gcloud config set project lopia-thailand-sales-manage
+gcloud run deploy lopia-thailand-sales-manage --source . --region asia-northeast1
+```
+
+環境変数（Supabase 等）は Cloud Run の「変数とシークレット」で設定してください。
+
+---
+
 ## Environment variables
 
 | Variable | Description |
@@ -68,6 +103,9 @@ The app uses **SQLite** (`data/sales.db`). On many PaaS platforms the filesystem
 | `DATA_DIR` | Optional. Directory for SQLite file (e.g. `/data` when using a persistent volume). |
 | `SUPABASE_URL` | If set with `SUPABASE_SERVICE_ROLE_KEY`, the app uses Supabase instead of SQLite. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase project **service_role** key (server-side only). See `docs/SUPABASE_SETUP.md`. |
+| `LOGIN_PASSWORD` | If set, access is restricted; users must log in with this password (and optionally `LOGIN_USER`). |
+| `LOGIN_USER` | Optional. When set, login requires this username and `LOGIN_PASSWORD`. |
+| `SESSION_SECRET` | Optional. Secret for session cookie (defaults to `LOGIN_PASSWORD` if not set). |
 
 ---
 

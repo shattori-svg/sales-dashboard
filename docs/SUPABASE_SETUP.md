@@ -9,30 +9,11 @@
    - **Project URL**（例: `https://xxxxx.supabase.co`）
    - **service_role** キー（**Project API keys** の `service_role`。秘密鍵のためサーバー以外で公開しないでください）
 
-## 2. テーブルの作成
+## 2. テーブルの作成（多店舗対応）
 
-Supabase ダッシュボードの **SQL Editor** で、プロジェクト直下の `supabase-reports-table.sql` を実行してください。`reports` に加え、ビジネスアワー用の `masters` テーブルも作成されます。
+Supabase ダッシュボードの **SQL Editor** で、プロジェクト直下の `supabase-reports-table.sql` を実行してください。`reports`（store_id + business_date の複合主キー）と `masters` が作成されます。
 
-```sql
--- レポート保存用テーブル（business_date をキーに 1 日 1 行）
-create table if not exists public.reports (
-  business_date text primary key,
-  data jsonb not null,
-  created_at timestamptz default now()
-);
-
--- RLS を有効にする場合、service_role は RLS をバイパスするためこのままで可。
--- アプリはサーバー側で service_role のみ使用する想定です。
-alter table public.reports enable row level security;
-
--- 必要に応じてポリシーを追加（例: 全レコードを service_role のみ操作）
-create policy "Service role full access"
-  on public.reports
-  for all
-  to service_role
-  using (true)
-  with check (true);
-```
+既存の `reports` テーブルがある場合は、同じファイル内の「Optional: migrate existing table」のコメントに従い、`store_id` 列の追加と主キー変更を実行してください。
 
 ## 3. 環境変数の設定
 
