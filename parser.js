@@ -213,4 +213,161 @@ function parseSheet(buffer) {
   };
 }
 
-module.exports = { parseSheet };
+/**
+ * Department code (CSV) to name (app display).
+ */
+const DEPARTMENT_CODE_TO_NAME = {
+  '01': 'Grocery',
+  '02': 'Fruit & Vegetable',
+  '03': 'Fish & Seafood',
+  '04': 'Meat',
+  '05': 'Delicatessen',
+  '06': 'Store Management',
+};
+
+/**
+ * Parse CSV in agreed format. Returns same shape as parseSheet():
+ * { businessDate, storeId, storeName, total: { hourly, totalRow }, byDepartment }.
+ * Header: Business_Date,Store_Id,Start_Time,End_Time,Department_Code,Net_Sales,Gross_Sales,Quantity_Sold,Receipt_Count
+ */
+function parseCsv(buffer) {
+  const text = (buffer instanceof Buffer ? buffer.toString('utf8') : String(buffer))
+    .replace(/^\uFEFF/, '');
+  const lines = text.split(/\r\n|\r|\n/).filter((line) => line.trim().length > 0);
+  if (lines.length < 2) return null;
+
+  const headerLine = lines[0];
+  const headers = parseCsvLine(headerLine);
+  const col = (name) => {
+    const i = headers.findIndex((h) => (h || '').trim().toLowerCase() === name.toLowerCase());
+    return i >= 0 ? i : -1;
+  };
+  const iDate = col('Business_Date');
+  const iStore = col('Store_Id');
+  const iStart = col('Start_Time');
+  const iEnd = col('End_Time');
+  const iDept = col('Department_Code');
+  const iNet = col('Net_Sales');
+  const iGross = col('Gross_Sales');
+  const iQty = col('Quantity_Sold');
+  const iReceipt = col('Receipt_Count');
+  if (iDate < 0 || iStore < 0 || iDept < 0 || iNet < 0 || iQty < 0 || iReceipt < 0) return null;
+
+  let businessDate = null;
+  let storeId = '1001';
+  const total = { hourly: [], totalRow: null };
+  const byDept = {};
+  DEPARTMENTS.forEach((d) => {
+    byDept[d] = { hourly: [] };
+  });
+  const slotTotals = new Map();
+
+  for (let i = 1; i < lines.length; i++) {
+    const cells = parseCsvLine(lines[i]);
+    const get = (idx) => (idx >= 0 && cells[idx] !== undefined ? String(cells[idx]).trim() : '');
+    const getNum = (idx) => toNum(idx >= 0 ? cells[idx] : null);
+
+    const startTime = get(iStart);
+    const endTime = get(iEnd);
+    const deptCode = get(iDept);
+
+    if (!businessDate && get(iDate)) businessDate = parseBusinessDate(get(iDate)) || get(iDate);
+    if (get(iStore)) storeId = String(get(iStore)).trim() || '1001';
+
+    if (!startTime && !endTime) {
+      if (deptCode === '00' || deptCode === '') {
+        total.totalRow = {
+          netSales: getNum(iNet),
+          grossSales: getNum(iGross),
+          quantitySold: getNum(iQty),
+          receiptCount: getNum(iReceipt),
+        };
+      }
+      continue;
+    }
+
+    const timeKey = startTime + '-' + endTime;
+    const timeLabel = formatTimeRange(startTime, endTime);
+    const netSales = getNum(iNet) || 0;
+    const grossSales = getNum(iGross);
+    const quantitySold = getNum(iQty) || 0;
+    const receiptCount = getNum(iReceipt) || 0;
+
+    const deptName = DEPARTMENT_CODE_TO_NAME[deptCode];
+    if (deptName && byDept[deptName]) {
+      byDept[deptName].hourly.push({
+        timeKey,
+        timeLabel,
+        grossSales: grossSales != null ? grossSales : null,
+        netSales,
+        quantitySold,
+        receiptCount,
+      });
+      if (!slotTotals.has(timeKey)) {
+        slotTotals.set(timeKey, { netSales: 0, quantitySold: 0, receiptCount, timeLabel });
+      }
+      const agg = slotTotals.get(timeKey);
+      agg.netSales += netSales;
+      agg.quantitySold += quantitySold;
+    }
+  }
+
+  slotTotals.forEach((agg, timeKey) => {
+    total.hourly.push({
+      timeKey,
+      timeLabel: agg.timeLabel,
+      grossSales: null,
+      netSales: agg.netSales,
+      quantitySold: agg.quantitySold,
+      receiptCount: agg.receiptCount,
+    });
+  });
+
+  total.hourly.sort(sortByTimeKey);
+  Object.keys(byDept).forEach((k) => {
+    byDept[k].hourly.sort(sortByTimeKey);
+  });
+
+  return {
+    businessDate: businessDate || '',
+    storeId: storeId || '1001',
+    storeName: storeId,
+    total,
+    byDepartment: byDept,
+  };
+}
+
+function parseCsvLine(line) {
+  const out = [];
+  let i = 0;
+  while (i < line.length) {
+    if (line[i] === '"') {
+      let s = '';
+      i++;
+      while (i < line.length) {
+        if (line[i] === '"') {
+          i++;
+          if (line[i] === '"') {
+            s += '"';
+            i++;
+          } else break;
+        } else {
+          s += line[i];
+          i++;
+        }
+      }
+      out.push(s);
+    } else {
+      let s = '';
+      while (i < line.length && line[i] !== ',') {
+        s += line[i];
+        i++;
+      }
+      out.push(s.trim());
+      if (i < line.length) i++;
+    }
+  }
+  return out;
+}
+
+module.exports = { parseSheet, parseCsv };

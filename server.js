@@ -6,7 +6,7 @@ const path = require('path');
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
-const { parseSheet } = require('./parser');
+const { parseSheet, parseCsv } = require('./parser');
 const useSupabase = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 const db = useSupabase ? require('./db-supabase') : require('./db');
 const { getStores, saveStores, saveReport, getReport, getAvailableDates, getBusinessHours, saveBusinessHours } = db;
@@ -290,15 +290,20 @@ app.post('/api/upload', upload.array('files', 10), async (req, res) => {
     const parsed = [];
     for (const f of files) {
       if (!f.buffer) continue;
+      const isCsv = (f.originalname || '').toLowerCase().endsWith('.csv');
       let data;
       try {
-        data = parseSheet(f.buffer);
+        data = isCsv ? parseCsv(f.buffer) : parseSheet(f.buffer);
       } catch (parseErr) {
         const msg = parseErr && (parseErr.message || String(parseErr));
         console.error('Parse error for file:', f.originalname || 'unknown', msg, parseErr && parseErr.stack);
-        return res.status(400).json({ error: 'Failed to parse Excel: ' + (msg || 'Invalid or unsupported file.') });
+        return res.status(400).json({
+          error: (isCsv ? 'Failed to parse CSV: ' : 'Failed to parse Excel: ') + (msg || 'Invalid or unsupported file.'),
+        });
       }
-      if (data && data.total && data.total.hourly && data.total.hourly.length > 0 && data.businessDate) {
+      const hasHourly = data && data.total && data.total.hourly && data.total.hourly.length > 0;
+      const hasTotalRow = data && data.total && data.total.totalRow;
+      if (data && data.total && data.businessDate && (hasHourly || hasTotalRow)) {
         const storeId = (data.storeId && String(data.storeId).trim()) || 'default';
         const storeName = (data.storeName && String(data.storeName).trim()) || 'Default';
         parsed.push({ businessDate: data.businessDate, data, storeId, storeName });
