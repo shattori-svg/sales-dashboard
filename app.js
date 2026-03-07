@@ -1069,6 +1069,9 @@
     if (tabName === 'weekly') {
       refreshWeeklyDateSelect();
     }
+    if (tabName === 'ai') {
+      refreshAiDateSelect();
+    }
   }
 
   function addDaysToDate(dateStr, days) {
@@ -1554,6 +1557,7 @@
     var sel = document.getElementById('store-select');
     var dailySel = document.getElementById('daily-store-select');
     var weeklySel = document.getElementById('weekly-store-select');
+    var aiSel = document.getElementById('ai-store-select');
     if (!sel) return Promise.resolve();
     return fetch('/api/stores').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
       var stores = body.stores || [];
@@ -1573,12 +1577,14 @@
       fillOne(sel);
       fillOne(dailySel);
       fillOne(weeklySel);
+      fillOne(aiSel);
       state.storeId = getSelectedStoreId();
     }).catch(function () {
       var def = '<option value="default">Default</option>';
       if (sel) sel.innerHTML = def;
       if (dailySel) dailySel.innerHTML = def;
       if (weeklySel) weeklySel.innerHTML = def;
+      if (aiSel) aiSel.innerHTML = def;
       state.storeId = 'default';
     });
   }
@@ -1588,6 +1594,155 @@
     fetchBusinessHours();
     refreshOutputDateSelect();
   }
+
+  /* ── AI Tab ──────────────────────────────────────────── */
+
+  var aiState = { available: null };
+
+  function getAiStoreId() {
+    var el = document.getElementById('ai-store-select');
+    return el && el.value ? el.value : 'default';
+  }
+
+  function getAiLang() {
+    return (window.i18n && window.i18n.getCurrentLang) ? window.i18n.getCurrentLang() : 'en';
+  }
+
+  function checkAiStatus() {
+    fetch('/api/ai/status').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
+      aiState.available = !!body.available;
+      var notice = document.getElementById('ai-not-configured');
+      var controls = document.getElementById('ai-controls');
+      if (notice) notice.hidden = aiState.available;
+      if (controls) {
+        var btns = controls.querySelectorAll('.btn-ai');
+        btns.forEach(function (b) { b.disabled = !aiState.available; });
+      }
+    }).catch(function () {
+      aiState.available = false;
+    });
+  }
+
+  function refreshAiDateSelect() {
+    var storeId = getAiStoreId();
+    fetch('/api/dates?storeId=' + encodeURIComponent(storeId)).then(function (res) { return parseJsonResponse(res); }).then(function (body) {
+      var dates = body.dates || [];
+      var el = document.getElementById('ai-reference-date');
+      if (!el) return;
+      var arr = dates.slice().sort();
+      if (arr.length) {
+        el.min = arr[0];
+        el.max = arr[arr.length - 1];
+        if (!el.value || arr.indexOf(el.value) === -1) {
+          el.value = arr[arr.length - 1];
+        }
+      }
+    }).catch(function () {});
+  }
+
+  function showAiLoading(show) {
+    var el = document.getElementById('ai-loading');
+    if (el) el.hidden = !show;
+  }
+
+  function showAiError(msg) {
+    var el = document.getElementById('ai-error');
+    if (!el) return;
+    if (msg) {
+      el.textContent = msg;
+      el.hidden = false;
+    } else {
+      el.hidden = true;
+      el.textContent = '';
+    }
+  }
+
+  function renderMarkdown(text) {
+    if (typeof marked !== 'undefined' && marked.parse) {
+      return marked.parse(text || '');
+    }
+    return '<p>' + (text || '').replace(/\n/g, '<br>') + '</p>';
+  }
+
+  function doAiAnalyze() {
+    var dateEl = document.getElementById('ai-reference-date');
+    var refDate = dateEl ? dateEl.value : '';
+    if (!refDate) return;
+    var storeId = getAiStoreId();
+    var lang = getAiLang();
+    showAiError(null);
+    showAiLoading(true);
+    document.getElementById('btn-ai-analyze').disabled = true;
+    document.getElementById('btn-ai-forecast').disabled = true;
+
+    fetch('/api/ai/analyze?storeId=' + encodeURIComponent(storeId) + '&referenceDate=' + encodeURIComponent(refDate) + '&lang=' + encodeURIComponent(lang))
+      .then(function (res) { return parseJsonResponse(res); })
+      .then(function (body) {
+        showAiLoading(false);
+        document.getElementById('btn-ai-analyze').disabled = !aiState.available;
+        document.getElementById('btn-ai-forecast').disabled = !aiState.available;
+        if (body.ok) {
+          var section = document.getElementById('ai-analysis-section');
+          var content = document.getElementById('ai-analysis-content');
+          var results = document.getElementById('ai-results');
+          if (content) content.innerHTML = renderMarkdown(body.text);
+          if (section) section.hidden = false;
+          if (results) results.hidden = false;
+        } else {
+          var errKey = body.error === 'NO_DATA' ? 'ai_error_no_data'
+            : body.error === 'AI_NOT_CONFIGURED' ? 'ai_error_not_configured'
+            : 'ai_error_generic';
+          showAiError(t(errKey));
+        }
+      })
+      .catch(function () {
+        showAiLoading(false);
+        document.getElementById('btn-ai-analyze').disabled = !aiState.available;
+        document.getElementById('btn-ai-forecast').disabled = !aiState.available;
+        showAiError(t('ai_error_generic'));
+      });
+  }
+
+  function doAiForecast() {
+    var dateEl = document.getElementById('ai-reference-date');
+    var refDate = dateEl ? dateEl.value : '';
+    if (!refDate) return;
+    var storeId = getAiStoreId();
+    var lang = getAiLang();
+    showAiError(null);
+    showAiLoading(true);
+    document.getElementById('btn-ai-analyze').disabled = true;
+    document.getElementById('btn-ai-forecast').disabled = true;
+
+    fetch('/api/ai/forecast?storeId=' + encodeURIComponent(storeId) + '&referenceDate=' + encodeURIComponent(refDate) + '&lang=' + encodeURIComponent(lang))
+      .then(function (res) { return parseJsonResponse(res); })
+      .then(function (body) {
+        showAiLoading(false);
+        document.getElementById('btn-ai-analyze').disabled = !aiState.available;
+        document.getElementById('btn-ai-forecast').disabled = !aiState.available;
+        if (body.ok) {
+          var section = document.getElementById('ai-forecast-section');
+          var content = document.getElementById('ai-forecast-content');
+          var results = document.getElementById('ai-results');
+          if (content) content.innerHTML = renderMarkdown(body.text);
+          if (section) section.hidden = false;
+          if (results) results.hidden = false;
+        } else {
+          var errKey = body.error === 'NO_DATA' ? 'ai_error_no_data'
+            : body.error === 'AI_NOT_CONFIGURED' ? 'ai_error_not_configured'
+            : 'ai_error_generic';
+          showAiError(t(errKey));
+        }
+      })
+      .catch(function () {
+        showAiLoading(false);
+        document.getElementById('btn-ai-analyze').disabled = !aiState.available;
+        document.getElementById('btn-ai-forecast').disabled = !aiState.available;
+        showAiError(t('ai_error_generic'));
+      });
+  }
+
+  /* ── End AI Tab ─────────────────────────────────────── */
 
     function updateLogoutVisibility() {
     fetch('/api/auth/status')
@@ -1703,9 +1858,18 @@
       });
     }
 
+    /* AI tab event handlers */
+    var btnAiAnalyze = document.getElementById('btn-ai-analyze');
+    if (btnAiAnalyze) btnAiAnalyze.addEventListener('click', doAiAnalyze);
+    var btnAiForecast = document.getElementById('btn-ai-forecast');
+    if (btnAiForecast) btnAiForecast.addEventListener('click', doAiForecast);
+    var aiStoreEl = document.getElementById('ai-store-select');
+    if (aiStoreEl) aiStoreEl.addEventListener('change', refreshAiDateSelect);
+
     /* Report page: load stores then initial data */
     fillStoreSelect().then(function () {
       fetchBusinessHours();
+      checkAiStatus();
       if (outputDateEl) {
         refreshOutputDateSelect();
         renderReport();

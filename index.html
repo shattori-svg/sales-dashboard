@@ -32,6 +32,7 @@
     <button type="button" class="tab active" data-tab="hourly" aria-selected="true" data-i18n="tab_hourly">Hourly</button>
     <button type="button" class="tab" data-tab="daily" aria-selected="false" data-i18n="tab_daily">Daily</button>
     <button type="button" class="tab" data-tab="weekly" aria-selected="false" data-i18n="tab_weekly">Weekly</button>
+    <button type="button" class="tab" data-tab="ai" aria-selected="false" data-i18n="tab_ai">AI分析</button>
   </nav>
 
   <main>
@@ -255,9 +256,55 @@
       <div id="weekly-summary-tables"></div>
       <p id="weekly-empty" class="empty-message" data-i18n="weekly_empty" hidden>週の終了日を選択してください。</p>
     </section>
+    <section id="ai-panel" class="panel">
+      <h3 class="section-title" data-i18n="ai_section_title">AI 分析 &amp; 予測</h3>
+      <p class="hint" data-i18n="ai_hint">AIが売上データを分析し、トレンドの要約や翌日の予測を生成します。</p>
+
+      <div id="ai-not-configured" class="ai-notice" hidden>
+        <p data-i18n="ai_not_configured">AI機能を使用するには、サーバーに GEMINI_API_KEY 環境変数を設定してください。</p>
+      </div>
+
+      <div id="ai-controls" class="output-header">
+        <span class="output-header-item">
+          <label for="ai-store-select" class="store-label" data-i18n="store">店舗</label>
+          <select id="ai-store-select" aria-label="Select store for AI">
+            <option value="default">Default</option>
+          </select>
+        </span>
+        <span class="output-header-item">
+          <label for="ai-reference-date" class="output-header-sep" data-i18n="output_date">出力日</label>
+          <input type="date" id="ai-reference-date" aria-label="Select date for AI analysis">
+        </span>
+        <span class="output-header-item">
+          <button type="button" id="btn-ai-analyze" class="btn-ai" data-i18n="ai_analyze_btn">分析を生成</button>
+        </span>
+        <span class="output-header-item">
+          <button type="button" id="btn-ai-forecast" class="btn-ai btn-ai-forecast" data-i18n="ai_forecast_btn">予測を生成</button>
+        </span>
+      </div>
+
+      <div id="ai-loading" class="ai-loading" hidden>
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <span data-i18n="ai_loading">AIが処理中です...</span>
+      </div>
+
+      <div id="ai-error" class="ai-error" hidden></div>
+
+      <div id="ai-results" class="ai-results" hidden>
+        <div id="ai-analysis-section" class="ai-result-block" hidden>
+          <h4 data-i18n="ai_analysis_title">分析結果</h4>
+          <div id="ai-analysis-content" class="ai-content"></div>
+        </div>
+        <div id="ai-forecast-section" class="ai-result-block" hidden>
+          <h4 data-i18n="ai_forecast_title">予測結果</h4>
+          <div id="ai-forecast-content" class="ai-content"></div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.0/marked.min.js"></script>
   <script src="i18n.js"></script>
   <script src="app.js"></script>
 </body>

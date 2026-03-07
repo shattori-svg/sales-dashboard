@@ -105,7 +105,19 @@
       login_username: 'ユーザー名',
       login_password: 'パスワード',
       login_submit: 'ログイン',
-      login_error: 'ユーザー名またはパスワードが正しくありません。'
+      login_error: 'ユーザー名またはパスワードが正しくありません。',
+      tab_ai: 'AI分析',
+      ai_section_title: 'AI 分析 & 予測',
+      ai_hint: 'AIが売上データを分析し、トレンドの要約や翌日の予測を生成します。',
+      ai_not_configured: 'AI機能を使用するには、サーバーに GEMINI_API_KEY 環境変数を設定してください。',
+      ai_analyze_btn: '分析を生成',
+      ai_forecast_btn: '予測を生成',
+      ai_loading: 'AIが処理中です...',
+      ai_analysis_title: '分析結果',
+      ai_forecast_title: '予測結果',
+      ai_error_no_data: '選択した日付のデータがありません。',
+      ai_error_generic: 'AI処理中にエラーが発生しました。',
+      ai_error_not_configured: 'GEMINI_API_KEY が設定されていません。'
     },
     en: {
       app_title: 'LOPIA Thailand Sales Report',
@@ -208,7 +220,19 @@
       login_username: 'Username',
       login_password: 'Password',
       login_submit: 'Log in',
-      login_error: 'Invalid username or password.'
+      login_error: 'Invalid username or password.',
+      tab_ai: 'AI Analysis',
+      ai_section_title: 'AI Analysis & Forecast',
+      ai_hint: 'AI analyzes your sales data to generate trend summaries and next-day forecasts.',
+      ai_not_configured: 'To use AI features, set the GEMINI_API_KEY environment variable on the server.',
+      ai_analyze_btn: 'Generate Analysis',
+      ai_forecast_btn: 'Generate Forecast',
+      ai_loading: 'AI is processing...',
+      ai_analysis_title: 'Analysis Results',
+      ai_forecast_title: 'Forecast Results',
+      ai_error_no_data: 'No data available for the selected date.',
+      ai_error_generic: 'An error occurred during AI processing.',
+      ai_error_not_configured: 'GEMINI_API_KEY is not configured.'
     },
     th: {
       app_title: 'LOPIA Thailand Sales Report',
@@ -311,7 +335,19 @@
       login_username: 'ชื่อผู้ใช้',
       login_password: 'รหัสผ่าน',
       login_submit: 'เข้าสู่ระบบ',
-      login_error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'
+      login_error: 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง',
+      tab_ai: 'วิเคราะห์ AI',
+      ai_section_title: 'วิเคราะห์ & พยากรณ์ด้วย AI',
+      ai_hint: 'AI วิเคราะห์ข้อมูลยอดขายเพื่อสรุปแนวโน้มและพยากรณ์วันถัดไป',
+      ai_not_configured: 'ตั้งค่า GEMINI_API_KEY บนเซิร์ฟเวอร์เพื่อใช้งาน AI',
+      ai_analyze_btn: 'สร้างการวิเคราะห์',
+      ai_forecast_btn: 'สร้างการพยากรณ์',
+      ai_loading: 'AI กำลังประมวลผล...',
+      ai_analysis_title: 'ผลการวิเคราะห์',
+      ai_forecast_title: 'ผลการพยากรณ์',
+      ai_error_no_data: 'ไม่มีข้อมูลสำหรับวันที่เลือก',
+      ai_error_generic: 'เกิดข้อผิดพลาดระหว่างประมวลผล AI',
+      ai_error_not_configured: 'ยังไม่ได้ตั้งค่า GEMINI_API_KEY'
     }
   };
 

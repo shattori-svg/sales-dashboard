@@ -149,6 +149,19 @@ function formatTimeRange(start, end) {
   return s || e || '';
 }
 
+/** Normalize time from CSV: 4-digit (e.g. 0000, 0100, 1000) -> HH:00 for timeKey/display. */
+function normalizeTimeForCsv(t) {
+  if (t == null || t === '') return '';
+  const s = String(t).trim();
+  if (/^\d{4}$/.test(s)) {
+    const h = s.slice(0, 2);
+    const m = s.slice(2, 4);
+    return h + ':' + (m === '00' ? '00' : m);
+  }
+  if (/^\d{1,2}:\d{2}$/.test(s)) return s;
+  return s;
+}
+
 const TIME_ORDER = [
   '00:00-01:00', '01:00-02:00', '02:00-03:00', '03:00-04:00', '04:00-05:00',
   '05:00-06:00', '06:00-07:00', '07:00-08:00', '08:00-09:00', '09:00-10:00',
@@ -323,14 +336,14 @@ function parseCsv(buffer) {
     const get = (idx) => (idx >= 0 && cells[idx] !== undefined ? String(cells[idx]).trim() : '');
     const getNum = (idx) => toNum(idx >= 0 ? cells[idx] : null);
 
-    const startTime = get(iStart);
-    const endTime = get(iEnd);
+    const startRaw = get(iStart);
+    const endRaw = get(iEnd);
     const deptCode = get(iDept);
 
     if (!businessDate && get(iDate)) businessDate = parseBusinessDate(get(iDate)) || get(iDate);
     if (get(iStore)) storeId = String(get(iStore)).trim() || '1001';
 
-    if (!startTime && !endTime) {
+    if (!startRaw && !endRaw) {
       if (deptCode === '00' || deptCode === '') {
         total.totalRow = {
           netSales: getNum(iNet),
@@ -342,6 +355,8 @@ function parseCsv(buffer) {
       continue;
     }
 
+    const startTime = normalizeTimeForCsv(startRaw) || startRaw;
+    const endTime = normalizeTimeForCsv(endRaw) || endRaw;
     const timeKey = startTime + '-' + endTime;
     const timeLabel = formatTimeRange(startTime, endTime);
     const netSales = getNum(iNet) || 0;

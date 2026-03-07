@@ -10,6 +10,7 @@ const { parseSheet, parseCsv } = require('./parser');
 const useSupabase = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 const db = useSupabase ? require('./db-supabase') : require('./db');
 const { getStores, saveStores, saveReport, getReport, getAvailableDates, getUploadLog, getBusinessHours, saveBusinessHours } = db;
+const aiGemini = require('./ai-gemini');
 
 const app = express();
 const PORT = process.env.PORT || 3333;
@@ -294,6 +295,52 @@ app.get('/api/report', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message || 'Failed to get report.' });
+  }
+});
+
+app.get('/api/ai/status', (req, res) => {
+  res.json({ available: aiGemini.isAvailable() });
+});
+
+app.get('/api/ai/analyze', async (req, res) => {
+  if (!aiGemini.isAvailable()) {
+    return res.json({ ok: false, error: 'AI_NOT_CONFIGURED' });
+  }
+  const storeId = (req.query.storeId || 'default').trim() || 'default';
+  const refDate = req.query.referenceDate;
+  const lang = req.query.lang || 'en';
+  if (!refDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(refDate).trim())) {
+    return res.status(400).json({ ok: false, error: 'referenceDate (YYYY-MM-DD) is required.' });
+  }
+  try {
+    const text = await aiGemini.generateAnalysis(getReport, storeId, String(refDate).trim(), lang);
+    res.json({ ok: true, text });
+  } catch (err) {
+    const msg = err && err.message ? err.message : 'Unknown error';
+    console.error('AI analyze error:', msg);
+    if (msg === 'NO_DATA') return res.status(404).json({ ok: false, error: 'NO_DATA' });
+    res.status(500).json({ ok: false, error: msg });
+  }
+});
+
+app.get('/api/ai/forecast', async (req, res) => {
+  if (!aiGemini.isAvailable()) {
+    return res.json({ ok: false, error: 'AI_NOT_CONFIGURED' });
+  }
+  const storeId = (req.query.storeId || 'default').trim() || 'default';
+  const refDate = req.query.referenceDate;
+  const lang = req.query.lang || 'en';
+  if (!refDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(refDate).trim())) {
+    return res.status(400).json({ ok: false, error: 'referenceDate (YYYY-MM-DD) is required.' });
+  }
+  try {
+    const text = await aiGemini.generateForecast(getReport, storeId, String(refDate).trim(), lang);
+    res.json({ ok: true, text });
+  } catch (err) {
+    const msg = err && err.message ? err.message : 'Unknown error';
+    console.error('AI forecast error:', msg);
+    if (msg === 'NO_DATA') return res.status(404).json({ ok: false, error: 'NO_DATA' });
+    res.status(500).json({ ok: false, error: msg });
   }
 });
 

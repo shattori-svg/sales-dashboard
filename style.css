@@ -809,6 +809,131 @@ main {
   }
 }
 
+/* AI panel */
+.btn-ai {
+  padding: var(--space-sm) var(--space-lg);
+  background: linear-gradient(135deg, #7c3aed, #2563eb);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  font-size: var(--font-size);
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-ai:hover {
+  opacity: 0.9;
+}
+
+.btn-ai:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-ai-forecast {
+  background: linear-gradient(135deg, #059669, #0d9488);
+}
+
+.ai-notice {
+  background: #fef3c7;
+  border: 1px solid #f59e0b;
+  border-radius: var(--radius);
+  padding: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-lg);
+  color: #92400e;
+  font-size: var(--font-size-sm);
+}
+
+.ai-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  color: var(--text-muted);
+  font-size: var(--font-size);
+}
+
+.ai-loading[hidden] {
+  display: none;
+}
+
+.ai-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: var(--radius);
+  padding: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-lg);
+  color: var(--error);
+  font-size: var(--font-size-sm);
+}
+
+.ai-error[hidden] {
+  display: none;
+}
+
+.ai-results[hidden] {
+  display: none;
+}
+
+.ai-result-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.ai-result-block[hidden] {
+  display: none;
+}
+
+.ai-result-block h4 {
+  margin: 0 0 var(--space-md) 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.ai-content {
+  font-size: var(--font-size);
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.ai-content h1,
+.ai-content h2,
+.ai-content h3 {
+  margin: var(--space-md) 0 var(--space-sm) 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-content h1:first-child,
+.ai-content h2:first-child,
+.ai-content h3:first-child {
+  margin-top: 0;
+}
+
+.ai-content ul,
+.ai-content ol {
+  padding-left: 1.5rem;
+  margin: var(--space-sm) 0;
+}
+
+.ai-content li {
+  margin-bottom: var(--space-xs);
+}
+
+.ai-content p {
+  margin: var(--space-sm) 0;
+}
+
+.ai-content strong {
+  font-weight: 600;
+}
+
 /* Touch-friendly: ensure minimum tap target size */
 @media (hover: none) and (pointer: coarse) {
   .tab {
