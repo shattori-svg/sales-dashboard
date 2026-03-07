@@ -344,6 +344,35 @@ app.get('/api/ai/forecast', async (req, res) => {
   }
 });
 
+const HOURLY_FORECAST_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const hourlyForecastCache = new Map();
+
+app.get('/api/ai/hourly-forecast', async (req, res) => {
+  if (!aiGemini.isAvailable()) {
+    return res.status(404).json({ error: 'AI_NOT_CONFIGURED' });
+  }
+  const storeId = (req.query.storeId || 'default').trim() || 'default';
+  const refDate = req.query.referenceDate;
+  if (!refDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(refDate).trim())) {
+    return res.status(400).json({ error: 'referenceDate (YYYY-MM-DD) is required.' });
+  }
+  const cacheKey = `${storeId}:${refDate}`;
+  const cached = hourlyForecastCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < HOURLY_FORECAST_CACHE_TTL_MS) {
+    return res.json(cached.data);
+  }
+  try {
+    const data = await aiGemini.generateHourlyForecast(getReport, storeId, String(refDate).trim());
+    hourlyForecastCache.set(cacheKey, { data, ts: Date.now() });
+    res.json(data);
+  } catch (err) {
+    const msg = err && err.message ? err.message : 'Unknown error';
+    console.error('AI hourly-forecast error:', msg);
+    if (msg === 'NO_DATA') return res.status(404).json({ error: 'NO_DATA' });
+    res.status(500).json({ error: msg });
+  }
+});
+
 app.post('/api/upload', upload.array('files', 10), async (req, res) => {
   try {
     const files = req.files || [];

@@ -189,8 +189,81 @@ ${langInstruction}`;
   return callGemini(prompt);
 }
 
+/**
+ * Build hourly context for today (so far) and daily totals for yesterday/last week.
+ */
+function buildHourlyForecastContext(todayReport, yesterdaySummary, lastWeekSummary) {
+  if (!todayReport || !todayReport.total || !todayReport.total.hourly) return '';
+  const hourly = todayReport.total.hourly;
+  let text = '## Today (reference date) — hourly so far\n';
+  hourly.forEach((h) => {
+    text += `- ${h.timeKey || h.timeLabel}: Net ${formatNumber(h.netSales || 0)} Baht, Receipts ${formatNumber(h.receiptCount || 0)}\n`;
+  });
+  const todayCumNet = hourly.reduce((s, h) => s + (h.netSales || 0), 0);
+  const todayCumRcpt = hourly.reduce((s, h) => s + (h.receiptCount || 0), 0);
+  text += `Cumulative so far: Net Sales ${formatNumber(todayCumNet)} Baht, Receipt Count ${formatNumber(todayCumRcpt)}\n\n`;
+  if (yesterdaySummary) {
+    text += `## Yesterday: Net Sales ${formatNumber(yesterdaySummary.netSales)} Baht, Receipt Count ${formatNumber(yesterdaySummary.receiptCount)}\n`;
+  }
+  if (lastWeekSummary) {
+    text += `## Same day last week: Net Sales ${formatNumber(lastWeekSummary.netSales)} Baht, Receipt Count ${formatNumber(lastWeekSummary.receiptCount)}\n`;
+  }
+  return text;
+}
+
+/**
+ * Generate end-of-day forecast numbers for the chart (sales and receipts).
+ * Returns { forecastTotalNetSales, forecastLowNetSales, forecastHighNetSales, forecastTotalReceipts, forecastLowReceipts, forecastHighReceipts }.
+ */
+async function generateHourlyForecast(getReport, storeId, referenceDate) {
+  if (!AI_ENABLED) throw new Error('AI_NOT_CONFIGURED');
+
+  const todayReport = await getReport(referenceDate, storeId);
+  if (!todayReport) throw new Error('NO_DATA');
+
+  const yesterdayStr = addDays(referenceDate, -1);
+  const lastWeekStr = addDays(referenceDate, -7);
+  const yesterdayReport = await getReport(yesterdayStr, storeId);
+  const lastWeekReport = await getReport(lastWeekStr, storeId);
+
+  const yesterdaySummary = summarizeReport(yesterdayStr, yesterdayReport);
+  const lastWeekSummary = summarizeReport(lastWeekStr, lastWeekReport);
+
+  const contextText = buildHourlyForecastContext(todayReport, yesterdaySummary, lastWeekSummary);
+
+  const prompt = `You are a retail sales forecaster for LOPIA Thailand. For the SAME day (reference date: ${referenceDate}), predict END-OF-DAY totals.
+
+${contextText}
+
+Respond with ONLY a single JSON object, no other text or markdown. Use this exact structure:
+{"forecastTotalNetSales": number, "forecastLowNetSales": number, "forecastHighNetSales": number, "forecastTotalReceipts": number, "forecastLowReceipts": number, "forecastHighReceipts": number}
+
+Rules:
+- All numbers are integers (Baht for sales, count for receipts).
+- forecastTotalNetSales/Receipts = your best estimate for full-day total.
+- forecastLow* and forecastHigh* = plausible range (min–max).
+- If today already has cumulative data, your forecast total must be >= that cumulative (end-of-day cannot be less than current).`;
+
+  const raw = await callGemini(prompt);
+  const cleaned = raw.replace(/```json?\s*/gi, '').replace(/```\s*/g, '').trim();
+  const firstBrace = cleaned.indexOf('{');
+  const lastBrace = cleaned.lastIndexOf('}');
+  const jsonStr = firstBrace >= 0 && lastBrace > firstBrace ? cleaned.slice(firstBrace, lastBrace + 1) : cleaned;
+  const parsed = JSON.parse(jsonStr);
+
+  return {
+    forecastTotalNetSales: Number(parsed.forecastTotalNetSales),
+    forecastLowNetSales: Number(parsed.forecastLowNetSales),
+    forecastHighNetSales: Number(parsed.forecastHighNetSales),
+    forecastTotalReceipts: Number(parsed.forecastTotalReceipts),
+    forecastLowReceipts: Number(parsed.forecastLowReceipts),
+    forecastHighReceipts: Number(parsed.forecastHighReceipts),
+  };
+}
+
 module.exports = {
   isAvailable,
   generateAnalysis,
   generateForecast,
+  generateHourlyForecast,
 };

@@ -293,7 +293,45 @@
     return { actualCum: actualCum, forecastLine: forecastLine, forecastLower: forecastLower, forecastUpper: forecastUpper, lastActual: lastActual };
   }
 
-  function renderCharts(todayHourly, yesterdayHourly, lastWeekHourly) {
+  function buildOneForecastFromAI(cum, lastActual, n, forecastTotal, forecastLow, forecastHigh) {
+    var actualCum = [], forecastLine = [], forecastLower = [], forecastUpper = [];
+    for (var i = 0; i < n; i++) {
+      actualCum.push(i <= lastActual ? cum[i] : null);
+      if (i < lastActual) {
+        forecastLine.push(null);
+        forecastLower.push(null);
+        forecastUpper.push(null);
+      } else {
+        var val = i === lastActual ? cum[lastActual] : lerp(i, lastActual, cum[lastActual], n - 1, forecastTotal);
+        forecastLine.push(val);
+        forecastLower.push(i === lastActual ? cum[lastActual] : lerp(i, lastActual, cum[lastActual], n - 1, forecastLow));
+        forecastUpper.push(i === lastActual ? cum[lastActual] : lerp(i, lastActual, cum[lastActual], n - 1, forecastHigh));
+      }
+    }
+    return { actualCum: actualCum, forecastLine: forecastLine, forecastLower: forecastLower, forecastUpper: forecastUpper, lastActual: lastActual };
+  }
+
+  function buildForecastChartDataFromAI(aiData, todayNet, todayReceipts) {
+    var n = todayNet.length;
+    if (n === 0) return { sales: null, receipts: null };
+    var cumNet = computeCumulative(todayNet);
+    var cumRcpt = computeCumulative(todayReceipts);
+    var lastActualNet = getLastActualIndex(todayNet);
+    var lastActualRcpt = getLastActualIndex(todayReceipts);
+    var lastActual = Math.max(lastActualNet, lastActualRcpt);
+    var forecastTotalNet = Math.max(Number(aiData.forecastTotalNetSales) || 0, cumNet[lastActual] || 0);
+    var forecastLowNet = Math.max(Number(aiData.forecastLowNetSales) || 0, cumNet[lastActual] || 0);
+    var forecastHighNet = Math.max(Number(aiData.forecastHighNetSales) || 0, forecastTotalNet);
+    var forecastTotalRcpt = Math.max(Number(aiData.forecastTotalReceipts) || 0, cumRcpt[lastActual] || 0);
+    var forecastLowRcpt = Math.max(Number(aiData.forecastLowReceipts) || 0, cumRcpt[lastActual] || 0);
+    var forecastHighRcpt = Math.max(Number(aiData.forecastHighReceipts) || 0, forecastTotalRcpt);
+    return {
+      sales: buildOneForecastFromAI(cumNet, lastActual, n, forecastTotalNet, forecastLowNet, forecastHighNet),
+      receipts: buildOneForecastFromAI(cumRcpt, lastActual, n, forecastTotalRcpt, forecastLowRcpt, forecastHighRcpt)
+    };
+  }
+
+  function renderCharts(todayHourly, yesterdayHourly, lastWeekHourly, optionalForecast) {
     if (typeof Chart === 'undefined' || !todayHourly || !todayHourly.length) return;
     destroyCharts();
     var labels = todayHourly.map(function (h) { return h.timeLabel || h.timeKey || ''; });
@@ -373,8 +411,8 @@
       }
     });
 
-    var forecastSalesData = buildForecastChartData(todayNet, yesterdayNet, lastWeekNet);
-    var forecastReceiptsData = buildForecastChartData(todayReceipts, yesterdayReceipts, lastWeekReceipts);
+    var forecastSalesData = (optionalForecast && optionalForecast.forecastSalesData) ? optionalForecast.forecastSalesData : buildForecastChartData(todayNet, yesterdayNet, lastWeekNet);
+    var forecastReceiptsData = (optionalForecast && optionalForecast.forecastReceiptsData) ? optionalForecast.forecastReceiptsData : buildForecastChartData(todayReceipts, yesterdayReceipts, lastWeekReceipts);
 
     chartInstances.forecastSales = new Chart(forecastSalesCanvas, {
       type: 'line',
@@ -908,7 +946,25 @@
 
     tfoot.innerHTML = renderTotalsRow(todayHourly, yesterdayHourly, lastWeekHourly, isTotal);
 
-    renderCharts(todayHourly, yesterdayHourly, lastWeekHourly);
+    var todayNetForForecast = todayHourly.map(function (h) { return h.netSales || 0; });
+    var todayReceiptsForForecast = todayHourly.map(function (h) { return h.receiptCount || 0; });
+    if (aiState && aiState.available) {
+      showLoading();
+      var storeIdForForecast = getSelectedStoreId();
+      var refDateForForecast = state.referenceDate || '';
+      fetch('/api/ai/hourly-forecast?storeId=' + encodeURIComponent(storeIdForForecast) + '&referenceDate=' + encodeURIComponent(refDateForForecast))
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('Fetch failed')); })
+        .then(function (aiData) {
+          var fd = buildForecastChartDataFromAI(aiData, todayNetForForecast, todayReceiptsForForecast);
+          renderCharts(todayHourly, yesterdayHourly, lastWeekHourly, { forecastSalesData: fd.sales, forecastReceiptsData: fd.receipts });
+        })
+        .catch(function () {
+          renderCharts(todayHourly, yesterdayHourly, lastWeekHourly);
+        })
+        .finally(function () { hideLoading(); });
+    } else {
+      renderCharts(todayHourly, yesterdayHourly, lastWeekHourly);
+    }
 
     var compositionData = getDepartmentCompositionByTime(state.today, startTime, endTime);
     renderComposition(compositionData);
