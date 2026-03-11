@@ -1523,7 +1523,7 @@
     var todayNetForForecast = todayHourly.map(function (h) { return h.netSales || 0; });
     var todayReceiptsForForecast = todayHourly.map(function (h) { return h.receiptCount || 0; });
     var useAiForecast = aiState && aiState.available && isTotal;
-    renderCharts(todayHourly, yesterdayHourly, lastWeekHourly, undefined, isTotal);
+    renderCharts(todayHourly, yesterdayHourly, lastWeekHourly, undefined, true);
     if (useAiForecast) {
       var storeIdForForecast = getSelectedStoreId();
       var refDateForForecast = state.referenceDate || '';
