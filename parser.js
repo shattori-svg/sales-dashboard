@@ -384,7 +384,7 @@ function parseCsv(buffer) {
         grossSales: grossSales != null ? grossSales : null,
         netSales,
         quantitySold,
-        receiptCount: null,
+        receiptCount,
       });
       if (!slotTotals.has(timeKey)) {
         slotTotals.set(timeKey, { netSales: 0, quantitySold: 0, receiptCount, timeLabel });
