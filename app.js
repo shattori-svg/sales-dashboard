@@ -1486,13 +1486,24 @@
     var fallbackReceiptToday = (state.today && state.today.total && state.today.total.totalRow && (state.today.total.totalRow.receiptCount != null)) ? state.today.total.totalRow.receiptCount : null;
     var fallbackReceiptYesterday = (state.yesterday && state.yesterday.total && state.yesterday.total.totalRow && (state.yesterday.total.totalRow.receiptCount != null)) ? state.yesterday.total.totalRow.receiptCount : null;
     var fallbackReceiptLastWeek = (state.lastWeek && state.lastWeek.total && state.lastWeek.total.totalRow && (state.lastWeek.total.totalRow.receiptCount != null)) ? state.lastWeek.total.totalRow.receiptCount : null;
+    if (!isTotal) {
+      fallbackReceiptToday = (state.today && state.today.byDepartment && state.today.byDepartment[dept] && state.today.byDepartment[dept].totalRow && (state.today.byDepartment[dept].totalRow.receiptCount != null))
+        ? state.today.byDepartment[dept].totalRow.receiptCount
+        : null;
+      fallbackReceiptYesterday = (state.yesterday && state.yesterday.byDepartment && state.yesterday.byDepartment[dept] && state.yesterday.byDepartment[dept].totalRow && (state.yesterday.byDepartment[dept].totalRow.receiptCount != null))
+        ? state.yesterday.byDepartment[dept].totalRow.receiptCount
+        : null;
+      fallbackReceiptLastWeek = (state.lastWeek && state.lastWeek.byDepartment && state.lastWeek.byDepartment[dept] && state.lastWeek.byDepartment[dept].totalRow && (state.lastWeek.byDepartment[dept].totalRow.receiptCount != null))
+        ? state.lastWeek.byDepartment[dept].totalRow.receiptCount
+        : null;
+    }
 
     var summaryReceiptToday = isTotal ? receiptToday : null;
     var summaryReceiptYesterday = isTotal ? receiptYesterday : null;
     var summaryReceiptLastWeek = isTotal ? receiptLastWeek : null;
-    var sumToday = computeSummary(todayHourly, summaryReceiptToday, isTotal ? fallbackReceiptToday : null);
-    var sumYesterday = yesterdayHourly ? computeSummary(yesterdayHourly, summaryReceiptYesterday, isTotal ? fallbackReceiptYesterday : null) : null;
-    var sumLastWeek = lastWeekHourly ? computeSummary(lastWeekHourly, summaryReceiptLastWeek, isTotal ? fallbackReceiptLastWeek : null) : null;
+    var sumToday = computeSummary(todayHourly, summaryReceiptToday, fallbackReceiptToday);
+    var sumYesterday = yesterdayHourly ? computeSummary(yesterdayHourly, summaryReceiptYesterday, fallbackReceiptYesterday) : null;
+    var sumLastWeek = lastWeekHourly ? computeSummary(lastWeekHourly, summaryReceiptLastWeek, fallbackReceiptLastWeek) : null;
 
     renderSnapshotCard(getSelectedStoreName(), dept, state.referenceDate, todayHourly, yesterdayHourly, lastWeekHourly, isTotal, state.today, startTime, endTime, sumToday, sumYesterday, sumLastWeek);
 
