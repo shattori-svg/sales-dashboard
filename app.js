@@ -21,7 +21,11 @@
     lastWeek: null,
     referenceDate: null,
     businessHoursSettings: null,
-    storeId: 'default'
+    storeId: 'default',
+    stores: [],
+    currency: 'THB',
+    exchangeRate: null,
+    exchangeRateUpdatedAt: null
   };
 
   function getSelectedStoreId() {
@@ -32,15 +36,81 @@
     var el = document.getElementById('daily-store-select');
     return el && el.value ? el.value : 'default';
   }
-  function getWeeklyStoreId() {
-    var el = document.getElementById('weekly-store-select');
-    return el && el.value ? el.value : 'default';
+  function getExchangeRate() {
+    var r = state.exchangeRate != null ? Number(state.exchangeRate) : NaN;
+    return typeof r === 'number' && !Number.isNaN(r) && r > 0 ? r : null;
+  }
+  function getCurrencyCode() {
+    return state.currency === 'JPY' ? 'JPY' : 'THB';
+  }
+  function toSelectedCurrency(amountBaht) {
+    if (amountBaht == null) return null;
+    var n = Number(amountBaht);
+    if (Number.isNaN(n)) return null;
+    if (getCurrencyCode() === 'JPY') {
+      var rate = getExchangeRate();
+      if (rate == null) return null;
+      return n * rate;
+    }
+    return n;
+  }
+  function getCurrencyLabel() {
+    return getCurrencyCode() === 'JPY' ? t('jpy_unit') : t('currency_unit');
   }
 
   var DEPARTMENTS = ['Grocery', 'Fruit & Vegetable', 'Fish & Seafood', 'Meat', 'Delicatessen', 'Store Management'];
   var DEPARTMENT_COLORS = ['#9333ea', '#22c55e', '#38bdf8', '#ec4899', '#f97316', '#1f2937'];
+  var DEPT_SHORT = { 'Grocery': 'Gr', 'Fruit & Vegetable': 'F&V', 'Fish & Seafood': 'F&S', 'Meat': 'Mt', 'Delicatessen': 'Deli', 'Store Management': 'Mg' };
+
+  function getDepartmentDisplayName(name) {
+    var lang = window.i18n && window.i18n.getCurrentLang ? window.i18n.getCurrentLang() : 'ja';
+    if (lang === 'ja') {
+      var jaMap = {
+        'Grocery': '食品',
+        'Fruit & Vegetable': '青果',
+        'Fish & Seafood': '鮮魚',
+        'Meat': '精肉',
+        'Delicatessen': '惣菜',
+        'Store Management': '店舗管理'
+      };
+      return jaMap[name] || name;
+    }
+    if (lang === 'th') {
+      var thMap = {
+        'Grocery': 'ของชำ',
+        'Fruit & Vegetable': 'ผักและผลไม้',
+        'Fish & Seafood': 'ปลาและอาหารทะเล',
+        'Meat': 'เนื้อสัตว์',
+        'Delicatessen': 'อาหารพร้อมทาน',
+        'Store Management': 'บริหารสาขา'
+      };
+      return thMap[name] || name;
+    }
+    return name;
+  }
+
+  function refreshDepartmentSelectLabels() {
+    var ids = ['department-select', 'ai-department-select', 'allstores-department-select', 'settings-department-select'];
+    ids.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      Array.prototype.forEach.call(el.options, function (opt) {
+        var v = opt.value || '';
+        if (v === 'Total') {
+          opt.textContent = t('total') || 'Total';
+        } else {
+          opt.textContent = getDepartmentDisplayName(v);
+        }
+      });
+    });
+  }
 
   var chartInstances = { sales: null, receipts: null, forecastSales: null, forecastReceipts: null, composition: null, dailySales: null, dailyComposition: null, dailyMetrics: null };
+  var hourlyChartView = 'sales';
+  var forecastChartView = 'sales';
+  var compositionViewMode = 'amount';
+  var lastCompositionData = null;
+  var COMPOSITION_NARROW_PX = 768;
 
   function destroyCharts() {
     if (chartInstances.sales) {
@@ -74,6 +144,42 @@
     if (chartInstances.dailyMetrics) {
       chartInstances.dailyMetrics.destroy();
       chartInstances.dailyMetrics = null;
+    }
+  }
+
+  function setHourlyChartTab(view) {
+    hourlyChartView = view === 'receipts' ? 'receipts' : 'sales';
+    var salesPanel = document.getElementById('hourly-chart-sales-panel');
+    var receiptsPanel = document.getElementById('hourly-chart-receipts-panel');
+    var tabSales = document.getElementById('chart-tab-sales');
+    var tabReceipts = document.getElementById('chart-tab-receipts');
+    if (salesPanel) salesPanel.hidden = hourlyChartView !== 'sales';
+    if (receiptsPanel) receiptsPanel.hidden = hourlyChartView !== 'receipts';
+    if (tabSales) {
+      tabSales.classList.toggle('active', hourlyChartView === 'sales');
+      tabSales.setAttribute('aria-selected', hourlyChartView === 'sales' ? 'true' : 'false');
+    }
+    if (tabReceipts) {
+      tabReceipts.classList.toggle('active', hourlyChartView === 'receipts');
+      tabReceipts.setAttribute('aria-selected', hourlyChartView === 'receipts' ? 'true' : 'false');
+    }
+  }
+
+  function setForecastChartTab(view) {
+    forecastChartView = view === 'receipts' ? 'receipts' : 'sales';
+    var salesPanel = document.getElementById('forecast-chart-sales-panel');
+    var receiptsPanel = document.getElementById('forecast-chart-receipts-panel');
+    var tabSales = document.getElementById('chart-tab-forecast-sales');
+    var tabReceipts = document.getElementById('chart-tab-forecast-receipts');
+    if (salesPanel) salesPanel.hidden = forecastChartView !== 'sales';
+    if (receiptsPanel) receiptsPanel.hidden = forecastChartView !== 'receipts';
+    if (tabSales) {
+      tabSales.classList.toggle('active', forecastChartView === 'sales');
+      tabSales.setAttribute('aria-selected', forecastChartView === 'sales' ? 'true' : 'false');
+    }
+    if (tabReceipts) {
+      tabReceipts.classList.toggle('active', forecastChartView === 'receipts');
+      tabReceipts.setAttribute('aria-selected', forecastChartView === 'receipts' ? 'true' : 'false');
     }
   }
 
@@ -116,91 +222,164 @@
 
   function renderComposition(compositionData) {
     var section = document.getElementById('composition-section');
-    var canvas = document.getElementById('chart-composition');
-    var tbody = document.getElementById('composition-tbody');
-    if (!section || !canvas || !tbody) return;
+    var list = document.getElementById('composition-list');
+    if (!section || !list) return;
     if (!compositionData || !compositionData.timeLabels.length || !compositionData.deptDatasets.length) {
+      lastCompositionData = null;
       section.classList.add('hidden');
       if (chartInstances.composition) {
         chartInstances.composition.destroy();
         chartInstances.composition = null;
       }
-      tbody.innerHTML = '';
-      var tfootEl = document.getElementById('composition-tfoot');
-      if (tfootEl) tfootEl.innerHTML = '';
+      list.innerHTML = '';
       return;
     }
     section.classList.remove('hidden');
-    var timeLabels = compositionData.timeLabels;
-    var deptDatasets = compositionData.deptDatasets;
+    var deptDatasets = compositionData.deptDatasets || [];
+    var timeSlots = compositionData.timeSlots || [];
+    var grandTotal = 0;
+    var items = deptDatasets.map(function (d) {
+      var total = 0;
+      var peak = 0;
+      for (var i = 0; i < d.values.length; i++) {
+        var v = d.values[i] || 0;
+        total += v;
+        if (v > peak) peak = v;
+      }
+      grandTotal += total;
+      return { name: d.name, values: d.values || [], total: total, peak: peak };
+    });
+    items.sort(function (a, b) {
+      var az = a.total <= 0 ? 1 : 0;
+      var bz = b.total <= 0 ? 1 : 0;
+      if (az !== bz) return az - bz;
+      if (b.total !== a.total) return b.total - a.total;
+      return a.name.localeCompare(b.name);
+    });
 
     if (chartInstances.composition) {
       chartInstances.composition.destroy();
       chartInstances.composition = null;
     }
-    var chartDatasets = deptDatasets.map(function (d) {
-      return {
-        label: d.name,
-        data: d.values,
-        backgroundColor: d.color,
-        borderColor: d.color,
-        borderWidth: 1
-      };
-    });
-    chartInstances.composition = new Chart(canvas, {
-      type: 'bar',
-      data: { labels: timeLabels, datasets: chartDatasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        plugins: {
-          legend: {
-            position: 'top'
-          },
-          tooltip: {
-            callbacks: {
-              afterLabel: function (ctx) {
-                var slotTotal = 0;
-                var datasets = ctx.chart.data.datasets;
-                for (var idx = 0; idx < datasets.length; idx++) {
-                  slotTotal += (datasets[idx].data[ctx.dataIndex] || 0);
-                }
-                if (slotTotal <= 0) return '';
-                var pct = ((ctx.raw / slotTotal) * 100).toFixed(1);
-                return (t('share_pct').replace('{pct}', pct));
-              }
-            }
-          }
-        },
-        scales: {
-          x: { title: { display: true, text: t('time_slot') }, stacked: true },
-          y: { stacked: true, beginAtZero: true, title: { display: true, text: t('net_sales') } }
-        }
-      }
-    });
 
+    function deptTone(name) {
+      var toneMap = {
+        'Fruit & Vegetable': { bg: '#eef9f0', border: '#9dd7ab', accent: '#22a352', details: '#f6fcf7', peak: '#dbf4e2' }, // green
+        'Grocery': { bg: '#f3f4f6', border: '#cbd5e1', accent: '#6b7280', details: '#f8fafc', peak: '#eceff3' }, // gray
+        'Delicatessen': { bg: '#fff5eb', border: '#fdba74', accent: '#ea580c', details: '#fffaf5', peak: '#ffe9d2' }, // orange
+        'Fish & Seafood': { bg: '#eef8ff', border: '#93c5fd', accent: '#0284c7', details: '#f5fbff', peak: '#deefff' }, // light blue
+        'Meat': { bg: '#fff0f6', border: '#f9a8d4', accent: '#db2777', details: '#fff7fb', peak: '#ffe2f0' }, // pink
+        'Store Management': { bg: '#ffffff', border: '#e5e7eb', accent: '#6b7280', details: '#ffffff', peak: '#f3f4f6' } // white
+      };
+      return toneMap[name] || { bg: '#ffffff', border: '#e5e7eb', accent: '#2563eb', details: '#f8fbff', peak: '#e7f0ff' };
+    }
+    lastCompositionData = compositionData;
+
+    var html = '';
+    for (var di = 0; di < items.length; di++) {
+      var item = items[di];
+      var share = grandTotal > 0 ? (item.total / grandTotal * 100) : 0;
+      var isZero = item.total <= 0;
+      var cardClass = 'composition-item' + (isZero ? ' is-zero' : '');
+      var tone = deptTone(item.name);
+      var style = '--comp-bg:' + tone.bg + ';--comp-border:' + tone.border + ';--comp-accent:' + tone.accent + ';--comp-details:' + tone.details + ';--comp-peak:' + tone.peak + ';';
+      html += '<div class="' + cardClass + '" style="' + style + '">' +
+        '<button type="button" class="composition-summary" data-dept="' + item.name + '" aria-expanded="false">' +
+        '<span class="composition-dept">' + getDepartmentDisplayName(item.name) + '</span>' +
+        '<span class="composition-total">' + formatMoney(item.total) + '</span>' +
+        '<span class="composition-share-badge">' + share.toFixed(1) + '%</span>' +
+        '<span class="composition-chevron">v</span>' +
+        '</button>' +
+        '<div class="composition-details" hidden>';
+      var hasNonZero = false;
+      for (var ti = 0; ti < timeSlots.length; ti++) {
+        var slot = timeSlots[ti];
+        var val = item.values[ti] || 0;
+        if (val <= 0) continue;
+        hasNonZero = true;
+        var widthPct = item.peak > 0 ? Math.max(4, Math.round((val / item.peak) * 100)) : 0;
+        var isPeak = item.peak > 0 && val === item.peak;
+        var rowCls = 'composition-time-row' + (isPeak ? ' is-peak' : '');
+        var timeLabel = (slot.timeKey || '').split('-')[0] || (slot.timeLabel || '');
+        html += '<div class="' + rowCls + '">' +
+          '<span class="composition-time-label">' + timeLabel + '</span>' +
+          '<span class="composition-peak">' + (isPeak ? 'Peak!' : '') + '</span>' +
+          '<span class="composition-time-value">' + formatMoney(val) + '</span>' +
+          '<span class="composition-time-bar"><span class="composition-time-bar-fill" style="width:' + widthPct + '%"></span></span>' +
+          '</div>';
+      }
+      if (!hasNonZero) {
+        html += '<div class="composition-time-row"><span class="composition-time-label">—</span><span class="composition-peak"></span><span class="composition-time-value">実績なし</span><span class="composition-time-bar"></span></div>';
+      }
+      html += '</div></div>';
+    }
+    list.innerHTML = html;
+
+    list.querySelectorAll('.composition-summary').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var details = btn.nextElementSibling;
+        var expanded = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        var chev = btn.querySelector('.composition-chevron');
+        if (chev) chev.textContent = expanded ? 'v' : '^';
+        if (details) details.hidden = expanded;
+      });
+    });
+  }
+
+  function updateCompositionTableHead(compositionData, isNarrow) {
     var thead = document.querySelector('#composition-table thead tr');
-    var theadHtml = '<th>' + t('time_range_col') + '</th>';
-    for (var idx = 0; idx < deptDatasets.length; idx++) theadHtml += '<th>' + deptDatasets[idx].name + '</th>';
-    theadHtml += '<th>' + t('total') + '</th>';
-    if (thead) thead.innerHTML = theadHtml;
+    if (!thead || !compositionData || !compositionData.deptDatasets) return;
+    var deptDatasets = compositionData.deptDatasets;
+    var timeLabel = isNarrow ? (t('time_range_col_short') || t('time_range_col')) : t('time_range_col');
+    var totalLabel = isNarrow ? (t('total_short') || t('total')) : t('total');
+    var theadHtml = '<th>' + timeLabel + '</th>';
+    for (var idx = 0; idx < deptDatasets.length; idx++) {
+      var name = deptDatasets[idx].name;
+      theadHtml += '<th>' + (isNarrow ? (DEPT_SHORT[name] || name) : name) + '</th>';
+    }
+    theadHtml += '<th>' + totalLabel + '</th>';
+    thead.innerHTML = theadHtml;
+  }
+
+  function getCompositionDisplayTimeLabels(compositionData, isNarrow) {
+    if (!compositionData || !compositionData.timeSlots) return compositionData ? (compositionData.timeLabels || []) : [];
+    if (!isNarrow) return compositionData.timeLabels || [];
+    return compositionData.timeSlots.map(function (h) {
+      var k = (h.timeKey || '').trim();
+      var start = k.indexOf('-') >= 0 ? k.split('-')[0].trim() : k;
+      return start || (h.timeLabel || '');
+    });
+  }
+
+  function renderCompositionTableBody(compositionData, viewMode, isNarrow) {
+    var tbody = document.getElementById('composition-tbody');
+    var tfoot = document.getElementById('composition-tfoot');
+    if (!compositionData || !tbody) return;
+    var timeLabels = compositionData.timeLabels || [];
+    var deptDatasets = compositionData.deptDatasets || [];
+    var displayTimeLabels = getCompositionDisplayTimeLabels(compositionData, isNarrow);
+    var fmtAmount = isNarrow ? formatCurrencyInteger : formatCurrency;
 
     tbody.innerHTML = '';
     for (var i = 0; i < timeLabels.length; i++) {
       var slotTotal = 0;
       for (var j = 0; j < deptDatasets.length; j++) slotTotal += deptDatasets[j].values[i] || 0;
-      var row = '<tr><td>' + timeLabels[i] + '</td>';
+      var row = '<tr><td>' + (displayTimeLabels[i] != null ? displayTimeLabels[i] : timeLabels[i]) + '</td>';
       for (var k = 0; k < deptDatasets.length; k++) {
         var v = deptDatasets[k].values[i] || 0;
-        var pct = slotTotal > 0 ? ((v / slotTotal) * 100).toFixed(1) : '0.0';
-        row += '<td>' + pct + '%</td>';
+        if (viewMode === 'amount') {
+          row += '<td>' + fmtAmount(v) + '</td>';
+        } else {
+          var pctVal = slotTotal > 0 ? (v / slotTotal) * 100 : 0;
+          row += '<td>' + (isNarrow ? Math.round(pctVal) : pctVal.toFixed(1)) + '%</td>';
+        }
       }
-      row += '<td>' + formatCurrency(slotTotal) + '</td></tr>';
+      row += '<td>' + fmtAmount(slotTotal) + '</td></tr>';
       tbody.insertAdjacentHTML('beforeend', row);
     }
 
-    var tfoot = document.getElementById('composition-tfoot');
-    if (tfoot) {
+    if (tfoot && deptDatasets.length) {
       var deptTotals = [];
       var grandTotal = 0;
       for (var d = 0; d < deptDatasets.length; d++) {
@@ -209,13 +388,31 @@
         deptTotals.push(sum);
         grandTotal += sum;
       }
-      var footRow = '<tr><td>' + t('total') + '</td>';
+      var totalLabel = isNarrow ? (t('total_short') || t('total')) : t('total');
+      var footRow = '<tr><td>' + totalLabel + '</td>';
       for (var n = 0; n < deptTotals.length; n++) {
-        var pct = grandTotal > 0 ? ((deptTotals[n] / grandTotal) * 100).toFixed(1) : '0.0';
-        footRow += '<td>' + pct + '%</td>';
+        if (viewMode === 'amount') {
+          footRow += '<td>' + fmtAmount(deptTotals[n]) + '</td>';
+        } else {
+          var pctVal = grandTotal > 0 ? (deptTotals[n] / grandTotal) * 100 : 0;
+          footRow += '<td>' + (isNarrow ? Math.round(pctVal) : pctVal.toFixed(1)) + '%</td>';
+        }
       }
-      footRow += '<td>' + formatCurrency(grandTotal) + '</td></tr>';
+      footRow += '<td>' + fmtAmount(grandTotal) + '</td></tr>';
       tfoot.innerHTML = footRow;
+    }
+  }
+
+  function updateCompositionTabState() {
+    var tabAmount = document.getElementById('composition-tab-amount');
+    var tabPercent = document.getElementById('composition-tab-percent');
+    if (tabAmount) {
+      tabAmount.classList.toggle('active', compositionViewMode === 'amount');
+      tabAmount.setAttribute('aria-selected', compositionViewMode === 'amount' ? 'true' : 'false');
+    }
+    if (tabPercent) {
+      tabPercent.classList.toggle('active', compositionViewMode === 'percent');
+      tabPercent.setAttribute('aria-selected', compositionViewMode === 'percent' ? 'true' : 'false');
     }
   }
 
@@ -229,6 +426,16 @@
     return out;
   }
 
+  var THAILAND_TZ = 'Asia/Bangkok';
+
+  function getThailandDateStr() {
+    return new Date().toLocaleDateString('en-CA', { timeZone: THAILAND_TZ });
+  }
+
+  function getThailandTimeStr() {
+    return new Date().toLocaleTimeString('en-GB', { timeZone: THAILAND_TZ, hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
   function getLastActualIndex(values) {
     for (var i = values.length - 1; i >= 0; i--) {
       if (values[i] != null && Number(values[i]) > 0) return i;
@@ -236,59 +443,37 @@
     return values.length - 1;
   }
 
+  /** Last slot index whose end time <= thailandTimeStr (HH:MM). Uses Thailand time so forecast anchor is stable across hour boundaries. */
+  function getLastActualIndexByThailandTime(timeSlots, thailandTimeStr) {
+    if (!timeSlots || !timeSlots.length || !thailandTimeStr) return timeSlots ? timeSlots.length - 1 : 0;
+    var t = String(thailandTimeStr).trim();
+    for (var i = timeSlots.length - 1; i >= 0; i--) {
+      var timeKey = timeSlots[i].timeKey || '';
+      var endTime = timeKey.indexOf('-') >= 0 ? timeKey.split('-')[1].trim() : '';
+      if (endTime && endTime <= t) return i;
+    }
+    return 0;
+  }
+
   function lerp(i, i0, v0, i1, v1) {
     if (i1 === i0) return v0;
     return v0 + (v1 - v0) * (i - i0) / (i1 - i0);
   }
 
-  function computeForecastFromPast(actualCumAtLast, lastActualIndex, totalSlots, yesterdayTotal, lastWeekTotal) {
-    var pastAvg = null;
-    if (yesterdayTotal != null && lastWeekTotal != null) pastAvg = (yesterdayTotal + lastWeekTotal) / 2;
-    else if (yesterdayTotal != null) pastAvg = yesterdayTotal;
-    else if (lastWeekTotal != null) pastAvg = lastWeekTotal;
-    var todayRate = (lastActualIndex >= 0 && actualCumAtLast > 0) ? actualCumAtLast / (lastActualIndex + 1) : 0;
-    var todayProjection = todayRate * totalSlots;
-    var result;
-    if (pastAvg != null && todayProjection > 0) result = 0.5 * todayProjection + 0.5 * pastAvg;
-    else if (pastAvg != null) result = pastAvg;
-    else result = todayProjection || actualCumAtLast;
-    return Math.max(result, actualCumAtLast || 0);
-  }
-
-  function buildForecastChartData(todayValues, yesterdayValues, lastWeekValues) {
+  function buildForecastChartDataActualOnly(todayValues, todayHourly, thailandTimeStr) {
     var n = todayValues.length;
     if (n === 0) return { actualCum: [], forecastLine: [], forecastLower: [], forecastUpper: [], lastActual: 0 };
     var cum = computeCumulative(todayValues);
-    var lastActual = getLastActualIndex(todayValues);
-    var yesterdayTotal = yesterdayValues.reduce(function (s, v) { return s + (v != null ? Number(v) : 0); }, 0);
-    var lastWeekTotal = lastWeekValues.reduce(function (s, v) { return s + (v != null ? Number(v) : 0); }, 0);
-    var forecastTotal = computeForecastFromPast(cum[lastActual], lastActual, n, yesterdayTotal, lastWeekTotal);
-    forecastTotal = Math.max(forecastTotal, cum[lastActual]);
-    var margin = 0.15;
-    if (yesterdayTotal > 0 && lastWeekTotal > 0) {
-      var lo = Math.min(yesterdayTotal, lastWeekTotal);
-      var hi = Math.max(yesterdayTotal, lastWeekTotal);
-      margin = Math.max(0.1, (hi - lo) / (forecastTotal || 1));
-    }
-    margin = Math.min(0.25, margin);
-    var forecastLow = Math.max(forecastTotal * (1 - margin), cum[lastActual]);
-    var forecastHigh = Math.max(forecastTotal * (1 + margin), forecastLow);
+    var lastActual = (todayHourly && thailandTimeStr) ? getLastActualIndexByThailandTime(todayHourly, thailandTimeStr) : getLastActualIndex(todayValues);
     var actualCum = [];
     var forecastLine = [];
     var forecastLower = [];
     var forecastUpper = [];
     for (var i = 0; i < n; i++) {
       actualCum.push(i <= lastActual ? cum[i] : null);
-      if (i < lastActual) {
-        forecastLine.push(null);
-        forecastLower.push(null);
-        forecastUpper.push(null);
-      } else {
-        var val = i === lastActual ? cum[lastActual] : lerp(i, lastActual, cum[lastActual], n - 1, forecastTotal);
-        forecastLine.push(val);
-        forecastLower.push(i === lastActual ? cum[lastActual] : lerp(i, lastActual, cum[lastActual], n - 1, forecastLow));
-        forecastUpper.push(i === lastActual ? cum[lastActual] : lerp(i, lastActual, cum[lastActual], n - 1, forecastHigh));
-      }
+      forecastLine.push(i <= lastActual ? cum[i] : null);
+      forecastLower.push(i <= lastActual ? cum[i] : null);
+      forecastUpper.push(i <= lastActual ? cum[i] : null);
     }
     return { actualCum: actualCum, forecastLine: forecastLine, forecastLower: forecastLower, forecastUpper: forecastUpper, lastActual: lastActual };
   }
@@ -311,14 +496,12 @@
     return { actualCum: actualCum, forecastLine: forecastLine, forecastLower: forecastLower, forecastUpper: forecastUpper, lastActual: lastActual };
   }
 
-  function buildForecastChartDataFromAI(aiData, todayNet, todayReceipts) {
+  function buildForecastChartDataFromAI(aiData, todayNet, todayReceipts, todayHourly, thailandTimeStr) {
     var n = todayNet.length;
     if (n === 0) return { sales: null, receipts: null };
     var cumNet = computeCumulative(todayNet);
     var cumRcpt = computeCumulative(todayReceipts);
-    var lastActualNet = getLastActualIndex(todayNet);
-    var lastActualRcpt = getLastActualIndex(todayReceipts);
-    var lastActual = Math.max(lastActualNet, lastActualRcpt);
+    var lastActual = (todayHourly && thailandTimeStr) ? getLastActualIndexByThailandTime(todayHourly, thailandTimeStr) : Math.max(getLastActualIndex(todayNet), getLastActualIndex(todayReceipts));
     var forecastTotalNet = Math.max(Number(aiData.forecastTotalNetSales) || 0, cumNet[lastActual] || 0);
     var forecastLowNet = Math.max(Number(aiData.forecastLowNetSales) || 0, cumNet[lastActual] || 0);
     var forecastHighNet = Math.max(Number(aiData.forecastHighNetSales) || 0, forecastTotalNet);
@@ -331,8 +514,9 @@
     };
   }
 
-  function renderCharts(todayHourly, yesterdayHourly, lastWeekHourly, optionalForecast) {
+  function renderCharts(todayHourly, yesterdayHourly, lastWeekHourly, optionalForecast, useReceipts) {
     if (typeof Chart === 'undefined' || !todayHourly || !todayHourly.length) return;
+    if (useReceipts === undefined) useReceipts = true;
     destroyCharts();
     var labels = todayHourly.map(function (h) { return h.timeLabel || h.timeKey || ''; });
     var todayNet = todayHourly.map(function (h) { return h.netSales || 0; });
@@ -358,19 +542,28 @@
     var receiptsCanvas = document.getElementById('chart-receipts');
     var forecastSalesCanvas = document.getElementById('chart-forecast-sales');
     var forecastReceiptsCanvas = document.getElementById('chart-forecast-receipts');
-    if (!salesCanvas || !receiptsCanvas || !forecastSalesCanvas || !forecastReceiptsCanvas) return;
+    if (!salesCanvas || !forecastSalesCanvas) return;
+    if (useReceipts && !forecastReceiptsCanvas) return;
 
     var hasYesterday = yesterdayHourly && yesterdayHourly.length > 0;
     var hasLastWeek = lastWeekHourly && lastWeekHourly.length > 0;
 
+    var moneyRate = getCurrencyCode() === 'JPY' ? (getExchangeRate() || 1) : 1;
+    function convertSeries(arr) {
+      return arr.map(function (v) { return v == null ? null : v * moneyRate; });
+    }
+    var todayNetDisplay = convertSeries(todayNet);
+    var yesterdayNetDisplay = convertSeries(yesterdayNet);
+    var lastWeekNetDisplay = convertSeries(lastWeekNet);
+
     var salesDatasets = [
-      { label: t('today'), data: todayNet, backgroundColor: 'rgba(37, 99, 235, 0.8)', borderColor: 'rgb(37, 99, 235)', borderWidth: 1 }
+      { label: t('today'), data: todayNetDisplay, backgroundColor: 'rgba(37, 99, 235, 0.8)', borderColor: 'rgb(37, 99, 235)', borderWidth: 1 }
     ];
     if (hasYesterday) {
-      salesDatasets.push({ label: t('yesterday'), data: yesterdayNet, backgroundColor: 'rgba(107, 114, 128, 0.6)', borderColor: 'rgb(107, 114, 128)', borderWidth: 1 });
+      salesDatasets.push({ label: t('yesterday'), data: yesterdayNetDisplay, backgroundColor: 'rgba(107, 114, 128, 0.6)', borderColor: 'rgb(107, 114, 128)', borderWidth: 1 });
     }
     if (hasLastWeek) {
-      salesDatasets.push({ label: t('last_week'), data: lastWeekNet, backgroundColor: 'rgba(156, 163, 175, 0.5)', borderColor: 'rgb(156, 163, 175)', borderWidth: 1 });
+      salesDatasets.push({ label: t('last_week'), data: lastWeekNetDisplay, backgroundColor: 'rgba(156, 163, 175, 0.5)', borderColor: 'rgb(156, 163, 175)', borderWidth: 1 });
     }
 
     chartInstances.sales = new Chart(salesCanvas, {
@@ -382,37 +575,47 @@
         plugins: { legend: { position: 'top' } },
         scales: {
           x: { title: { display: true, text: 'Time Slot' } },
-          y: { beginAtZero: true, title: { display: true, text: t('net_sales') } }
+          y: { beginAtZero: true, title: { display: true, text: 'Net Sales (' + getCurrencyLabel() + ')' } }
         }
       }
     });
 
-    var receiptDatasets = [
-      { label: t('today'), data: todayReceipts, backgroundColor: 'rgba(34, 197, 94, 0.8)', borderColor: 'rgb(34, 197, 94)', borderWidth: 1 }
-    ];
-    if (hasYesterday) {
-      receiptDatasets.push({ label: t('yesterday'), data: yesterdayReceipts, backgroundColor: 'rgba(107, 114, 128, 0.6)', borderColor: 'rgb(107, 114, 128)', borderWidth: 1 });
-    }
-    if (hasLastWeek) {
-      receiptDatasets.push({ label: t('last_week'), data: lastWeekReceipts, backgroundColor: 'rgba(156, 163, 175, 0.5)', borderColor: 'rgb(156, 163, 175)', borderWidth: 1 });
-    }
-
-    chartInstances.receipts = new Chart(receiptsCanvas, {
-      type: 'bar',
-      data: { labels: labels, datasets: receiptDatasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        plugins: { legend: { position: 'top' } },
-        scales: {
-          x: { title: { display: true, text: t('time_slot') } },
-          y: { beginAtZero: true, title: { display: true, text: t('receipt_count') } }
-        }
+    if (receiptsCanvas) {
+      var receiptDatasets = [
+        { label: t('today'), data: todayReceipts, backgroundColor: 'rgba(34, 197, 94, 0.8)', borderColor: 'rgb(34, 197, 94)', borderWidth: 1 }
+      ];
+      if (hasYesterday) {
+        receiptDatasets.push({ label: t('yesterday'), data: yesterdayReceipts, backgroundColor: 'rgba(107, 114, 128, 0.6)', borderColor: 'rgb(107, 114, 128)', borderWidth: 1 });
       }
-    });
+      if (hasLastWeek) {
+        receiptDatasets.push({ label: t('last_week'), data: lastWeekReceipts, backgroundColor: 'rgba(156, 163, 175, 0.5)', borderColor: 'rgb(156, 163, 175)', borderWidth: 1 });
+      }
+      chartInstances.receipts = new Chart(receiptsCanvas, {
+        type: 'bar',
+        data: { labels: labels, datasets: receiptDatasets },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: { legend: { position: 'top' } },
+          scales: {
+            x: { title: { display: true, text: t('time_slot') } },
+            y: { beginAtZero: true, title: { display: true, text: t('receipt_count') } }
+          }
+        }
+      });
+    }
+    setHourlyChartTab(hourlyChartView);
 
-    var forecastSalesData = (optionalForecast && optionalForecast.forecastSalesData) ? optionalForecast.forecastSalesData : buildForecastChartData(todayNet, yesterdayNet, lastWeekNet);
-    var forecastReceiptsData = (optionalForecast && optionalForecast.forecastReceiptsData) ? optionalForecast.forecastReceiptsData : buildForecastChartData(todayReceipts, yesterdayReceipts, lastWeekReceipts);
+    var thailandNow = getThailandTimeStr();
+    var forecastSalesDataRaw = (optionalForecast && optionalForecast.forecastSalesData) ? optionalForecast.forecastSalesData : buildForecastChartDataActualOnly(todayNet, todayHourly, thailandNow);
+    var forecastSalesData = {
+      forecastLower: convertSeries(forecastSalesDataRaw.forecastLower),
+      forecastUpper: convertSeries(forecastSalesDataRaw.forecastUpper),
+      forecastLine: convertSeries(forecastSalesDataRaw.forecastLine),
+      actualCum: convertSeries(forecastSalesDataRaw.actualCum),
+      lastActual: forecastSalesDataRaw.lastActual
+    };
+    var forecastReceiptsData = (optionalForecast && optionalForecast.forecastReceiptsData) ? optionalForecast.forecastReceiptsData : buildForecastChartDataActualOnly(todayReceipts, todayHourly, thailandNow);
 
     chartInstances.forecastSales = new Chart(forecastSalesCanvas, {
       type: 'line',
@@ -489,19 +692,20 @@
         },
         scales: {
           x: { title: { display: true, text: t('time_slot') } },
-          y: { beginAtZero: true, title: { display: true, text: t('chart_forecast_net') } }
+          y: { beginAtZero: true, title: { display: true, text: 'Net Sales (' + getCurrencyLabel() + ')' } }
         }
       }
     });
 
-    chartInstances.forecastReceipts = new Chart(forecastReceiptsCanvas, {
-      type: 'line',
-      data: {
-        labels: labels,
-        datasets: [
-          {
-            label: t('forecast_band'),
-            data: forecastReceiptsData.forecastLower,
+    if (useReceipts && forecastReceiptsCanvas) {
+      chartInstances.forecastReceipts = new Chart(forecastReceiptsCanvas, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: t('forecast_band'),
+              data: forecastReceiptsData.forecastLower,
             borderColor: 'transparent',
             backgroundColor: 'rgba(234, 88, 12, 0.15)',
             fill: '+1',
@@ -573,6 +777,8 @@
         }
       }
     });
+    }
+    setForecastChartTab(forecastChartView);
   }
 
   function getHourlyData(data, department) {
@@ -580,6 +786,298 @@
     if (department === 'Total') return data.total.hourly;
     if (data.byDepartment && data.byDepartment[department]) return data.byDepartment[department].hourly;
     return null;
+  }
+
+  function getSelectedStoreName() {
+    var id = getSelectedStoreId();
+    var list = state.stores && state.stores.length ? state.stores : [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === id) return list[i].name || id;
+    }
+    var sel = document.getElementById('store-select');
+    if (sel && sel.selectedIndex >= 0 && sel.options[sel.selectedIndex]) return sel.options[sel.selectedIndex].textContent || id;
+    return id || '—';
+  }
+
+  function updateHourlyFiltersSummaryBar() {
+    var summaryEl = document.getElementById('hourly-filters-summary');
+    if (!summaryEl) return;
+    var storeEl = document.getElementById('store-select');
+    var deptEl = document.getElementById('department-select');
+    var dateEl = document.getElementById('output-date');
+    var startEl = document.getElementById('time-start');
+    var endEl = document.getElementById('time-end');
+    var storeText = storeEl && storeEl.options && storeEl.selectedIndex >= 0 ? (storeEl.options[storeEl.selectedIndex].textContent || storeEl.value || '') : '';
+    var deptText = deptEl ? (deptEl.value || '') : '';
+    var dateText = dateEl ? (dateEl.value || '') : '';
+    var rangeText = (startEl && endEl && startEl.value && endEl.value) ? (startEl.value + '〜' + endEl.value) : '';
+    var items = [
+      { label: t('store') || 'Store', value: storeText },
+      { label: t('department') || 'Dept', value: deptText },
+      { label: t('output_date') || 'Date', value: dateText },
+      { label: t('time_range') || 'Time', value: rangeText }
+    ].filter(function (item) { return !!item.value; });
+    summaryEl.innerHTML = '';
+    if (!items.length) {
+      summaryEl.textContent = '—';
+      return;
+    }
+    items.forEach(function (item) {
+      var row = document.createElement('span');
+      row.className = 'hourly-filter-summary-item';
+      var labelEl = document.createElement('span');
+      labelEl.className = 'hourly-filter-summary-label';
+      labelEl.textContent = item.label;
+      var valueEl = document.createElement('span');
+      valueEl.className = 'hourly-filter-summary-value';
+      valueEl.textContent = item.value;
+      row.appendChild(labelEl);
+      row.appendChild(valueEl);
+      summaryEl.appendChild(row);
+    });
+  }
+
+  function formatDepartmentPrefixedLabel(baseLabel) {
+    var deptLabel = t('department') || 'Department';
+    var lang = (window.i18n && typeof window.i18n.getCurrentLang === 'function')
+      ? (window.i18n.getCurrentLang() || 'ja')
+      : 'ja';
+    return lang === 'ja' ? (deptLabel + baseLabel) : (deptLabel + ' ' + baseLabel);
+  }
+
+  function getDepartmentMetricLabel(key, fallbackLabel) {
+    var lang = (window.i18n && typeof window.i18n.getCurrentLang === 'function')
+      ? (window.i18n.getCurrentLang() || 'ja')
+      : 'ja';
+    if (lang === 'ja') {
+      if (key === 'snapshot_net_sales') return '部門売上高';
+      if (key === 'qty_sold_short') return '部門販売数量';
+      if (key === 'sales_per_hour') return '部門時間当たり売上';
+      if (key === 'unit_per_txn') return '部門買い上げ点数';
+      if (key === 'avg_selling_price') return '部門商品単価';
+    }
+    return formatDepartmentPrefixedLabel(fallbackLabel);
+  }
+
+  function updateSnapshotMetricLabels(isTotal) {
+    var card = document.getElementById('snapshot-card');
+    if (!card) return;
+    var defs = [
+      { selector: '#snapshot-net-label', key: 'snapshot_net_sales', fallback: 'Net Sales' },
+      { selector: '[data-i18n="qty_sold_short"]', key: 'qty_sold_short', fallback: 'Qty Sold' },
+      { selector: '[data-i18n="receipt_count"]', key: 'receipt_count', fallback: 'Receipt Count' },
+      { selector: '[data-i18n="sales_per_hour"]', key: 'sales_per_hour', fallback: 'Sales per Hour' },
+      { selector: '[data-i18n="txn_per_hour"]', key: 'txn_per_hour', fallback: 'Transaction per Hour' },
+      { selector: '[data-i18n="unit_per_txn"]', key: 'unit_per_txn', fallback: 'Unit Per Transaction' },
+      { selector: '[data-i18n="avg_txn_price"]', key: 'avg_txn_price', fallback: 'Average Transaction Price' },
+      { selector: '[data-i18n="avg_selling_price"]', key: 'avg_selling_price', fallback: 'Average Selling Price' }
+    ];
+    defs.forEach(function (d) {
+      var el = card.querySelector(d.selector);
+      if (!el) return;
+      var baseLabel = t(d.key) || d.fallback;
+      el.textContent = isTotal ? baseLabel : getDepartmentMetricLabel(d.key, baseLabel);
+    });
+  }
+
+  function fmtDodWow(dod, wow) {
+    var parts = [];
+    if (dod != null && dod !== '') parts.push('DoD ' + dod);
+    if (wow != null && wow !== '') parts.push('WoW ' + wow);
+    return parts.length ? parts.join(' ') : '';
+  }
+
+  function fmtTrendBadgeHtml(pct, label) {
+    if (pct == null) {
+      return '<span class="snapshot-trend-item neutral">' +
+        '<span class="snapshot-trend-main">--</span>' +
+        '<span class="snapshot-trend-label">' + label + '</span>' +
+      '</span>';
+    }
+    var n = Math.round(Number(pct));
+    if (!Number.isFinite(n)) {
+      return '<span class="snapshot-trend-item neutral">' +
+        '<span class="snapshot-trend-main">--</span>' +
+        '<span class="snapshot-trend-label">' + label + '</span>' +
+      '</span>';
+    }
+    var up = n >= 100;
+    var arrow = up ? '▲' : '▼';
+    return '<span class="snapshot-trend-item ' + (up ? 'up' : 'down') + '">' +
+      '<span class="snapshot-trend-main">' + arrow + ' ' + n + '%</span>' +
+      '<span class="snapshot-trend-label">' + label + '</span>' +
+    '</span>';
+  }
+
+  function filterByThailandCurrentTime(hourly, thailandTimeStr) {
+    if (!hourly || !hourly.length || !thailandTimeStr) return [];
+    var t = String(thailandTimeStr).trim();
+    return hourly.filter(function (h) {
+      var timeKey = h.timeKey || '';
+      var endTime = timeKey.indexOf('-') >= 0 ? timeKey.split('-')[1].trim() : '';
+      return endTime && endTime <= t;
+    });
+  }
+
+  function renderSnapshotCard(storeName, dept, referenceDate, todayHourly, yesterdayHourly, lastWeekHourly, isTotal, todayData, startTime, endTime, sumToday, sumYesterday, sumLastWeek) {
+    var card = document.getElementById('snapshot-card');
+    if (!card) return;
+    if (!todayHourly || !todayHourly.length) {
+      card.hidden = true;
+      return;
+    }
+    var thailandNowForSnapshot = getThailandTimeStr();
+    var endedToday = filterByThailandCurrentTime(todayHourly, thailandNowForSnapshot);
+    var isTodayRef = String(referenceDate || '') === getThailandDateStr();
+    var useSameTimeBaseline = isTodayRef && endedToday.length > 0 && endedToday.length < todayHourly.length;
+    var compareTodayHourly = useSameTimeBaseline ? endedToday : todayHourly;
+    var compareYesterdayHourly = useSameTimeBaseline ? filterByThailandCurrentTime(yesterdayHourly, thailandNowForSnapshot) : yesterdayHourly;
+    var compareLastWeekHourly = useSameTimeBaseline ? filterByThailandCurrentTime(lastWeekHourly, thailandNowForSnapshot) : lastWeekHourly;
+
+    var netSum = 0, qtySum = 0, receiptSum = 0;
+    compareTodayHourly.forEach(function (h) {
+      netSum += h.netSales || 0;
+      qtySum += h.quantitySold || 0;
+      receiptSum += h.receiptCount || 0;
+    });
+    function sumSnapshotBase(hourly) {
+      if (!hourly || !hourly.length) return null;
+      var out = { netSum: 0, qtySum: 0, receiptSum: 0 };
+      hourly.forEach(function (h) {
+        out.netSum += h.netSales || 0;
+        out.qtySum += h.quantitySold || 0;
+        out.receiptSum += h.receiptCount || 0;
+      });
+      return out;
+    }
+    var baseYesterday = sumSnapshotBase(compareYesterdayHourly);
+    var baseLastWeek = sumSnapshotBase(compareLastWeekHourly);
+    updateSnapshotMetricLabels(isTotal);
+    card.hidden = false;
+    card.classList.toggle('snapshot-non-total', !isTotal);
+    card.classList.toggle('snapshot-total', !!isTotal);
+    var netEl = document.getElementById('snapshot-net');
+    var qtyEl = document.getElementById('snapshot-qty');
+    var receiptsEl = document.getElementById('snapshot-receipts');
+    var panelReceipts = receiptsEl ? receiptsEl.closest('.snapshot-panel') : null;
+    var txnPerHourEl = document.getElementById('snapshot-txn-per-hour');
+    var unitPerTxnEl = document.getElementById('snapshot-unit-per-txn');
+    var avgTxnPriceEl = document.getElementById('snapshot-avg-txn-price');
+    var panelTxnPerHour = txnPerHourEl ? txnPerHourEl.closest('.snapshot-panel') : null;
+    var panelUnitPerTxn = unitPerTxnEl ? unitPerTxnEl.closest('.snapshot-panel') : null;
+    var panelAvgTxnPrice = avgTxnPriceEl ? avgTxnPriceEl.closest('.snapshot-panel') : null;
+    var panelShare = document.getElementById('snapshot-panel-share');
+    var panelRank = document.getElementById('snapshot-panel-rank');
+    var shareEl = document.getElementById('snapshot-share');
+    var shareSubEl = panelShare ? panelShare.querySelector('.snapshot-panel-sub') : null;
+    var rankEl = document.getElementById('snapshot-rank');
+    if (netEl) netEl.textContent = formatMoney(netSum);
+    if (qtyEl) qtyEl.textContent = formatInt(qtySum);
+    if (receiptsEl) receiptsEl.textContent = formatInt(receiptSum);
+    if (panelReceipts) {
+      var showReceiptCard = isTotal && authState && authState.role === 'admin';
+      panelReceipts.style.display = showReceiptCard ? '' : 'none';
+    }
+    if (panelTxnPerHour) panelTxnPerHour.style.display = isTotal ? '' : 'none';
+    if (panelUnitPerTxn) panelUnitPerTxn.style.display = '';
+    if (panelAvgTxnPrice) panelAvgTxnPrice.style.display = isTotal ? '' : 'none';
+    if (panelShare) panelShare.style.display = 'none';
+    if (panelRank) panelRank.style.display = 'none';
+    if (shareEl) shareEl.textContent = '—';
+    if (shareSubEl) shareSubEl.innerHTML = '';
+    if (rankEl) rankEl.textContent = '—';
+
+    function setSnapshotMetric(valueId, subId, val, yVal, wVal, formatter) {
+      formatter = formatter || function (v) { return v != null ? String(v) : '—'; };
+      var el = document.getElementById(valueId);
+      var subEl = document.getElementById(subId);
+      if (el) el.innerHTML = formatter(val);
+      if (subEl) {
+        var dodRaw = yVal != null && val != null ? pctRatio(val, yVal) : null;
+        var wowRaw = wVal != null && val != null ? pctRatio(val, wVal) : null;
+        subEl.innerHTML = fmtTrendBadgeHtml(dodRaw, t('dod')) + fmtTrendBadgeHtml(wowRaw, t('wow'));
+      }
+    }
+    setSnapshotMetric(
+      'snapshot-net',
+      'snapshot-net-dodwow',
+      netSum,
+      baseYesterday ? baseYesterday.netSum : null,
+      baseLastWeek ? baseLastWeek.netSum : null,
+      function (v) { return v != null ? formatMoneyHtml(v) : '—'; }
+    );
+    setSnapshotMetric(
+      'snapshot-qty',
+      'snapshot-qty-dodwow',
+      qtySum,
+      baseYesterday ? baseYesterday.qtySum : null,
+      baseLastWeek ? baseLastWeek.qtySum : null,
+      function (v) { return v != null ? formatInt(v) : '—'; }
+    );
+    setSnapshotMetric(
+      'snapshot-receipts',
+      'snapshot-receipts-dodwow',
+      receiptSum,
+      baseYesterday ? baseYesterday.receiptSum : null,
+      baseLastWeek ? baseLastWeek.receiptSum : null,
+      function (v) { return v != null ? formatInt(v) : '—'; }
+    );
+    var sumTodayForSnapshot = useSameTimeBaseline ? computeSummary(compareTodayHourly, null, null) : sumToday;
+    var sumYesterdayForSnapshot = useSameTimeBaseline ? computeSummary(compareYesterdayHourly, null, null) : sumYesterday;
+    var sumLastWeekForSnapshot = useSameTimeBaseline ? computeSummary(compareLastWeekHourly, null, null) : sumLastWeek;
+    if (sumTodayForSnapshot) {
+      setSnapshotMetric('snapshot-sales-per-hour', 'snapshot-sales-per-hour-dodwow', sumTodayForSnapshot.salesPerHour, sumYesterdayForSnapshot && sumYesterdayForSnapshot.salesPerHour, sumLastWeekForSnapshot && sumLastWeekForSnapshot.salesPerHour, function (v) { return v != null ? formatMoneyHtml(v) : '—'; });
+      setSnapshotMetric('snapshot-txn-per-hour', 'snapshot-txn-per-hour-dodwow', sumTodayForSnapshot.txnPerHour, sumYesterdayForSnapshot && sumYesterdayForSnapshot.txnPerHour, sumLastWeekForSnapshot && sumLastWeekForSnapshot.txnPerHour, function (v) { return v != null ? formatInt(Math.round(v)) : '—'; });
+      setSnapshotMetric('snapshot-unit-per-txn', 'snapshot-unit-per-txn-dodwow', sumTodayForSnapshot.unitPerTxn, sumYesterdayForSnapshot && sumYesterdayForSnapshot.unitPerTxn, sumLastWeekForSnapshot && sumLastWeekForSnapshot.unitPerTxn, function (v) { return v != null ? v.toFixed(1) : '—'; });
+      setSnapshotMetric('snapshot-avg-txn-price', 'snapshot-avg-txn-price-dodwow', sumTodayForSnapshot.avgTxnPrice, sumYesterdayForSnapshot && sumYesterdayForSnapshot.avgTxnPrice, sumLastWeekForSnapshot && sumLastWeekForSnapshot.avgTxnPrice, function (v) { return v != null ? formatMoneyHtml(v) : '—'; });
+      setSnapshotMetric('snapshot-avg-selling-price', 'snapshot-avg-selling-price-dodwow', sumTodayForSnapshot.avgSellingPrice, sumYesterdayForSnapshot && sumYesterdayForSnapshot.avgSellingPrice, sumLastWeekForSnapshot && sumLastWeekForSnapshot.avgSellingPrice, function (v) { return v != null ? formatMoneyHtml(v) : '—'; });
+    } else {
+      setSnapshotMetric('snapshot-sales-per-hour', 'snapshot-sales-per-hour-dodwow', null, null, null);
+      setSnapshotMetric('snapshot-txn-per-hour', 'snapshot-txn-per-hour-dodwow', null, null, null);
+      setSnapshotMetric('snapshot-unit-per-txn', 'snapshot-unit-per-txn-dodwow', null, null, null);
+      setSnapshotMetric('snapshot-avg-txn-price', 'snapshot-avg-txn-price-dodwow', null, null, null);
+      setSnapshotMetric('snapshot-avg-selling-price', 'snapshot-avg-selling-price-dodwow', null, null, null);
+    }
+
+    if (!isTotal && todayData && todayData.total && todayData.total.hourly) {
+      var totalHourly = filterByTimeRange(filterByBusinessHours(todayData.total.hourly, todayData.businessDate), startTime, endTime);
+      if (useSameTimeBaseline) totalHourly = filterByThailandCurrentTime(totalHourly, thailandNowForSnapshot);
+      var totalNet = 0;
+      if (totalHourly && totalHourly.length) {
+        totalHourly.forEach(function (h) { totalNet += h.netSales || 0; });
+      }
+      if (totalNet > 0 && shareEl) {
+        var todayShare = (netSum / totalNet) * 100;
+        var yShare = null;
+        var wShare = null;
+        var totalYesterdayHourly = state.yesterday && state.yesterday.total && state.yesterday.total.hourly
+          ? filterByTimeRange(filterByBusinessHours(state.yesterday.total.hourly, state.yesterday.businessDate), startTime, endTime)
+          : null;
+        var totalLastWeekHourly = state.lastWeek && state.lastWeek.total && state.lastWeek.total.hourly
+          ? filterByTimeRange(filterByBusinessHours(state.lastWeek.total.hourly, state.lastWeek.businessDate), startTime, endTime)
+          : null;
+        if (useSameTimeBaseline) {
+          totalYesterdayHourly = filterByThailandCurrentTime(totalYesterdayHourly, thailandNowForSnapshot);
+          totalLastWeekHourly = filterByThailandCurrentTime(totalLastWeekHourly, thailandNowForSnapshot);
+        }
+        var totalNetY = 0;
+        var totalNetW = 0;
+        if (totalYesterdayHourly && totalYesterdayHourly.length) {
+          totalYesterdayHourly.forEach(function (h) { totalNetY += h.netSales || 0; });
+        }
+        if (totalLastWeekHourly && totalLastWeekHourly.length) {
+          totalLastWeekHourly.forEach(function (h) { totalNetW += h.netSales || 0; });
+        }
+        if (baseYesterday && totalNetY > 0) yShare = (baseYesterday.netSum / totalNetY) * 100;
+        if (baseLastWeek && totalNetW > 0) wShare = (baseLastWeek.netSum / totalNetW) * 100;
+        shareEl.textContent = todayShare.toFixed(1) + '%';
+        if (shareSubEl) {
+          shareSubEl.innerHTML = fmtTrendBadgeHtml(pctRatio(todayShare, yShare), t('dod')) + fmtTrendBadgeHtml(pctRatio(todayShare, wShare), t('wow'));
+        }
+        if (panelShare) panelShare.style.display = '';
+      }
+    }
+
   }
 
   var BH_STORAGE_KEY = 'businessHours';
@@ -767,20 +1265,60 @@
     return Math.round((current / base) * 100);
   }
 
-  function discountRate(gross, net) {
-    if (gross == null || gross === 0) return null;
-    if (net == null) return null;
-    return ((gross - net) / gross) * 100;
-  }
-
   function formatCurrency(n) {
     if (n == null) return '';
     return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
+  function formatCurrencyInteger(n) {
+    if (n == null) return '';
+    return Math.round(Number(n)).toLocaleString('en-US', { maximumFractionDigits: 0, minimumFractionDigits: 0 });
+  }
+
   function formatInt(n) {
     if (n == null) return '';
     return Math.round(Number(n)).toLocaleString('en-US');
+  }
+  function formatMoney(amountBaht) {
+    var val = toSelectedCurrency(amountBaht);
+    if (val == null) return '—';
+    if (getCurrencyCode() === 'JPY') return '¥' + formatInt(val);
+    return '฿' + formatCurrency(val);
+  }
+  function formatMoneyNoUnit(amountBaht) {
+    var val = toSelectedCurrency(amountBaht);
+    if (val == null) return '—';
+    if (getCurrencyCode() === 'JPY') return formatInt(val);
+    return formatCurrency(val);
+  }
+  function formatMoneyHtml(amountBaht) {
+    var val = toSelectedCurrency(amountBaht);
+    if (val == null) return '—';
+    if (getCurrencyCode() === 'JPY') return '<span class="currency-unit">¥</span><span class="currency-value">' + formatInt(val) + '</span>';
+    return '<span class="currency-unit">฿</span><span class="currency-value">' + formatCurrency(val) + '</span>';
+  }
+  function refreshCurrencyTexts() {
+    var cur = getCurrencyLabel();
+    var netHeader = document.getElementById('hourly-th-net');
+    var isPhone = typeof window !== 'undefined' && window.innerWidth <= 480;
+    var lang = window.i18n && window.i18n.getCurrentLang ? window.i18n.getCurrentLang() : 'ja';
+    var timeHeader = document.querySelector('#hourly-table thead th:nth-child(1)');
+    if (timeHeader) timeHeader.textContent = isPhone ? (lang === 'ja' ? '時間' : 'Time') : (t('time_range_col') || 'Time range');
+    if (netHeader) netHeader.textContent = isPhone ? (lang === 'ja' ? '純売' : 'Net') : ((t('snapshot_net_sales') || 'Net Sales') + ' (' + cur + ')');
+    var dodHeader = document.querySelector('#hourly-table thead th:nth-child(3)');
+    if (dodHeader) dodHeader.textContent = isPhone ? (lang === 'ja' ? 'D' : 'DoD') : (t('dod') || 'DoD');
+    var wowHeader = document.querySelector('#hourly-table thead th:nth-child(4)');
+    if (wowHeader) wowHeader.textContent = isPhone ? (lang === 'ja' ? 'W' : 'WoW') : (t('wow') || 'WoW');
+    var qtyHeader = document.querySelector('#hourly-table thead th:nth-child(5)');
+    if (qtyHeader) qtyHeader.textContent = isPhone ? (lang === 'ja' ? '点' : 'Qty') : (t('qty_sold') || 'Qty of Items Sold');
+    var receiptHeader = document.querySelector('#hourly-table thead th:nth-child(6)');
+    if (receiptHeader) receiptHeader.textContent = isPhone ? (lang === 'ja' ? '枚' : 'Rcpt') : (t('receipt_count') || 'Receipt Count');
+    var netLabel = document.getElementById('snapshot-net-label');
+    if (netLabel) netLabel.textContent = t('snapshot_net_sales') || 'Net Sales';
+    var salesTitle = document.getElementById('chart-sales-title');
+    if (salesTitle) salesTitle.textContent = t('chart_hourly_net') || ('Hourly Net Sales (' + cur + ')');
+    var forecastTitle = document.getElementById('chart-forecast-sales-title');
+    if (forecastTitle) forecastTitle.textContent = t('chart_forecast_net') || ('Forecast (Landing) - Net Sales (' + cur + ')');
   }
 
   function formatPct(n) {
@@ -788,26 +1326,20 @@
     return Math.round(Number(n)) + '%';
   }
 
-  function formatPct1(n) {
-    if (n == null) return '';
-    return Number(n).toFixed(1) + '%';
-  }
-
   function renderHourlyRow(hour, yesterdayHour, lastWeekHour, isTotal) {
-    var gross = hour.grossSales != null ? hour.grossSales : hour.netSales;
     var net = hour.netSales;
     var dod = yesterdayHour ? pctRatio(net, yesterdayHour.netSales) : null;
     var wow = lastWeekHour ? pctRatio(net, lastWeekHour.netSales) : null;
-    var disc = isTotal && gross != null && gross > 0 ? discountRate(gross, net) : null;
 
+    var isNarrow = typeof window !== 'undefined' && window.innerWidth <= 640;
+    var timeLabel = hour.timeLabel || '';
+    if (isNarrow && timeLabel.indexOf('-') >= 0) timeLabel = timeLabel.split('-')[0].trim();
     var receiptCell = isTotal ? formatInt(hour.receiptCount) : '—';
     return '<tr>' +
-      '<td>' + (hour.timeLabel || '') + '</td>' +
-      '<td>' + (isTotal && hour.grossSales != null ? formatCurrency(hour.grossSales) : (hour.grossSales != null ? formatCurrency(hour.grossSales) : '—')) + '</td>' +
-      '<td>' + formatCurrency(net) + '</td>' +
+      '<td>' + timeLabel + '</td>' +
+      '<td>' + formatMoneyNoUnit(net) + '</td>' +
       '<td>' + formatPct(dod) + '</td>' +
       '<td>' + formatPct(wow) + '</td>' +
-      '<td>' + (disc != null ? formatPct1(disc) : '—') + '</td>' +
       '<td>' + formatInt(hour.quantitySold) + '</td>' +
       '<td>' + receiptCell + '</td>' +
     '</tr>';
@@ -822,19 +1354,17 @@
   }
 
   function renderTotalsRow(todayHourly, yesterdayHourly, lastWeekHourly, isTotal) {
-    var grossSum = 0, netSum = 0, receiptSum = 0, qtySum = 0;
-    var grossSumY = 0, netSumY = 0, receiptSumY = 0, qtySumY = 0;
-    var grossSumW = 0, netSumW = 0, receiptSumW = 0, qtySumW = 0;
+    var netSum = 0, receiptSum = 0, qtySum = 0;
+    var netSumY = 0, receiptSumY = 0, qtySumY = 0;
+    var netSumW = 0, receiptSumW = 0, qtySumW = 0;
 
     todayHourly.forEach(function (h) {
-      if (h.grossSales != null) grossSum += h.grossSales;
       netSum += h.netSales || 0;
       receiptSum += h.receiptCount || 0;
       qtySum += h.quantitySold || 0;
     });
     if (yesterdayHourly) {
       yesterdayHourly.forEach(function (h) {
-        if (h.grossSales != null) grossSumY += h.grossSales;
         netSumY += h.netSales || 0;
         receiptSumY += h.receiptCount || 0;
         qtySumY += h.quantitySold || 0;
@@ -842,7 +1372,6 @@
     }
     if (lastWeekHourly) {
       lastWeekHourly.forEach(function (h) {
-        if (h.grossSales != null) grossSumW += h.grossSales;
         netSumW += h.netSales || 0;
         receiptSumW += h.receiptCount || 0;
         qtySumW += h.quantitySold || 0;
@@ -851,16 +1380,13 @@
 
     var dod = netSumY > 0 ? Math.round((netSum / netSumY) * 100) : null;
     var wow = netSumW > 0 ? Math.round((netSum / netSumW) * 100) : null;
-    var disc = isTotal && grossSum > 0 ? ((grossSum - netSum) / grossSum) * 100 : null;
     var receiptCell = isTotal ? formatInt(receiptSum) : '—';
 
     return '<tr>' +
       '<td>' + t('total') + '</td>' +
-      '<td>' + (isTotal ? formatCurrency(grossSum) : '—') + '</td>' +
-      '<td>' + formatCurrency(netSum) + '</td>' +
+      '<td>' + formatMoneyNoUnit(netSum) + '</td>' +
       '<td>' + formatPct(dod) + '</td>' +
       '<td>' + formatPct(wow) + '</td>' +
-      '<td>' + (disc != null ? formatPct1(disc) : '—') + '</td>' +
       '<td>' + formatInt(qtySum) + '</td>' +
       '<td>' + receiptCell + '</td>' +
     '</tr>';
@@ -881,17 +1407,20 @@
     });
     if (hoursWithSales === 0) hoursWithSales = 1;
     if (receiptSum === 0 && fallbackTotalReceipt != null && fallbackTotalReceipt > 0) receiptSum = fallbackTotalReceipt;
+    var hasReceipt = receiptSum > 0;
     return {
       salesPerHour: netSum / hoursWithSales,
-      txnPerHour: receiptSum / hoursWithSales,
-      unitPerTxn: receiptSum > 0 ? qtySum / receiptSum : 0,
-      avgTxnPrice: receiptSum > 0 ? netSum / receiptSum : 0,
+      txnPerHour: hasReceipt ? (receiptSum / hoursWithSales) : null,
+      unitPerTxn: hasReceipt ? (qtySum / receiptSum) : null,
+      avgTxnPrice: hasReceipt ? (netSum / receiptSum) : null,
       avgSellingPrice: qtySum > 0 ? netSum / qtySum : 0
     };
   }
 
   function renderReport() {
+    refreshCurrencyTexts();
     var dept = document.getElementById('department-select').value;
+    var isTotal = (dept === 'Total');
     var startTime = (document.getElementById('time-start') && document.getElementById('time-start').value) || '00:00';
     var endTime = (document.getElementById('time-end') && document.getElementById('time-end').value) || '24:00';
 
@@ -907,12 +1436,13 @@
     var reportTitle = document.getElementById('report-title');
     var emptyMsg = document.getElementById('output-empty');
     var tableWrapper = document.querySelector('.table-wrapper');
-    var summarySection = document.querySelector('.summary-section');
     var chartSection = document.getElementById('chart-section');
     var compositionSection = document.getElementById('composition-section');
 
-    if (!todayHourly || !todayHourly.length) {
-      reportTitle.textContent = dept;
+    var rowsHourly = (todayHourly || []).filter(function (h) { return (h && (h.netSales || 0) > 0); });
+
+    if (!rowsHourly || !rowsHourly.length) {
+      reportTitle.textContent = getDepartmentDisplayName(dept);
       tbody.innerHTML = '';
       tfoot.innerHTML = '';
       emptyMsg.hidden = false;
@@ -920,9 +1450,13 @@
       var hasDate = dateEl && dateEl.value && dateEl.value.trim() !== '';
       emptyMsg.textContent = hasDate ? t('no_data_selected_date') : t('no_data_for_store');
       tableWrapper.style.display = 'none';
-      summarySection.style.display = 'none';
       if (chartSection) chartSection.classList.add('hidden');
       if (compositionSection) compositionSection.classList.add('hidden');
+      var snapshotCard = document.getElementById('snapshot-card');
+      if (snapshotCard) {
+        snapshotCard.hidden = true;
+        snapshotCard.setAttribute('hidden', '');
+      }
       destroyCharts();
       renderComposition(null);
       return;
@@ -930,44 +1464,9 @@
 
     emptyMsg.hidden = true;
     tableWrapper.style.display = '';
-    summarySection.style.display = '';
     if (chartSection) chartSection.classList.remove('hidden');
 
-    reportTitle.textContent = dept;
-
-    var isTotal = (dept === 'Total');
-    var html = '';
-    todayHourly.forEach(function (hour) {
-      var yHour = findHour(yesterdayHourly, hour.timeKey);
-      var wHour = findHour(lastWeekHourly, hour.timeKey);
-      html += renderHourlyRow(hour, yHour, wHour, isTotal);
-    });
-    tbody.innerHTML = html;
-
-    tfoot.innerHTML = renderTotalsRow(todayHourly, yesterdayHourly, lastWeekHourly, isTotal);
-
-    var todayNetForForecast = todayHourly.map(function (h) { return h.netSales || 0; });
-    var todayReceiptsForForecast = todayHourly.map(function (h) { return h.receiptCount || 0; });
-    if (aiState && aiState.available) {
-      showLoading();
-      var storeIdForForecast = getSelectedStoreId();
-      var refDateForForecast = state.referenceDate || '';
-      fetch('/api/ai/hourly-forecast?storeId=' + encodeURIComponent(storeIdForForecast) + '&referenceDate=' + encodeURIComponent(refDateForForecast))
-        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('Fetch failed')); })
-        .then(function (aiData) {
-          var fd = buildForecastChartDataFromAI(aiData, todayNetForForecast, todayReceiptsForForecast);
-          renderCharts(todayHourly, yesterdayHourly, lastWeekHourly, { forecastSalesData: fd.sales, forecastReceiptsData: fd.receipts });
-        })
-        .catch(function () {
-          renderCharts(todayHourly, yesterdayHourly, lastWeekHourly);
-        })
-        .finally(function () { hideLoading(); });
-    } else {
-      renderCharts(todayHourly, yesterdayHourly, lastWeekHourly);
-    }
-
-    var compositionData = getDepartmentCompositionByTime(state.today, startTime, endTime);
-    renderComposition(compositionData);
+    reportTitle.textContent = getDepartmentDisplayName(dept);
 
     var totalTodayRaw = getHourlyData(state.today, 'Total');
     var totalYesterdayRaw = state.yesterday ? getHourlyData(state.yesterday, 'Total') : null;
@@ -988,48 +1487,48 @@
     var fallbackReceiptYesterday = (state.yesterday && state.yesterday.total && state.yesterday.total.totalRow && (state.yesterday.total.totalRow.receiptCount != null)) ? state.yesterday.total.totalRow.receiptCount : null;
     var fallbackReceiptLastWeek = (state.lastWeek && state.lastWeek.total && state.lastWeek.total.totalRow && (state.lastWeek.total.totalRow.receiptCount != null)) ? state.lastWeek.total.totalRow.receiptCount : null;
 
-    var sumToday = computeSummary(todayHourly, receiptToday, isTotal ? fallbackReceiptToday : null);
-    var sumYesterday = yesterdayHourly ? computeSummary(yesterdayHourly, receiptYesterday, isTotal ? fallbackReceiptYesterday : null) : null;
-    var sumLastWeek = lastWeekHourly ? computeSummary(lastWeekHourly, receiptLastWeek, isTotal ? fallbackReceiptLastWeek : null) : null;
+    var summaryReceiptToday = isTotal ? receiptToday : null;
+    var summaryReceiptYesterday = isTotal ? receiptYesterday : null;
+    var summaryReceiptLastWeek = isTotal ? receiptLastWeek : null;
+    var sumToday = computeSummary(todayHourly, summaryReceiptToday, isTotal ? fallbackReceiptToday : null);
+    var sumYesterday = yesterdayHourly ? computeSummary(yesterdayHourly, summaryReceiptYesterday, isTotal ? fallbackReceiptYesterday : null) : null;
+    var sumLastWeek = lastWeekHourly ? computeSummary(lastWeekHourly, summaryReceiptLastWeek, isTotal ? fallbackReceiptLastWeek : null) : null;
 
-    function setSummary(id, val, dodId, wowId) {
-      var el = document.getElementById(id);
-      var dodEl = document.getElementById(dodId);
-      var wowEl = document.getElementById(wowId);
-      if (!el) return;
-      el.textContent = val != null ? formatInt(Math.round(val)) : '';
-      if (dodEl) dodEl.textContent = sumYesterday && val != null && sumYesterday[el.id.replace('sum-', '').replace(/-/g, '')] != null
-        ? formatPct(pctRatio(val, sumYesterday.salesPerHour || sumYesterday.txnPerHour || sumYesterday.unitPerTxn || sumYesterday.avgTxnPrice || sumYesterday.avgSellingPrice))
-        : (function(){
-            var key = id.replace('sum-', '').replace(/-/g, '');
-            var keyMap = { salesperhour: 'salesPerHour', txnperhour: 'txnPerHour', unitpertxn: 'unitPerTxn', avgtxnprice: 'avgTxnPrice', avgsellingprice: 'avgSellingPrice' };
-            var yVal = sumYesterday && keyMap[key] ? sumYesterday[keyMap[key]] : null;
-            return formatPct(pctRatio(val, yVal));
-          })();
-      if (wowEl) wowEl.textContent = sumLastWeek ? formatPct(pctRatio(val, (sumLastWeek.salesPerHour !== undefined && id.indexOf('sales-per-hour') !== -1) ? sumLastWeek.salesPerHour : (sumLastWeek.txnPerHour !== undefined && id.indexOf('txn-per-hour') !== -1) ? sumLastWeek.txnPerHour : (sumLastWeek.unitPerTxn !== undefined && id.indexOf('unit-per-txn') !== -1) ? sumLastWeek.unitPerTxn : (sumLastWeek.avgTxnPrice !== undefined && id.indexOf('avg-txn-price') !== -1) ? sumLastWeek.avgTxnPrice : sumLastWeek.avgSellingPrice)) : '';
+    renderSnapshotCard(getSelectedStoreName(), dept, state.referenceDate, todayHourly, yesterdayHourly, lastWeekHourly, isTotal, state.today, startTime, endTime, sumToday, sumYesterday, sumLastWeek);
+
+    var html = '';
+    rowsHourly.forEach(function (hour) {
+      var yHour = findHour(yesterdayHourly, hour.timeKey);
+      var wHour = findHour(lastWeekHourly, hour.timeKey);
+      html += renderHourlyRow(hour, yHour, wHour, isTotal);
+    });
+    tbody.innerHTML = html;
+
+    tfoot.innerHTML = renderTotalsRow(todayHourly, yesterdayHourly, lastWeekHourly, isTotal);
+
+    var hourlyTableEl = document.getElementById('hourly-table');
+    if (hourlyTableEl) hourlyTableEl.classList.toggle('hide-receipt-col', !isTotal);
+
+    var todayNetForForecast = todayHourly.map(function (h) { return h.netSales || 0; });
+    var todayReceiptsForForecast = todayHourly.map(function (h) { return h.receiptCount || 0; });
+    var useAiForecast = aiState && aiState.available && isTotal;
+    renderCharts(todayHourly, yesterdayHourly, lastWeekHourly, undefined, isTotal);
+    if (useAiForecast) {
+      var storeIdForForecast = getSelectedStoreId();
+      var refDateForForecast = state.referenceDate || '';
+      var currentTimeIso = new Date().toISOString();
+      fetch('/api/ai/hourly-forecast?storeId=' + encodeURIComponent(storeIdForForecast) + '&referenceDate=' + encodeURIComponent(refDateForForecast) + '&currentTime=' + encodeURIComponent(currentTimeIso))
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('Fetch failed')); })
+        .then(function (aiData) {
+          var thailandNow = getThailandTimeStr();
+          var fd = buildForecastChartDataFromAI(aiData, todayNetForForecast, todayReceiptsForForecast, todayHourly, thailandNow);
+          renderCharts(todayHourly, yesterdayHourly, lastWeekHourly, { forecastSalesData: fd.sales, forecastReceiptsData: fd.receipts }, true);
+        })
+        .catch(function () {});
     }
 
-    if (sumToday) {
-      document.getElementById('sum-sales-per-hour').textContent = formatInt(Math.round(sumToday.salesPerHour));
-      document.getElementById('sum-sales-per-hour-dod').textContent = sumYesterday ? formatPct(pctRatio(sumToday.salesPerHour, sumYesterday.salesPerHour)) : '';
-      document.getElementById('sum-sales-per-hour-wow').textContent = sumLastWeek ? formatPct(pctRatio(sumToday.salesPerHour, sumLastWeek.salesPerHour)) : '';
-
-      document.getElementById('sum-txn-per-hour').textContent = formatInt(Math.round(sumToday.txnPerHour));
-      document.getElementById('sum-txn-per-hour-dod').textContent = sumYesterday ? formatPct(pctRatio(sumToday.txnPerHour, sumYesterday.txnPerHour)) : '';
-      document.getElementById('sum-txn-per-hour-wow').textContent = sumLastWeek ? formatPct(pctRatio(sumToday.txnPerHour, sumLastWeek.txnPerHour)) : '';
-
-      document.getElementById('sum-unit-per-txn').textContent = sumToday.unitPerTxn ? sumToday.unitPerTxn.toFixed(1) : '';
-      document.getElementById('sum-unit-per-txn-dod').textContent = sumYesterday ? formatPct(pctRatio(sumToday.unitPerTxn, sumYesterday.unitPerTxn)) : '';
-      document.getElementById('sum-unit-per-txn-wow').textContent = sumLastWeek ? formatPct(pctRatio(sumToday.unitPerTxn, sumLastWeek.unitPerTxn)) : '';
-
-      document.getElementById('sum-avg-txn-price').textContent = formatInt(Math.round(sumToday.avgTxnPrice));
-      document.getElementById('sum-avg-txn-price-dod').textContent = sumYesterday ? formatPct(pctRatio(sumToday.avgTxnPrice, sumYesterday.avgTxnPrice)) : '';
-      document.getElementById('sum-avg-txn-price-wow').textContent = sumLastWeek ? formatPct(pctRatio(sumToday.avgTxnPrice, sumLastWeek.avgTxnPrice)) : '';
-
-      document.getElementById('sum-avg-selling-price').textContent = formatInt(Math.round(sumToday.avgSellingPrice));
-      document.getElementById('sum-avg-selling-price-dod').textContent = sumYesterday ? formatPct(pctRatio(sumToday.avgSellingPrice, sumYesterday.avgSellingPrice)) : '';
-      document.getElementById('sum-avg-selling-price-wow').textContent = sumLastWeek ? formatPct(pctRatio(sumToday.avgSellingPrice, sumLastWeek.avgSellingPrice)) : '';
-    }
+    var compositionData = getDepartmentCompositionByTime(state.today, startTime, endTime);
+    renderComposition(compositionData);
   }
 
   function fillOutputDateSelect(dates, selectedValue) {
@@ -1086,11 +1585,21 @@
       var todayStr = getTodayYYYYMMDD();
       var initialDate = state.referenceDate || el.value || (dates.indexOf(todayStr) !== -1 ? todayStr : (dates.length ? dates[0] : null));
       fillOutputDateSelect(dates, initialDate);
+      updateHourlyFiltersSummaryBar();
       var chosen = el.value;
+      var allstoresDateEl = document.getElementById('allstores-date');
+      if (allstoresDateEl && chosen) allstoresDateEl.value = chosen;
       if (chosen) {
         fetch('/api/report?referenceDate=' + encodeURIComponent(chosen) + '&storeId=' + encodeURIComponent(storeId)).then(function (r) {
           return parseJsonResponse(r).then(function (data) {
-            if (!r.ok) return;
+            if (!r.ok) {
+              state.today = null;
+              state.yesterday = null;
+              state.lastWeek = null;
+              state.referenceDate = chosen;
+              renderReport();
+              return;
+            }
             state.today = data.today;
             state.yesterday = data.yesterday || null;
             state.lastWeek = data.lastWeek || null;
@@ -1101,9 +1610,127 @@
         }).then(function () { hideLoading(); }).catch(function () { hideLoading(); });
       } else {
         renderReport();
+        updateHourlyFiltersSummaryBar();
         hideLoading();
       }
     }).catch(function () { renderReport(); hideLoading(); });
+  }
+
+  function renderAllStoresDigest() {
+    var tbody = document.getElementById('allstores-tbody');
+    var emptyEl = document.getElementById('allstores-empty');
+    var dateEl = document.getElementById('allstores-date');
+    var deptEl = document.getElementById('allstores-department-select');
+    var sortKeyEl = document.getElementById('allstores-sort-key');
+    if (!tbody || !dateEl || !deptEl || !sortKeyEl) return;
+    var refDate = dateEl.value;
+    if (!refDate) {
+      var hourlyDateEl = document.getElementById('output-date');
+      if (hourlyDateEl && hourlyDateEl.value) {
+        dateEl.value = hourlyDateEl.value;
+        refDate = hourlyDateEl.value;
+      }
+    }
+    if (!refDate) {
+      tbody.innerHTML = '';
+      if (emptyEl) {
+        emptyEl.hidden = false;
+        emptyEl.textContent = t('allstores_empty');
+      }
+      return;
+    }
+    var dept = deptEl.value || 'Total';
+    var sortKey = sortKeyEl.value || 'net';
+    var thailandNow = getThailandTimeStr();
+    var isTodayRef = String(refDate || '') === getThailandDateStr();
+    var stores = state.stores && state.stores.length ? state.stores : [{ id: 'default', name: 'Default' }];
+    showLoading();
+    Promise.all(stores.map(function (store) {
+      var sid = store.id || 'default';
+      return fetch('/api/report?referenceDate=' + encodeURIComponent(refDate) + '&storeId=' + encodeURIComponent(sid))
+        .then(function (res) {
+          return parseJsonResponse(res).then(function (body) {
+            if (!res.ok || !body || !body.today) return null;
+            var hourly = getHourlyData(body.today, dept);
+            if (!hourly || !hourly.length) return null;
+            var filtered = filterByBusinessHours(hourly, body.today.businessDate);
+            var filteredByNow = isTodayRef ? filterByThailandCurrentTime(filtered, thailandNow) : filtered;
+            var useSameTimeBaseline = isTodayRef && filteredByNow.length > 0 && filteredByNow.length < filtered.length;
+            if (useSameTimeBaseline) filtered = filteredByNow;
+            var net = 0;
+            var qty = 0;
+            var receipt = 0;
+            filtered.forEach(function (h) {
+              net += h.netSales || 0;
+              qty += h.quantitySold || 0;
+              receipt += h.receiptCount || 0;
+            });
+            var netY = null;
+            var netW = null;
+            var hourlyY = body.yesterday ? getHourlyData(body.yesterday, dept) : null;
+            var hourlyW = body.lastWeek ? getHourlyData(body.lastWeek, dept) : null;
+            if (hourlyY && hourlyY.length) {
+              var filteredY = filterByBusinessHours(hourlyY, body.yesterday.businessDate);
+              if (useSameTimeBaseline) filteredY = filterByThailandCurrentTime(filteredY, thailandNow);
+              var sumY = 0;
+              filteredY.forEach(function (h) { sumY += h.netSales || 0; });
+              netY = sumY;
+            }
+            if (hourlyW && hourlyW.length) {
+              var filteredW = filterByBusinessHours(hourlyW, body.lastWeek.businessDate);
+              if (useSameTimeBaseline) filteredW = filterByThailandCurrentTime(filteredW, thailandNow);
+              var sumW = 0;
+              filteredW.forEach(function (h) { sumW += h.netSales || 0; });
+              netW = sumW;
+            }
+            return {
+              name: store.name || sid,
+              net: net,
+              dod: pctRatio(net, netY),
+              wow: pctRatio(net, netW),
+              qty: qty,
+              receipt: receipt
+            };
+          });
+        })
+        .catch(function () { return null; });
+    })).then(function (rows) {
+      var list = rows.filter(function (r) { return !!r; });
+      list.sort(function (a, b) {
+        var dir = sortKey === 'name' ? 1 : -1;
+        if (sortKey === 'name') {
+          return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }) * dir;
+        }
+        var av = Number(a[sortKey] || 0);
+        var bv = Number(b[sortKey] || 0);
+        if (av === bv) return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+        return (av - bv) * dir;
+      });
+      if (!list.length) {
+        tbody.innerHTML = '';
+        if (emptyEl) {
+          emptyEl.hidden = false;
+          emptyEl.textContent = t('allstores_empty');
+        }
+        return;
+      }
+      if (emptyEl) emptyEl.hidden = true;
+      var html = '';
+      list.forEach(function (r, idx) {
+        html += '<tr>' +
+          '<td>' + (idx + 1) + '</td>' +
+          '<td>' + r.name + '</td>' +
+          '<td>' + formatMoneyNoUnit(r.net) + '</td>' +
+          '<td>' + formatPct(r.dod) + '</td>' +
+          '<td>' + formatPct(r.wow) + '</td>' +
+          '<td>' + formatInt(r.qty) + '</td>' +
+          '<td>' + formatInt(r.receipt) + '</td>' +
+        '</tr>';
+      });
+      tbody.innerHTML = html;
+    }).finally(function () {
+      hideLoading();
+    });
   }
 
   function switchTab(tabName) {
@@ -1118,13 +1745,7 @@
       refreshOutputDateSelect();
       renderReport();
     }
-    if (tabName === 'daily') {
-      refreshDailyDateSelect();
-      renderDailySummary();
-    }
-    if (tabName === 'weekly') {
-      refreshWeeklyDateSelect();
-    }
+    if (tabName === 'allstores') renderAllStoresDigest();
     if (tabName === 'ai') {
       refreshAiDateSelect();
     }
@@ -1309,8 +1930,10 @@
       var totalReceipts = days.reduce(function (acc, d) { return acc + (d.receiptCount || 0); }, 0);
       var totalQty = days.reduce(function (acc, d) { return acc + (d.quantitySold || 0); }, 0);
 
+      var dailyRate = getExchangeRate(getDailyStoreId());
+      var jpyTotalStr = dailyRate != null ? ' / ' + formatInt(Math.round(grandTotalSales * dailyRate)) + ' 円' : '';
       var weeklyTotalHtml = '<section class="summary-section weekly-total-section"><h3>' + t('period_total_section') + '</h3><table class="report-table daily-table weekly-total-table"><tbody>';
-      weeklyTotalHtml += '<tr><td>' + t('total_net_sales') + '</td><td>' + formatInt(grandTotalSales) + ' ' + t('currency_unit') + '</td></tr>';
+      weeklyTotalHtml += '<tr><td>' + t('total_net_sales') + '</td><td>' + formatInt(grandTotalSales) + ' ' + t('currency_unit') + jpyTotalStr + '</td></tr>';
       weeklyTotalHtml += '<tr><td>' + t('total_receipts') + '</td><td>' + formatInt(totalReceipts) + '</td></tr>';
       weeklyTotalHtml += '<tr><td>' + t('total_qty_sold') + '</td><td>' + formatInt(totalQty) + '</td></tr>';
       weeklyTotalHtml += '<tr><td>' + t('total_hours') + '</td><td>' + formatInt(totalHours) + ' h</td></tr>';
@@ -1435,189 +2058,17 @@
     });
   }
 
-  function addDays(dateStr, delta) {
-    var d = new Date(dateStr + 'T12:00:00');
-    d.setDate(d.getDate() + delta);
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-  }
-
-  function getMondayOfWeek(dateStr) {
-    var d = new Date(dateStr + 'T12:00:00');
-    var day = d.getDay();
-    var toMonday = (day + 6) % 7;
-    return addDays(dateStr, -toMonday);
-  }
-
-  function fillWeeklyEndDateSelect(dates, selectedValue) {
-    var el = document.getElementById('weekly-end-date');
-    if (!el || el.type !== 'date') return;
-    var arr = (dates || []).slice().sort();
-    if (arr.length) {
-      el.min = arr[0];
-      el.max = arr[arr.length - 1];
-    } else {
-      el.removeAttribute('min');
-      el.removeAttribute('max');
-    }
-    var val = (selectedValue && dates && dates.indexOf(selectedValue) !== -1) ? selectedValue : (dates && dates.length ? dates[0] : '');
-    el.value = val || '';
-  }
-
-  function refreshWeeklyDateSelect() {
-    showLoading();
-    var storeId = getWeeklyStoreId();
-    fetch('/api/dates?storeId=' + encodeURIComponent(storeId)).then(function (res) { return parseJsonResponse(res); }).then(function (body) {
-      var dates = body.dates || [];
-      var el = document.getElementById('weekly-end-date');
-      fillWeeklyEndDateSelect(dates, el ? el.value : null);
-      if (el && el.value) {
-        renderWeeklySummary();
-      } else {
-        hideLoading();
-      }
-    }).catch(function () { hideLoading(); });
-  }
-
-  function renderWeeklySummary() {
-    var endDateEl = document.getElementById('weekly-end-date');
-    var endDate = endDateEl ? endDateEl.value : '';
-    var numWeeksEl = document.getElementById('weekly-num-weeks');
-    var numWeeks = numWeeksEl ? Math.min(4, Math.max(2, parseInt(numWeeksEl.value, 10) || 4)) : 4;
-    var daysToFetch = numWeeks * 7;
-    var container = document.getElementById('weekly-summary-tables');
-    var emptyEl = document.getElementById('weekly-empty');
-    if (!container) return;
-    if (!endDate) {
-      container.innerHTML = '';
-      if (emptyEl) emptyEl.hidden = false;
-      return;
-    }
-    var mondayOfEndWeek = getMondayOfWeek(endDate);
-    var firstMonday = addDays(mondayOfEndWeek, -(numWeeks - 1) * 7);
-    var apiEndDate = addDays(firstMonday, daysToFetch - 1);
-    if (emptyEl) emptyEl.hidden = true;
-    showLoading();
-    var storeId = getWeeklyStoreId();
-    fetch('/api/daily-summary?referenceDate=' + encodeURIComponent(apiEndDate) + '&days=' + daysToFetch + '&storeId=' + encodeURIComponent(storeId)).then(function (res) {
-      return parseJsonResponse(res).then(function (body) {
-        if (!res.ok) throw new Error(body.error || 'Failed to load weekly summary');
-        return body;
-      });
-    }).then(function (body) {
-      var days = body.days || [];
-      if (days.length === 0) {
-        container.innerHTML = '';
-        if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = t('weekly_no_data'); }
-        return;
-      }
-      var weeks = [];
-      for (var w = 0; w < numWeeks; w++) {
-        var chunk = days.slice(w * 7, (w + 1) * 7);
-        if (chunk.length === 0) break;
-        var totalNetSales = 0, receiptCount = 0, quantitySold = 0;
-        var byDepartment = {};
-        DEPARTMENTS.forEach(function (dept) { byDepartment[dept] = 0; });
-        chunk.forEach(function (d) {
-          totalNetSales += d.totalNetSales || 0;
-          receiptCount += d.receiptCount || 0;
-          quantitySold += d.quantitySold || 0;
-          DEPARTMENTS.forEach(function (dept) {
-            byDepartment[dept] += (d.byDepartment && d.byDepartment[dept]) ? d.byDepartment[dept] : 0;
-          });
-        });
-        var startD = chunk[0].date;
-        var endD = chunk[chunk.length - 1].date;
-        weeks.push({
-          label: startD + ' ～ ' + endD,
-          shortLabel: startD.slice(5) + '～' + endD.slice(5),
-          totalNetSales: totalNetSales,
-          receiptCount: receiptCount,
-          quantitySold: quantitySold,
-          byDepartment: byDepartment
-        });
-      }
-      if (weeks.length === 0) {
-        container.innerHTML = '';
-        if (emptyEl) emptyEl.hidden = false;
-        return;
-      }
-      var sumNetSales = 0, sumReceipts = 0, sumQty = 0;
-      weeks.forEach(function (w) {
-        sumNetSales += w.totalNetSales || 0;
-        sumReceipts += w.receiptCount || 0;
-        sumQty += w.quantitySold || 0;
-      });
-      var table1 = '<section class="summary-section"><h3>' + t('weekly_net_title') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th><th>' + t('net_sales_thb') + '</th><th>' + t('wow') + '</th><th>' + t('receipt_count') + '</th><th>' + t('qty_sold_short') + '</th></tr></thead><tbody>';
-      weeks.forEach(function (w, i) {
-        var prev = weeks[i - 1];
-        var wow = prev && prev.totalNetSales ? Math.round((w.totalNetSales / prev.totalNetSales) * 100) : '—';
-        table1 += '<tr><td>' + w.label + '</td><td>' + formatInt(w.totalNetSales) + '</td><td>' + (wow === '—' ? wow : wow + '%') + '</td><td>' + formatInt(w.receiptCount) + '</td><td>' + formatInt(w.quantitySold) + '</td></tr>';
-      });
-      table1 += '<tr class="total-row"><td>' + t('total') + '</td><td>' + formatInt(sumNetSales) + '</td><td>—</td><td>' + formatInt(sumReceipts) + '</td><td>' + formatInt(sumQty) + '</td></tr></tbody></table></section>';
-
-      var deptTotals = {};
-      DEPARTMENTS.forEach(function (d) { deptTotals[d] = 0; });
-      weeks.forEach(function (w) {
-        DEPARTMENTS.forEach(function (dept) {
-          deptTotals[dept] += w.byDepartment[dept] || 0;
-        });
-      });
-      var grandTotalAll = 0;
-      DEPARTMENTS.forEach(function (d) { grandTotalAll += deptTotals[d] || 0; });
-      var table2 = '<section class="summary-section"><h3>' + t('sales_by_dept') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
-      DEPARTMENTS.forEach(function (d) { table2 += '<th>' + d + '</th>'; });
-      table2 += '<th>' + t('total') + '</th></tr></thead><tbody>';
-      weeks.forEach(function (w) {
-        table2 += '<tr><td>' + w.shortLabel + '</td>';
-        var rowTotal = 0;
-        DEPARTMENTS.forEach(function (dept) {
-          var v = w.byDepartment[dept] || 0;
-          rowTotal += v;
-          table2 += '<td>' + formatInt(v) + '</td>';
-        });
-        table2 += '<td>' + formatInt(rowTotal) + '</td></tr>';
-      });
-      table2 += '<tr class="total-row"><td>' + t('total') + '</td>';
-      DEPARTMENTS.forEach(function (d) { table2 += '<td>' + formatInt(deptTotals[d]) + '</td>'; });
-      table2 += '<td>' + formatInt(grandTotalAll) + '</td></tr></tbody></table></section>';
-
-      var table3 = '<section class="summary-section"><h3>' + t('dept_composition_pct') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
-      DEPARTMENTS.forEach(function (d) { table3 += '<th>' + d + '</th>'; });
-      table3 += '<th>' + t('total') + '</th></tr></thead><tbody>';
-      weeks.forEach(function (w) {
-        var weekTotal = w.totalNetSales || 1;
-        table3 += '<tr><td>' + w.shortLabel + '</td>';
-        DEPARTMENTS.forEach(function (dept) {
-          var v = w.byDepartment[dept] || 0;
-          var pct = weekTotal ? ((v / weekTotal) * 100).toFixed(1) : '—';
-          table3 += '<td>' + pct + '%</td>';
-        });
-        table3 += '<td>100%</td></tr>';
-      });
-      table3 += '<tr class="total-row"><td>' + t('total') + '</td>';
-      DEPARTMENTS.forEach(function (d) {
-        var pct = grandTotalAll ? ((deptTotals[d] || 0) / grandTotalAll * 100).toFixed(1) : '—';
-        table3 += '<td>' + pct + '%</td>';
-      });
-      table3 += '<td>100%</td></tr></tbody></table></section>';
-
-      container.innerHTML = table1 + table2 + table3;
-    }).then(function () { hideLoading(); }).catch(function () {
-      container.innerHTML = '';
-      if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = t('weekly_load_failed'); }
-      hideLoading();
-    });
-  }
-
   function fillStoreSelect() {
     var sel = document.getElementById('store-select');
     var dailySel = document.getElementById('daily-store-select');
-    var weeklySel = document.getElementById('weekly-store-select');
     var aiSel = document.getElementById('ai-store-select');
     if (!sel) return Promise.resolve();
     return fetch('/api/stores').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
       var stores = body.stores || [];
       if (stores.length === 0) stores = [{ id: 'default', name: 'Default' }];
+      state.stores = stores;
+      state.exchangeRate = body.exchangeRate != null ? body.exchangeRate : null;
+      state.exchangeRateUpdatedAt = body.exchangeRateUpdatedAt || null;
       function fillOne(selectEl) {
         if (!selectEl) return;
         var currentVal = selectEl.value;
@@ -1632,14 +2083,12 @@
       }
       fillOne(sel);
       fillOne(dailySel);
-      fillOne(weeklySel);
       fillOne(aiSel);
       state.storeId = getSelectedStoreId();
     }).catch(function () {
       var def = '<option value="default">Default</option>';
       if (sel) sel.innerHTML = def;
       if (dailySel) dailySel.innerHTML = def;
-      if (weeklySel) weeklySel.innerHTML = def;
       if (aiSel) aiSel.innerHTML = def;
       state.storeId = 'default';
     });
@@ -1649,6 +2098,7 @@
     state.storeId = getSelectedStoreId();
     fetchBusinessHours();
     refreshOutputDateSelect();
+    updateHourlyFiltersSummaryBar();
   }
 
   /* ── AI Tab ──────────────────────────────────────────── */
@@ -1662,6 +2112,11 @@
 
   function getAiLang() {
     return (window.i18n && window.i18n.getCurrentLang) ? window.i18n.getCurrentLang() : 'en';
+  }
+
+  function getAiDepartment() {
+    var el = document.getElementById('ai-department-select');
+    return el && el.value ? el.value : 'Total';
   }
 
   function checkAiStatus() {
@@ -1713,6 +2168,26 @@
     }
   }
 
+  function getAiErrorDetail(err) {
+    if (err == null) return '';
+    if (typeof err === 'string') {
+      var s = err.trim();
+      if (s.charAt(0) === '{') {
+        try {
+          var o = JSON.parse(s);
+          var m = (o && o.error && o.error.message) || (o && o.message);
+          if (m && typeof m === 'string') return m.replace(/\n/g, ' ').slice(0, 400);
+        } catch (e) {}
+      }
+      return s.slice(0, 400);
+    }
+    if (typeof err === 'object') {
+      var m = err.message || (err.error && err.error.message);
+      if (m && typeof m === 'string') return m.replace(/\n/g, ' ').slice(0, 400);
+    }
+    return String(err).slice(0, 400);
+  }
+
   function renderMarkdown(text) {
     if (typeof marked !== 'undefined' && marked.parse) {
       return marked.parse(text || '');
@@ -1720,101 +2195,288 @@
     return '<p>' + (text || '').replace(/\n/g, '<br>') + '</p>';
   }
 
-  function doAiAnalyze() {
-    var dateEl = document.getElementById('ai-reference-date');
-    var refDate = dateEl ? dateEl.value : '';
-    if (!refDate) return;
-    var storeId = getAiStoreId();
-    var lang = getAiLang();
-    showAiError(null);
-    showAiLoading(true);
-    document.getElementById('btn-ai-analyze').disabled = true;
-    document.getElementById('btn-ai-forecast').disabled = true;
-
-    fetch('/api/ai/analyze?storeId=' + encodeURIComponent(storeId) + '&referenceDate=' + encodeURIComponent(refDate) + '&lang=' + encodeURIComponent(lang))
-      .then(function (res) { return parseJsonResponse(res); })
-      .then(function (body) {
-        showAiLoading(false);
-        document.getElementById('btn-ai-analyze').disabled = !aiState.available;
-        document.getElementById('btn-ai-forecast').disabled = !aiState.available;
-        if (body.ok) {
-          var section = document.getElementById('ai-analysis-section');
-          var content = document.getElementById('ai-analysis-content');
-          var results = document.getElementById('ai-results');
-          if (content) content.innerHTML = renderMarkdown(body.text);
-          if (section) section.hidden = false;
-          if (results) results.hidden = false;
-        } else {
-          var errKey = body.error === 'NO_DATA' ? 'ai_error_no_data'
-            : body.error === 'AI_NOT_CONFIGURED' ? 'ai_error_not_configured'
-            : 'ai_error_generic';
-          showAiError(t(errKey));
-        }
-      })
-      .catch(function () {
-        showAiLoading(false);
-        document.getElementById('btn-ai-analyze').disabled = !aiState.available;
-        document.getElementById('btn-ai-forecast').disabled = !aiState.available;
-        showAiError(t('ai_error_generic'));
-      });
+  function getTodayStr() {
+    return getThailandDateStr();
   }
 
-  function doAiForecast() {
+  function doAiGenerate() {
     var dateEl = document.getElementById('ai-reference-date');
     var refDate = dateEl ? dateEl.value : '';
     if (!refDate) return;
+    var todayStr = getTodayStr();
     var storeId = getAiStoreId();
+    var department = getAiDepartment();
     var lang = getAiLang();
     showAiError(null);
     showAiLoading(true);
-    document.getElementById('btn-ai-analyze').disabled = true;
-    document.getElementById('btn-ai-forecast').disabled = true;
+    var btn = document.getElementById('btn-ai-generate');
+    if (btn) btn.disabled = true;
 
-    fetch('/api/ai/forecast?storeId=' + encodeURIComponent(storeId) + '&referenceDate=' + encodeURIComponent(refDate) + '&lang=' + encodeURIComponent(lang))
-      .then(function (res) { return parseJsonResponse(res); })
-      .then(function (body) {
-        showAiLoading(false);
-        document.getElementById('btn-ai-analyze').disabled = !aiState.available;
-        document.getElementById('btn-ai-forecast').disabled = !aiState.available;
-        if (body.ok) {
-          var section = document.getElementById('ai-forecast-section');
-          var content = document.getElementById('ai-forecast-content');
-          var results = document.getElementById('ai-results');
-          if (content) content.innerHTML = renderMarkdown(body.text);
-          if (section) section.hidden = false;
-          if (results) results.hidden = false;
-        } else {
-          var errKey = body.error === 'NO_DATA' ? 'ai_error_no_data'
-            : body.error === 'AI_NOT_CONFIGURED' ? 'ai_error_not_configured'
-            : 'ai_error_generic';
-          showAiError(t(errKey));
-        }
-      })
-      .catch(function () {
-        showAiLoading(false);
-        document.getElementById('btn-ai-analyze').disabled = !aiState.available;
-        document.getElementById('btn-ai-forecast').disabled = !aiState.available;
-        showAiError(t('ai_error_generic'));
-      });
+    var analysisSection = document.getElementById('ai-analysis-section');
+    var todaySection = document.getElementById('ai-today-section');
+    var forecastSection = document.getElementById('ai-forecast-section');
+    var results = document.getElementById('ai-results');
+
+    function hideAllSections() {
+      if (analysisSection) analysisSection.hidden = true;
+      if (todaySection) todaySection.hidden = true;
+      if (forecastSection) forecastSection.hidden = true;
+    }
+
+    function done() {
+      showAiLoading(false);
+      if (btn) btn.disabled = !aiState.available;
+    }
+
+    if (refDate < todayStr) {
+      fetch('/api/ai/analyze?storeId=' + encodeURIComponent(storeId) + '&referenceDate=' + encodeURIComponent(refDate) + '&department=' + encodeURIComponent(department) + '&lang=' + encodeURIComponent(lang))
+        .then(function (res) { return parseJsonResponse(res); })
+        .then(function (body) {
+          done();
+          if (body.ok) {
+            hideAllSections();
+            var content = document.getElementById('ai-analysis-content');
+            if (content) content.innerHTML = renderMarkdown(body.text);
+            if (analysisSection) analysisSection.hidden = false;
+            if (results) results.hidden = false;
+          } else {
+            var errKey = body.error === 'NO_DATA' ? 'ai_error_no_data'
+              : body.error === 'AI_NOT_CONFIGURED' ? 'ai_error_not_configured'
+              : 'ai_error_generic';
+            var detail = (errKey === 'ai_error_generic' && body.error) ? ' ' + getAiErrorDetail(body.error) : '';
+            showAiError(t(errKey) + detail);
+          }
+        })
+        .catch(function (err) {
+          done();
+          var detail = (err && err.message) ? ' (' + String(err.message).slice(0, 200) + ')' : '';
+          showAiError(t('ai_error_generic') + detail);
+        });
+    } else if (refDate > todayStr) {
+      fetch('/api/ai/forecast?storeId=' + encodeURIComponent(storeId) + '&referenceDate=' + encodeURIComponent(refDate) + '&department=' + encodeURIComponent(department) + '&lang=' + encodeURIComponent(lang))
+        .then(function (res) { return parseJsonResponse(res); })
+        .then(function (body) {
+          done();
+          if (body.ok) {
+            hideAllSections();
+            var content = document.getElementById('ai-forecast-content');
+            if (content) content.innerHTML = renderMarkdown(body.text);
+            if (forecastSection) forecastSection.hidden = false;
+            if (results) results.hidden = false;
+          } else {
+            var errKey = body.error === 'NO_DATA' ? 'ai_error_no_data'
+              : body.error === 'AI_NOT_CONFIGURED' ? 'ai_error_not_configured'
+              : 'ai_error_generic';
+            var detail = (errKey === 'ai_error_generic' && body.error) ? ' ' + getAiErrorDetail(body.error) : '';
+            showAiError(t(errKey) + detail);
+          }
+        })
+        .catch(function (err) {
+          done();
+          var detail = (err && err.message) ? ' (' + String(err.message).slice(0, 200) + ')' : '';
+          showAiError(t('ai_error_generic') + detail);
+        });
+    } else {
+      var currentTimeIso = new Date().toISOString();
+      var url = '/api/ai/today?storeId=' + encodeURIComponent(storeId) + '&referenceDate=' + encodeURIComponent(refDate) + '&department=' + encodeURIComponent(department) + '&lang=' + encodeURIComponent(lang) + '&currentTime=' + encodeURIComponent(currentTimeIso);
+      fetch(url)
+        .then(function (res) { return parseJsonResponse(res); })
+        .then(function (body) {
+          done();
+          if (body.ok) {
+            hideAllSections();
+            var content = document.getElementById('ai-today-content');
+            if (content) content.innerHTML = renderMarkdown(body.text);
+            if (todaySection) todaySection.hidden = false;
+            if (results) results.hidden = false;
+          } else {
+            var errKey = body.error === 'NO_DATA' ? 'ai_error_no_data'
+              : body.error === 'AI_NOT_CONFIGURED' ? 'ai_error_not_configured'
+              : 'ai_error_generic';
+            var detail = (errKey === 'ai_error_generic' && body.error) ? ' ' + getAiErrorDetail(body.error) : '';
+            showAiError(t(errKey) + detail);
+          }
+        })
+        .catch(function (err) {
+          done();
+          var detail = (err && err.message) ? ' (' + String(err.message).slice(0, 200) + ')' : '';
+          showAiError(t('ai_error_generic') + detail);
+        });
+    }
   }
 
   /* ── End AI Tab ─────────────────────────────────────── */
 
-    function updateLogoutVisibility() {
-    fetch('/api/auth/status')
+  var authState = {
+    loggedIn: false,
+    role: null,
+    username: null,
+    displayName: null,
+    preferredStore: null,
+    preferredDepartment: null,
+    preferredCurrency: null,
+    preferredLanguage: null,
+    needsProfileSetup: false
+  };
+
+  function updateHeaderAuth() {
+    return fetch('/api/auth/status')
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        var el = document.getElementById('logout-link');
-        if (el) el.style.display = data.loggedIn ? '' : 'none';
+        authState.loggedIn = !!data.loggedIn;
+        authState.role = data.role || null;
+        authState.username = data.username || null;
+        authState.displayName = data.displayName || null;
+        authState.preferredStore = data.preferredStore || null;
+        authState.preferredDepartment = data.preferredDepartment || null;
+        authState.preferredCurrency = data.preferredCurrency || null;
+        authState.preferredLanguage = data.preferredLanguage || null;
+        authState.needsProfileSetup = !!data.needsProfileSetup;
+
+        var usernameEl = document.getElementById('header-username');
+        if (usernameEl) {
+          usernameEl.textContent = data.displayName || data.username || '';
+          usernameEl.style.display = data.loggedIn ? '' : 'none';
+        }
+        var settingsEl = document.getElementById('settings-link');
+        if (settingsEl) settingsEl.style.display = data.loggedIn ? '' : 'none';
+        var logoutEl = document.getElementById('logout-link');
+        if (logoutEl) logoutEl.style.display = data.loggedIn ? '' : 'none';
+        var setupEl = document.getElementById('setup-link');
+        if (setupEl) setupEl.style.display = (data.loggedIn && data.role === 'admin') ? '' : 'none';
+
+        var isAdmin = data.role === 'admin';
+        document.querySelectorAll('.csv-export-control').forEach(function (el) {
+          el.style.display = isAdmin ? '' : 'none';
+        });
       })
       .catch(function () {
-        var el = document.getElementById('logout-link');
-        if (el) el.style.display = 'none';
+        authState.loggedIn = false;
+        authState.role = null;
+        authState.username = null;
+        authState.displayName = null;
+        authState.preferredStore = null;
+        authState.preferredDepartment = null;
+        authState.preferredCurrency = null;
+        authState.preferredLanguage = null;
+        authState.needsProfileSetup = false;
+        var usernameEl = document.getElementById('header-username');
+        if (usernameEl) usernameEl.style.display = 'none';
+        var settingsEl = document.getElementById('settings-link');
+        if (settingsEl) settingsEl.style.display = 'none';
+        var logoutEl = document.getElementById('logout-link');
+        if (logoutEl) logoutEl.style.display = 'none';
+        var setupEl = document.getElementById('setup-link');
+        if (setupEl) setupEl.style.display = 'none';
+        document.querySelectorAll('.csv-export-control').forEach(function (el) {
+          el.style.display = 'none';
+        });
       });
   }
 
+  function applyUserPreferences() {
+    var storeId = authState.preferredStore;
+    var department = authState.preferredDepartment || 'Total';
+    var preferredCurrency = authState.preferredCurrency;
+    var preferredLanguage = authState.preferredLanguage;
+    var storeSelects = ['store-select', 'ai-store-select'];
+    storeSelects.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el && storeId && Array.prototype.some.call(el.options, function (o) { return o.value === storeId; })) {
+        el.value = storeId;
+      }
+    });
+    var deptSelects = ['department-select', 'ai-department-select'];
+    deptSelects.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el && department && Array.prototype.some.call(el.options, function (o) { return o.value === department; })) {
+        el.value = department;
+      }
+    });
+    if (preferredCurrency === 'THB' || preferredCurrency === 'JPY') {
+      state.currency = preferredCurrency;
+    }
+    if (preferredLanguage && window.i18n && typeof window.i18n.setLanguage === 'function') {
+      var currentLang = (window.i18n.getCurrentLang && window.i18n.getCurrentLang()) || null;
+      if (currentLang !== preferredLanguage) window.i18n.setLanguage(preferredLanguage);
+    }
+    if (storeId) state.storeId = storeId;
+  }
+
+  function openSettingsModal(forceInitialSetup) {
+    var settingsModal = document.getElementById('settings-modal');
+    if (!settingsModal) return;
+    var storeSel = document.getElementById('settings-store-select');
+    var mainStore = document.getElementById('store-select');
+    if (storeSel && mainStore) {
+      storeSel.innerHTML = '';
+      Array.prototype.forEach.call(mainStore.options, function (opt) {
+        var o = document.createElement('option');
+        o.value = opt.value;
+        o.textContent = opt.textContent;
+        storeSel.appendChild(o);
+      });
+      storeSel.value = authState.preferredStore && Array.prototype.some.call(storeSel.options, function (o) { return o.value === authState.preferredStore; })
+        ? authState.preferredStore
+        : (mainStore.value || 'default');
+    }
+    var deptSel = document.getElementById('settings-department-select');
+    refreshDepartmentSelectLabels();
+    if (deptSel) {
+      deptSel.value = authState.preferredDepartment && Array.prototype.some.call(deptSel.options, function (o) { return o.value === authState.preferredDepartment; })
+        ? authState.preferredDepartment
+        : 'Total';
+    }
+    var currencySel = document.getElementById('settings-currency-select');
+    if (currencySel) {
+      currencySel.value = (authState.preferredCurrency === 'JPY' || authState.preferredCurrency === 'THB')
+        ? authState.preferredCurrency
+        : (state.currency === 'JPY' ? 'JPY' : 'THB');
+    }
+    var languageSel = document.getElementById('settings-language-select');
+    if (languageSel) {
+      var currentLang = (window.i18n && window.i18n.getCurrentLang) ? window.i18n.getCurrentLang() : 'ja';
+      languageSel.value = (authState.preferredLanguage === 'ja' || authState.preferredLanguage === 'en' || authState.preferredLanguage === 'th')
+        ? authState.preferredLanguage
+        : currentLang;
+    }
+    var titleEl = document.getElementById('settings-modal-title');
+    var cancelBtn = document.getElementById('settings-cancel-btn');
+    if (forceInitialSetup) {
+      if (titleEl) titleEl.textContent = (t('settings_title') || 'Settings') + ' *';
+      if (cancelBtn) cancelBtn.style.display = 'none';
+    } else {
+      if (titleEl) titleEl.textContent = t('settings_title') || 'Settings';
+      if (cancelBtn) cancelBtn.style.display = '';
+    }
+    settingsModal.hidden = false;
+  }
+
   function init() {
-    updateLogoutVisibility();
+    var mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+    var headerMenu = document.getElementById('header-menu');
+    function closeMobileMenu() {
+      if (!headerMenu || !mobileMenuToggle) return;
+      headerMenu.classList.remove('mobile-open');
+      mobileMenuToggle.setAttribute('aria-expanded', 'false');
+    }
+    function updateMobileMenuLayout() {
+      if (window.innerWidth > 768) closeMobileMenu();
+    }
+    if (mobileMenuToggle && headerMenu) {
+      mobileMenuToggle.addEventListener('click', function () {
+        var expanded = mobileMenuToggle.getAttribute('aria-expanded') === 'true';
+        mobileMenuToggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        headerMenu.classList.toggle('mobile-open', !expanded);
+      });
+      document.addEventListener('click', function (e) {
+        if (!headerMenu.classList.contains('mobile-open')) return;
+        if (headerMenu.contains(e.target) || mobileMenuToggle.contains(e.target)) return;
+        closeMobileMenu();
+      });
+      window.addEventListener('resize', updateMobileMenuLayout);
+    }
+
     document.querySelectorAll('.tab').forEach(function (btn) {
       btn.addEventListener('click', function () {
         switchTab(btn.getAttribute('data-tab'));
@@ -1824,9 +2486,56 @@
     var storeSelectEl = document.getElementById('store-select');
     if (storeSelectEl) storeSelectEl.addEventListener('change', onStoreChange);
 
+    function updateHourlyFiltersLayout() {
+      var toggle = document.getElementById('hourly-filters-toggle');
+      var header = document.getElementById('hourly-output-header');
+      if (!toggle || !header) return;
+      var mobile = window.innerWidth <= 768;
+      if (!mobile) {
+        toggle.hidden = true;
+        header.classList.remove('is-collapsed');
+        toggle.setAttribute('aria-expanded', 'true');
+        return;
+      }
+      toggle.hidden = false;
+      if (!header.classList.contains('is-collapsed') && toggle.getAttribute('aria-expanded') !== 'true') {
+        header.classList.add('is-collapsed');
+      }
+      if (!toggle.hasAttribute('data-bound')) {
+        toggle.addEventListener('click', function () {
+          var expanded = toggle.getAttribute('aria-expanded') === 'true';
+          toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+          header.classList.toggle('is-collapsed', expanded);
+        });
+        toggle.setAttribute('data-bound', '1');
+      }
+      updateHourlyFiltersSummaryBar();
+    }
+    window.addEventListener('resize', updateHourlyFiltersLayout);
+
     var departmentSelect = document.getElementById('department-select');
-    if (departmentSelect) departmentSelect.addEventListener('change', renderReport);
+    if (departmentSelect) departmentSelect.addEventListener('change', function () { renderReport(); updateHourlyFiltersSummaryBar(); });
     fillTimeSelects(state.referenceDate);
+
+    var chartTabSales = document.getElementById('chart-tab-sales');
+    var chartTabReceipts = document.getElementById('chart-tab-receipts');
+    if (chartTabSales) {
+      chartTabSales.addEventListener('click', function () { setHourlyChartTab('sales'); });
+    }
+    if (chartTabReceipts) {
+      chartTabReceipts.addEventListener('click', function () { setHourlyChartTab('receipts'); });
+    }
+    var chartTabForecastSales = document.getElementById('chart-tab-forecast-sales');
+    var chartTabForecastReceipts = document.getElementById('chart-tab-forecast-receipts');
+    if (chartTabForecastSales) {
+      chartTabForecastSales.addEventListener('click', function () { setForecastChartTab('sales'); });
+    }
+    if (chartTabForecastReceipts) {
+      chartTabForecastReceipts.addEventListener('click', function () { setForecastChartTab('receipts'); });
+    }
+    window.addEventListener('resize', function () {
+      if (lastCompositionData) renderComposition(lastCompositionData);
+    });
 
     var outputDateEl = document.getElementById('output-date');
     if (outputDateEl) outputDateEl.addEventListener('change', function () {
@@ -1846,35 +2555,34 @@
         state.referenceDate = body.referenceDate;
         fillTimeSelects(state.referenceDate);
         renderReport();
+        updateHourlyFiltersSummaryBar();
       }).then(function () { hideLoading(); }).catch(function () { hideLoading(); });
     });
 
-    var dailyStoreEl = document.getElementById('daily-store-select');
-    if (dailyStoreEl) dailyStoreEl.addEventListener('change', function () { refreshDailyDateSelect(); });
-    var dailyStartEl = document.getElementById('daily-start-date');
-    var dailyEndEl = document.getElementById('daily-end-date');
-    if (dailyStartEl) dailyStartEl.addEventListener('change', renderDailySummary);
-    if (dailyEndEl) dailyEndEl.addEventListener('change', renderDailySummary);
-
-    var weeklyStoreEl = document.getElementById('weekly-store-select');
-    if (weeklyStoreEl) weeklyStoreEl.addEventListener('change', function () { refreshWeeklyDateSelect(); });
-    var weeklyEndEl = document.getElementById('weekly-end-date');
-    var weeklyNumEl = document.getElementById('weekly-num-weeks');
-    if (weeklyEndEl) weeklyEndEl.addEventListener('change', renderWeeklySummary);
-    if (weeklyNumEl) weeklyNumEl.addEventListener('change', renderWeeklySummary);
+    var allstoresDateEl = document.getElementById('allstores-date');
+    var allstoresDeptEl = document.getElementById('allstores-department-select');
+    var allstoresSortKeyEl = document.getElementById('allstores-sort-key');
+    if (allstoresDateEl) allstoresDateEl.addEventListener('change', renderAllStoresDigest);
+    if (allstoresDeptEl) allstoresDeptEl.addEventListener('change', renderAllStoresDigest);
+    if (allstoresSortKeyEl) allstoresSortKeyEl.addEventListener('change', renderAllStoresDigest);
 
     var timeStart = document.getElementById('time-start');
     var timeEnd = document.getElementById('time-end');
-    if (timeStart) timeStart.addEventListener('change', renderReport);
-    if (timeEnd) timeEnd.addEventListener('change', renderReport);
+    var langSelect = document.getElementById('lang-select');
+    var logoutLink = document.getElementById('logout-link');
+    var setupLink = document.getElementById('setup-link');
+    if (timeStart) timeStart.addEventListener('change', function () { renderReport(); updateHourlyFiltersSummaryBar(); });
+    if (timeEnd) timeEnd.addEventListener('change', function () { renderReport(); updateHourlyFiltersSummaryBar(); });
+    if (langSelect) langSelect.addEventListener('change', closeMobileMenu);
+    if (logoutLink) logoutLink.addEventListener('click', closeMobileMenu);
+    if (setupLink) setupLink.addEventListener('click', closeMobileMenu);
 
     window.addEventListener('languageChange', function () {
+      refreshDepartmentSelectLabels();
       fillTimeSelects(state.referenceDate);
+      refreshCurrencyTexts();
       renderReport();
-      var dailyEnd = document.getElementById('daily-end-date');
-      if (dailyEnd && dailyEnd.value) renderDailySummary();
-      var weeklyEnd = document.getElementById('weekly-end-date');
-      if (weeklyEnd && weeklyEnd.value) renderWeeklySummary();
+      renderAllStoresDigest();
     });
 
     var btnHourlyCsv = document.getElementById('btn-hourly-csv');
@@ -1884,48 +2592,86 @@
         var opt = sel ? sel.value : 'hourly';
         var dateStr = state.referenceDate || '';
         if (opt === 'summary') {
-          var summaryTable = document.getElementById('summary-table');
-          if (summaryTable) downloadCsv('hourly_summary_' + dateStr + '.csv', tableToCsv(summaryTable));
+          var hourlyTable = document.getElementById('hourly-table');
+          if (hourlyTable) downloadCsv('hourly_report_' + dateStr + '.csv', tableToCsv(hourlyTable));
         } else if (opt === 'all') {
           var hourlyTable = document.getElementById('hourly-table');
           if (hourlyTable) downloadCsv('hourly_report_' + dateStr + '.csv', tableToCsv(hourlyTable));
-          var summaryTable = document.getElementById('summary-table');
-          if (summaryTable) downloadCsv('hourly_summary_' + dateStr + '.csv', tableToCsv(summaryTable));
         } else {
           var table = document.getElementById('hourly-table');
           if (table) downloadCsv('hourly_report_' + dateStr + '.csv', tableToCsv(table));
         }
       });
     }
-    var btnDailyCsv = document.getElementById('btn-daily-csv');
-    if (btnDailyCsv) {
-      btnDailyCsv.addEventListener('click', function () {
-        var sel = document.getElementById('daily-export-select');
-        var opt = sel ? sel.value : 'all';
-        exportPanelTablesCsv('daily-summary-tables', 'daily_summary', opt);
-      });
-    }
-    var btnWeeklyCsv = document.getElementById('btn-weekly-csv');
-    if (btnWeeklyCsv) {
-      btnWeeklyCsv.addEventListener('click', function () {
-        var sel = document.getElementById('weekly-export-select');
-        var opt = sel ? sel.value : 'all';
-        exportPanelTablesCsv('weekly-summary-tables', 'weekly_summary', opt);
-      });
-    }
-
     /* AI tab event handlers */
-    var btnAiAnalyze = document.getElementById('btn-ai-analyze');
-    if (btnAiAnalyze) btnAiAnalyze.addEventListener('click', doAiAnalyze);
-    var btnAiForecast = document.getElementById('btn-ai-forecast');
-    if (btnAiForecast) btnAiForecast.addEventListener('click', doAiForecast);
+    var btnAiGenerate = document.getElementById('btn-ai-generate');
+    if (btnAiGenerate) btnAiGenerate.addEventListener('click', doAiGenerate);
     var aiStoreEl = document.getElementById('ai-store-select');
     if (aiStoreEl) aiStoreEl.addEventListener('change', refreshAiDateSelect);
 
+    /* Settings modal */
+    var settingsLink = document.getElementById('settings-link');
+    var settingsModal = document.getElementById('settings-modal');
+    var settingsSaveBtn = document.getElementById('settings-save-btn');
+    var settingsCancelBtn = document.getElementById('settings-cancel-btn');
+    if (settingsModal) {
+      if (settingsLink) {
+        settingsLink.addEventListener('click', function (e) {
+          e.preventDefault();
+          closeMobileMenu();
+          openSettingsModal(false);
+        });
+      }
+      function closeSettingsModal() {
+        settingsModal.hidden = true;
+        var cancelBtn = document.getElementById('settings-cancel-btn');
+        if (cancelBtn) cancelBtn.style.display = '';
+      }
+      if (settingsCancelBtn) settingsCancelBtn.addEventListener('click', closeSettingsModal);
+      settingsModal.addEventListener('click', function (e) {
+        if (e.target === settingsModal) closeSettingsModal();
+      });
+      if (settingsSaveBtn) {
+        settingsSaveBtn.addEventListener('click', function () {
+          var storeSel = document.getElementById('settings-store-select');
+          var deptSel = document.getElementById('settings-department-select');
+          var currencySel = document.getElementById('settings-currency-select');
+          var languageSel = document.getElementById('settings-language-select');
+          var storeId = storeSel ? storeSel.value : null;
+          var department = deptSel ? deptSel.value : 'Total';
+          var currency = currencySel ? currencySel.value : null;
+          var language = languageSel ? languageSel.value : null;
+          fetch('/api/me/preferences', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ storeId: storeId, department: department, currency: currency, language: language })
+          }).then(function (r) { return r.json(); }).then(function () {
+            authState.preferredStore = storeId;
+            authState.preferredDepartment = department;
+            authState.preferredCurrency = currency;
+            authState.preferredLanguage = language;
+            authState.needsProfileSetup = false;
+            applyUserPreferences();
+            onStoreChange();
+            renderAllStoresDigest();
+            refreshAiDateSelect();
+            closeSettingsModal();
+          }).catch(function () {});
+        });
+      }
+    }
+
     /* Report page: load stores then initial data */
-    fillStoreSelect().then(function () {
+    updateHeaderAuth().then(function () {
+      return fillStoreSelect();
+    }).then(function () {
+      refreshDepartmentSelectLabels();
+      applyUserPreferences();
       fetchBusinessHours();
       checkAiStatus();
+      updateHourlyFiltersLayout();
+      updateHourlyFiltersSummaryBar();
+      if (authState.loggedIn && authState.needsProfileSetup) openSettingsModal(true);
       if (outputDateEl) {
         refreshOutputDateSelect();
         renderReport();

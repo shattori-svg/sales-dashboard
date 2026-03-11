@@ -15,7 +15,8 @@
   </div>
   <header>
     <h1 data-i18n="app_title">LOPIA Thailand Sales Report</h1>
-    <div class="header-actions">
+    <button type="button" id="mobile-menu-toggle" class="mobile-menu-toggle" aria-label="Open menu" aria-expanded="false">☰</button>
+    <div class="header-actions" id="header-menu">
       <div class="lang-switcher">
         <label for="lang-select" class="lang-label" data-i18n="lang_label">Language</label>
         <select id="lang-select" aria-label="Language">
@@ -24,20 +25,26 @@
           <option value="th">ไทย</option>
         </select>
       </div>
+      <span id="header-username" class="header-username" style="display:none" aria-hidden="true"></span>
+      <a href="#" id="settings-link" class="settings-link" style="display:none" data-i18n="settings_link">Settings</a>
+      <a href="/setup" id="setup-link" class="setup-link" style="display:none" data-i18n="setup_link">Setup</a>
       <a href="/logout" id="logout-link" class="logout-link" data-i18n="logout" style="display:none">ログアウト</a>
     </div>
   </header>
 
   <nav class="tabs">
-    <button type="button" class="tab active" data-tab="hourly" aria-selected="true" data-i18n="tab_hourly">Hourly</button>
-    <button type="button" class="tab" data-tab="daily" aria-selected="false" data-i18n="tab_daily">Daily</button>
-    <button type="button" class="tab" data-tab="weekly" aria-selected="false" data-i18n="tab_weekly">Weekly</button>
-    <button type="button" class="tab" data-tab="ai" aria-selected="false" data-i18n="tab_ai">AI分析</button>
+    <button type="button" class="tab active" data-tab="hourly" aria-selected="true" data-i18n="tab_hourly">店別速報</button>
+    <button type="button" class="tab" data-tab="allstores" aria-selected="false" data-i18n="tab_allstores">全店速報</button>
+    <button type="button" class="tab" data-tab="ai" aria-selected="false" data-i18n="tab_ai">AIレポート</button>
   </nav>
 
   <main>
     <section id="hourly-panel" class="panel active">
-      <div class="output-header">
+      <button type="button" id="hourly-filters-toggle" class="hourly-filters-toggle" aria-expanded="false" hidden>
+        <span class="hourly-filters-toggle-label">表示条件</span>
+        <span id="hourly-filters-summary" class="hourly-filters-summary">—</span>
+      </button>
+      <div id="hourly-output-header" class="output-header">
         <span class="output-header-item">
           <label for="store-select" class="store-label" data-i18n="store">店舗</label>
           <select id="store-select" aria-label="Select store">
@@ -57,7 +64,7 @@
           </select>
         </span>
         <span class="output-header-item">
-          <label for="output-date" class="output-header-sep" data-i18n="output_date">Output date</label>
+          <label for="output-date" class="output-header-sep" data-i18n="output_date">売上日</label>
           <input type="date" id="output-date" aria-label="Select output date">
         </span>
         <span class="output-header-item output-header-time-range">
@@ -70,7 +77,7 @@
             <!-- filled by app.js -->
           </select>
         </span>
-        <span class="output-header-item">
+        <span class="output-header-item csv-export-control">
           <label for="hourly-export-select" class="output-header-sep" data-i18n="output_data">出力データ</label>
           <select id="hourly-export-select" aria-label="Select data to export">
             <option value="hourly" data-i18n-option="export_option_hourly_table">時間別表</option>
@@ -78,9 +85,61 @@
             <option value="all" data-i18n-option="output_all">すべて</option>
           </select>
         </span>
-        <span class="output-header-item">
+        <span class="output-header-item csv-export-control">
           <button type="button" id="btn-hourly-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
         </span>
+      </div>
+      <div id="snapshot-card" class="snapshot-panels-wrap" aria-live="polite" hidden>
+        <div class="snapshot-panel snapshot-panel-primary snapshot-panel-kpi">
+          <span class="snapshot-panel-label" id="snapshot-net-label" data-i18n="snapshot_net_sales">純売上高</span>
+          <span class="snapshot-panel-value" id="snapshot-net">—</span>
+          <span class="snapshot-panel-sub" id="snapshot-net-dodwow" aria-hidden="true"></span>
+        </div>
+        <div class="snapshot-panel snapshot-panel-kpi">
+          <span class="snapshot-panel-label" data-i18n="qty_sold_short">販売数量</span>
+          <span class="snapshot-panel-value" id="snapshot-qty">—</span>
+          <span class="snapshot-panel-sub" id="snapshot-qty-dodwow" aria-hidden="true"></span>
+        </div>
+        <div class="snapshot-panel snapshot-panel-kpi csv-export-control">
+          <span class="snapshot-panel-label" data-i18n="receipt_count">レシート数</span>
+          <span class="snapshot-panel-value" id="snapshot-receipts">—</span>
+          <span class="snapshot-panel-sub" id="snapshot-receipts-dodwow" aria-hidden="true"></span>
+        </div>
+        <div class="snapshot-panel snapshot-panel-kpi snapshot-panel-sales-hour">
+          <span class="snapshot-panel-label" data-i18n="sales_per_hour">Sales per Hour</span>
+          <span class="snapshot-panel-value" id="snapshot-sales-per-hour">—</span>
+          <span class="snapshot-panel-sub" id="snapshot-sales-per-hour-dodwow"></span>
+        </div>
+        <div class="snapshot-panel snapshot-panel-kpi">
+          <span class="snapshot-panel-label" data-i18n="txn_per_hour">Transaction per Hour</span>
+          <span class="snapshot-panel-value" id="snapshot-txn-per-hour">—</span>
+          <span class="snapshot-panel-sub" id="snapshot-txn-per-hour-dodwow"></span>
+        </div>
+        <div class="snapshot-panel snapshot-panel-kpi">
+          <span class="snapshot-panel-label" data-i18n="unit_per_txn">Unit Per Transaction</span>
+          <span class="snapshot-panel-value" id="snapshot-unit-per-txn">—</span>
+          <span class="snapshot-panel-sub" id="snapshot-unit-per-txn-dodwow"></span>
+        </div>
+        <div class="snapshot-panel snapshot-panel-kpi">
+          <span class="snapshot-panel-label" data-i18n="avg_txn_price">Average Transaction Price</span>
+          <span class="snapshot-panel-value" id="snapshot-avg-txn-price">—</span>
+          <span class="snapshot-panel-sub" id="snapshot-avg-txn-price-dodwow"></span>
+        </div>
+        <div class="snapshot-panel snapshot-panel-kpi">
+          <span class="snapshot-panel-label" data-i18n="avg_selling_price">Average Selling Price</span>
+          <span class="snapshot-panel-value" id="snapshot-avg-selling-price">—</span>
+          <span class="snapshot-panel-sub" id="snapshot-avg-selling-price-dodwow"></span>
+        </div>
+        <div class="snapshot-panel snapshot-panel-kpi snapshot-panel-extra" id="snapshot-panel-share" hidden>
+          <span class="snapshot-panel-label" data-i18n="snapshot_share">構成比</span>
+          <span class="snapshot-panel-value" id="snapshot-share">—</span>
+          <span class="snapshot-panel-sub" aria-hidden="true"></span>
+        </div>
+        <div class="snapshot-panel snapshot-panel-kpi snapshot-panel-extra" id="snapshot-panel-rank" hidden>
+          <span class="snapshot-panel-label" data-i18n="snapshot_rank">店内ランキング</span>
+          <span class="snapshot-panel-value" id="snapshot-rank">—</span>
+          <span class="snapshot-panel-sub" aria-hidden="true"></span>
+        </div>
       </div>
       <p id="last-upload-time" class="last-upload-time" aria-live="polite"></p>
 
@@ -91,11 +150,9 @@
           <thead>
             <tr>
               <th data-i18n="time_range_col">Time range</th>
-              <th data-i18n="gross_sales">Gross Sales (Baht)</th>
-              <th data-i18n="net_sales">Net Sales (Baht)</th>
+              <th id="hourly-th-net" data-i18n="net_sales">Net Sales (Baht)</th>
               <th data-i18n="dod">DoD</th>
               <th data-i18n="wow">WoW</th>
-              <th data-i18n="discount_rate">Discount Rate</th>
               <th data-i18n="qty_sold">Qty of Items Sold</th>
               <th data-i18n="receipt_count">Receipt Count</th>
             </tr>
@@ -109,88 +166,38 @@
         </table>
       </div>
 
-      <section class="summary-section">
-        <h3 data-i18n="summary">Summary</h3>
-        <table id="summary-table" class="summary-table">
-          <thead>
-            <tr>
-              <th></th>
-              <th data-i18n="today">Today</th>
-              <th data-i18n="dod">DoD</th>
-              <th data-i18n="wow">WoW</th>
-            </tr>
-          </thead>
-          <tbody id="summary-tbody">
-            <tr>
-              <td data-i18n="sales_per_hour">Sales per Hour</td>
-              <td id="sum-sales-per-hour"></td>
-              <td id="sum-sales-per-hour-dod"></td>
-              <td id="sum-sales-per-hour-wow"></td>
-            </tr>
-            <tr>
-              <td data-i18n="txn_per_hour">Transaction per Hour</td>
-              <td id="sum-txn-per-hour"></td>
-              <td id="sum-txn-per-hour-dod"></td>
-              <td id="sum-txn-per-hour-wow"></td>
-            </tr>
-            <tr>
-              <td data-i18n="unit_per_txn">Unit Per Transaction</td>
-              <td id="sum-unit-per-txn"></td>
-              <td id="sum-unit-per-txn-dod"></td>
-              <td id="sum-unit-per-txn-wow"></td>
-            </tr>
-            <tr>
-              <td data-i18n="avg_txn_price">Average Transaction Price</td>
-              <td id="sum-avg-txn-price"></td>
-              <td id="sum-avg-txn-price-dod"></td>
-              <td id="sum-avg-txn-price-wow"></td>
-            </tr>
-            <tr>
-              <td data-i18n="avg_selling_price">Average Selling Price</td>
-              <td id="sum-avg-selling-price"></td>
-              <td id="sum-avg-selling-price-dod"></td>
-              <td id="sum-avg-selling-price-wow"></td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
       <section class="composition-section" id="composition-section">
-        <h3 data-i18n="composition_title">Department Composition by Time Slot (Share of Net Sales)</h3>
-        <table id="composition-table" class="composition-table" aria-label="Department composition by time slot">
-          <thead>
-            <tr>
-              <th data-i18n="time_range_col">Time range</th>
-              <th data-i18n="total">Total</th>
-            </tr>
-          </thead>
-          <tbody id="composition-tbody">
-            <!-- populated by app.js -->
-          </tbody>
-          <tfoot id="composition-tfoot">
-            <!-- populated by app.js -->
-          </tfoot>
-        </table>
-        <div class="composition-chart-wrapper">
-          <canvas id="chart-composition" width="400" height="280"></canvas>
-        </div>
+        <h3 data-i18n="composition_title">部門別構成比</h3>
+        <div id="composition-list" class="composition-accordion" aria-live="polite"></div>
       </section>
 
       <div class="chart-section" id="chart-section">
-        <div class="chart-wrapper">
-          <h3 class="chart-title" data-i18n="chart_hourly_net">Hourly Net Sales (Baht)</h3>
+        <div class="hourly-bar-tabs-wrap">
+          <div class="composition-tabs hourly-chart-tabs" role="tablist" aria-label="Hourly chart type">
+            <button type="button" role="tab" id="chart-tab-sales" class="composition-tab active" aria-selected="true" data-i18n="chart_hourly_net">時間別売上金額</button>
+            <button type="button" role="tab" id="chart-tab-receipts" class="composition-tab" aria-selected="false" data-i18n="chart_receipts">時間別売上数量</button>
+          </div>
+        </div>
+        <div class="chart-wrapper chart-hourly-panel" id="hourly-chart-sales-panel">
+          <h3 class="chart-title" id="chart-sales-title" data-i18n="chart_hourly_net">時間別売上金額</h3>
           <canvas id="chart-sales" width="800" height="320"></canvas>
         </div>
-        <div class="chart-wrapper">
-          <h3 class="chart-title" data-i18n="chart_receipts">Receipt Count by Time Slot</h3>
+        <div class="chart-wrapper chart-hourly-panel" id="hourly-chart-receipts-panel" hidden>
+          <h3 class="chart-title" data-i18n="chart_receipts">時間別売上数量</h3>
           <canvas id="chart-receipts" width="800" height="260"></canvas>
         </div>
-        <div class="chart-wrapper">
-          <h3 class="chart-title" data-i18n="chart_forecast_net">Forecast (Landing) — Net Sales (Baht)</h3>
+        <div class="forecast-tabs-wrap">
+          <div class="composition-tabs forecast-chart-tabs" role="tablist" aria-label="Forecast chart type">
+            <button type="button" role="tab" id="chart-tab-forecast-sales" class="composition-tab active" aria-selected="true" data-i18n="chart_forecast_net">累計売上金額</button>
+            <button type="button" role="tab" id="chart-tab-forecast-receipts" class="composition-tab" aria-selected="false" data-i18n="chart_forecast_receipts">累計売上数量</button>
+          </div>
+        </div>
+        <div class="chart-wrapper chart-forecast-panel" id="forecast-chart-sales-panel">
+          <h3 class="chart-title" id="chart-forecast-sales-title" data-i18n="chart_forecast_net">累計売上金額</h3>
           <canvas id="chart-forecast-sales" width="800" height="260"></canvas>
         </div>
-        <div class="chart-wrapper">
-          <h3 class="chart-title" data-i18n="chart_forecast_receipts">Forecast (Landing) — Receipt Count</h3>
+        <div class="chart-wrapper chart-forecast-panel" id="forecast-chart-receipts-panel" hidden>
+          <h3 class="chart-title" data-i18n="chart_forecast_receipts">累計売上数量</h3>
           <canvas id="chart-forecast-receipts" width="800" height="260"></canvas>
         </div>
       </div>
@@ -198,64 +205,55 @@
       <p id="output-empty" class="empty-message" data-i18n="no_data_selected_date" hidden>No data for the selected date.</p>
     </section>
 
-    <section id="daily-panel" class="panel">
-      <h3 class="section-title" data-i18n="daily_section_title">Daily aggregation (weekly trend and composition)</h3>
-      <p class="hint" data-i18n="daily_hint">View weekly sales trend and department composition by day.</p>
+    <section id="allstores-panel" class="panel">
+      <h3 class="section-title" data-i18n="allstores_section_title">全店速報</h3>
+      <p class="hint" data-i18n="allstores_hint">全店舗の売上ランキングを集計します。</p>
       <div class="output-header">
+        <label for="allstores-date" class="output-header-sep" data-i18n="output_date">売上日</label>
+        <input type="date" id="allstores-date" aria-label="Select date for all stores ranking">
         <span class="output-header-item">
-          <label for="daily-store-select" class="store-label" data-i18n="store">店舗</label>
-          <select id="daily-store-select" aria-label="Select store for daily view">
-            <option value="default">Default</option>
+          <label for="allstores-department-select" class="output-header-sep" data-i18n="department">部門</label>
+          <select id="allstores-department-select" aria-label="Select department for all stores ranking">
+            <option value="Total">Total</option>
+            <option value="Grocery">Grocery</option>
+            <option value="Fruit & Vegetable">Fruit & Vegetable</option>
+            <option value="Fish & Seafood">Fish & Seafood</option>
+            <option value="Meat">Meat</option>
+            <option value="Delicatessen">Delicatessen</option>
+            <option value="Store Management">Store Management</option>
           </select>
         </span>
-        <label for="daily-start-date" class="output-header-sep" data-i18n="daily_start_date">Start date</label>
-        <input type="date" id="daily-start-date" aria-label="Select start date for daily view">
-        <label for="daily-end-date" class="output-header-sep" data-i18n="daily_end_date">End date</label>
-        <input type="date" id="daily-end-date" aria-label="Select end date for daily view">
-        <label for="daily-export-select" class="output-header-sep" data-i18n="output_data">出力データ</label>
-        <select id="daily-export-select" aria-label="Select data to export">
-          <option value="all" data-i18n-option="output_all">すべて</option>
-          <option value="0" data-i18n-option="period_total_section">期間合計</option>
-          <option value="1" data-i18n-option="daily_sales_by_dept">部門別売上</option>
-          <option value="2" data-i18n-option="daily_composition_pct">部門構成%</option>
-          <option value="3" data-i18n-option="key_metrics">主要指標</option>
-        </select>
-        <button type="button" id="btn-daily-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
+        <span class="output-header-item">
+          <label for="allstores-sort-key" class="output-header-sep" data-i18n="sort_by">並び順</label>
+          <select id="allstores-sort-key" aria-label="Select sort key for all stores ranking">
+            <option value="net" data-i18n-option="sort_net">売上高</option>
+            <option value="dod" data-i18n-option="sort_dod">DoD</option>
+            <option value="wow" data-i18n-option="sort_wow">WoW</option>
+            <option value="qty" data-i18n-option="sort_qty">販売数量</option>
+            <option value="receipt" data-i18n-option="sort_receipt">レシート数</option>
+            <option value="name" data-i18n-option="sort_store">店舗名</option>
+          </select>
+        </span>
       </div>
-      <div id="daily-summary-tables"></div>
-      <p id="daily-empty" class="empty-message" data-i18n="daily_empty" hidden>Select an end date to load the daily summary.</p>
+      <div class="table-wrapper">
+        <table id="allstores-table" class="report-table">
+          <thead>
+            <tr>
+              <th data-i18n="rank">順位</th>
+              <th data-i18n="store">店舗</th>
+              <th data-i18n="snapshot_net_sales">純売上高</th>
+              <th data-i18n="dod">DoD</th>
+              <th data-i18n="wow">WoW</th>
+              <th data-i18n="qty_sold_short">販売数量</th>
+              <th data-i18n="receipt_count">レシート数</th>
+            </tr>
+          </thead>
+          <tbody id="allstores-tbody"></tbody>
+        </table>
+      </div>
+      <p id="allstores-empty" class="empty-message" data-i18n="allstores_empty" hidden>該当日の全店データがありません。</p>
     </section>
 
-    <section id="weekly-panel" class="panel">
-      <h3 class="section-title" data-i18n="weekly_section_title">週別集計</h3>
-      <p class="hint" data-i18n="weekly_hint">週単位で売上・部門別構成を表示します。</p>
-      <div class="output-header">
-        <span class="output-header-item">
-          <label for="weekly-store-select" class="store-label" data-i18n="store">店舗</label>
-          <select id="weekly-store-select" aria-label="Select store for weekly view">
-            <option value="default">Default</option>
-          </select>
-        </span>
-        <label for="weekly-end-date" class="output-header-sep" data-i18n="weekly_end_date">週の終了日</label>
-        <input type="date" id="weekly-end-date" aria-label="Select end date for weekly view">
-        <label for="weekly-num-weeks" class="output-header-sep" data-i18n="num_weeks">表示週数</label>
-        <select id="weekly-num-weeks" aria-label="Number of weeks">
-          <option value="2" data-i18n-option="weeks_2">2週間</option>
-          <option value="3" data-i18n-option="weeks_3">3週間</option>
-          <option value="4" selected data-i18n-option="weeks_4">4週間</option>
-        </select>
-        <label for="weekly-export-select" class="output-header-sep" data-i18n="output_data">出力データ</label>
-        <select id="weekly-export-select" aria-label="Select data to export">
-          <option value="all" data-i18n-option="output_all">すべて</option>
-          <option value="0" data-i18n-option="weekly_net_title">週別 Net Sales</option>
-          <option value="1" data-i18n-option="sales_by_dept">部門別売上</option>
-          <option value="2" data-i18n-option="dept_composition_pct">部門構成%</option>
-        </select>
-        <button type="button" id="btn-weekly-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
-      </div>
-      <div id="weekly-summary-tables"></div>
-      <p id="weekly-empty" class="empty-message" data-i18n="weekly_empty" hidden>週の終了日を選択してください。</p>
-    </section>
     <section id="ai-panel" class="panel">
       <h3 class="section-title" data-i18n="ai_section_title">AI 分析 &amp; 予測</h3>
       <p class="hint" data-i18n="ai_hint">AIが売上データを分析し、トレンドの要約や翌日の予測を生成します。</p>
@@ -272,14 +270,23 @@
           </select>
         </span>
         <span class="output-header-item">
-          <label for="ai-reference-date" class="output-header-sep" data-i18n="output_date">出力日</label>
+          <label for="ai-department-select" class="output-header-sep" data-i18n="department">部門</label>
+          <select id="ai-department-select" aria-label="Select department for AI">
+            <option value="Total">Total</option>
+            <option value="Grocery">Grocery</option>
+            <option value="Fruit & Vegetable">Fruit & Vegetable</option>
+            <option value="Fish & Seafood">Fish & Seafood</option>
+            <option value="Meat">Meat</option>
+            <option value="Delicatessen">Delicatessen</option>
+            <option value="Store Management">Store Management</option>
+          </select>
+        </span>
+        <span class="output-header-item">
+          <label for="ai-reference-date" class="output-header-sep" data-i18n="output_date">売上日</label>
           <input type="date" id="ai-reference-date" aria-label="Select date for AI analysis">
         </span>
         <span class="output-header-item">
-          <button type="button" id="btn-ai-analyze" class="btn-ai" data-i18n="ai_analyze_btn">分析を生成</button>
-        </span>
-        <span class="output-header-item">
-          <button type="button" id="btn-ai-forecast" class="btn-ai btn-ai-forecast" data-i18n="ai_forecast_btn">予測を生成</button>
+          <button type="button" id="btn-ai-generate" class="btn-ai" data-i18n="ai_generate_btn">AI分析</button>
         </span>
       </div>
 
@@ -295,6 +302,10 @@
           <h4 data-i18n="ai_analysis_title">分析結果</h4>
           <div id="ai-analysis-content" class="ai-content"></div>
         </div>
+        <div id="ai-today-section" class="ai-result-block" hidden>
+          <h4 data-i18n="ai_today_title">本日の着地予測</h4>
+          <div id="ai-today-content" class="ai-content"></div>
+        </div>
         <div id="ai-forecast-section" class="ai-result-block" hidden>
           <h4 data-i18n="ai_forecast_title">予測結果</h4>
           <div id="ai-forecast-content" class="ai-content"></div>
@@ -302,6 +313,41 @@
       </div>
     </section>
   </main>
+
+  <div id="settings-modal" class="modal-overlay" hidden aria-modal="true" aria-labelledby="settings-modal-title">
+    <div class="modal-card">
+      <h2 id="settings-modal-title" class="modal-title" data-i18n="settings_title">設定</h2>
+      <div class="modal-form">
+        <label for="settings-store-select" data-i18n="settings_affiliated_store">所属店舗</label>
+        <select id="settings-store-select" aria-label="Preferred store"></select>
+        <label for="settings-department-select" data-i18n="settings_affiliated_department">所属部門</label>
+        <select id="settings-department-select" aria-label="Preferred department">
+          <option value="Total">Total</option>
+          <option value="Grocery">Grocery</option>
+          <option value="Fruit & Vegetable">Fruit & Vegetable</option>
+          <option value="Fish & Seafood">Fish & Seafood</option>
+          <option value="Meat">Meat</option>
+          <option value="Delicatessen">Delicatessen</option>
+          <option value="Store Management">Store Management</option>
+        </select>
+        <label for="settings-currency-select" data-i18n="settings_default_currency">デフォルト通貨</label>
+        <select id="settings-currency-select" aria-label="Default currency">
+          <option value="THB" data-i18n-option="settings_currency_thb">バーツ (THB)</option>
+          <option value="JPY" data-i18n-option="settings_currency_jpy">円 (JPY)</option>
+        </select>
+        <label for="settings-language-select" data-i18n="settings_default_language">デフォルト言語</label>
+        <select id="settings-language-select" aria-label="Default language">
+          <option value="ja" data-i18n-option="settings_language_ja">日本語</option>
+          <option value="en" data-i18n-option="settings_language_en">English</option>
+          <option value="th" data-i18n-option="settings_language_th">ไทย</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="settings-save-btn" class="btn-primary" data-i18n="settings_save">保存</button>
+        <button type="button" id="settings-cancel-btn" class="btn-secondary" data-i18n="settings_cancel">キャンセル</button>
+      </div>
+    </div>
+  </div>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@15.0.0/marked.min.js"></script>

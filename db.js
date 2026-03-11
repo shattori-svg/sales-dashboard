@@ -29,6 +29,37 @@ db.exec(`
     value TEXT NOT NULL
   )
 `);
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    display_name TEXT,
+    role TEXT NOT NULL DEFAULT 'user',
+    created_at TEXT DEFAULT (datetime('now')),
+    preferred_store TEXT,
+    preferred_department TEXT,
+    preferred_currency TEXT,
+    preferred_language TEXT
+  )
+`);
+
+(function addUserPreferencesColumnsIfNeeded() {
+  try {
+    const info = db.prepare('PRAGMA table_info(users)').all();
+    const hasPreferredStore = info.some((c) => c.name === 'preferred_store');
+    const hasDisplayName = info.some((c) => c.name === 'display_name');
+    const hasPreferredCurrency = info.some((c) => c.name === 'preferred_currency');
+    const hasPreferredLanguage = info.some((c) => c.name === 'preferred_language');
+    if (!hasDisplayName) db.exec('ALTER TABLE users ADD COLUMN display_name TEXT');
+    if (!hasPreferredStore) {
+      db.exec('ALTER TABLE users ADD COLUMN preferred_store TEXT');
+      db.exec('ALTER TABLE users ADD COLUMN preferred_department TEXT');
+    }
+    if (!hasPreferredCurrency) db.exec('ALTER TABLE users ADD COLUMN preferred_currency TEXT');
+    if (!hasPreferredLanguage) db.exec('ALTER TABLE users ADD COLUMN preferred_language TEXT');
+  } catch (e) {}
+})();
 
 // Migrate old schema (business_date PK only) to (store_id, business_date)
 (function migrateReportsIfNeeded() {
@@ -57,6 +88,7 @@ db.exec(`
 })();
 
 const STORES_KEY = 'stores';
+const EXCHANGE_RATE_KEY = 'exchange_rate';
 const DEFAULT_STORES = [{ id: 'default', name: 'Default' }];
 
 function getStores() {
@@ -77,6 +109,29 @@ function saveStores(stores) {
     value
   );
   return Promise.resolve(stores);
+}
+
+function getExchangeRate() {
+  const row = db.prepare('SELECT value FROM masters WHERE key = ?').get(EXCHANGE_RATE_KEY);
+  if (!row || !row.value) return Promise.resolve({ rate: null, updated_at: null });
+  try {
+    const parsed = JSON.parse(row.value);
+    return Promise.resolve({
+      rate: parsed && typeof parsed.rate === 'number' && !Number.isNaN(parsed.rate) && parsed.rate > 0 ? parsed.rate : null,
+      updated_at: parsed && typeof parsed.updated_at === 'string' ? parsed.updated_at : null,
+    });
+  } catch (e) {}
+  return Promise.resolve({ rate: null, updated_at: null });
+}
+
+function saveExchangeRate(rate) {
+  const now = new Date().toISOString();
+  const value = JSON.stringify({ rate: Number(rate), updated_at: now });
+  db.prepare('INSERT INTO masters (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(
+    EXCHANGE_RATE_KEY,
+    value
+  );
+  return Promise.resolve({ rate: Number(rate), updated_at: now });
 }
 
 function saveReport(businessDate, data, storeId = 'default') {
@@ -147,13 +202,112 @@ function saveBusinessHours(settings, storeId = 'default') {
   return Promise.resolve();
 }
 
+// Users (id, username, password_hash, role, created_at)
+function getUsers() {
+  const rows = db.prepare('SELECT id, username, display_name, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language FROM users ORDER BY created_at ASC').all();
+  return Promise.resolve(rows);
+}
+
+function getUserByUsername(username) {
+  const row = db.prepare('SELECT id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language FROM users WHERE username = ?').get(
+    String(username).trim()
+  );
+  return Promise.resolve(row || null);
+}
+
+function getUserById(id) {
+  const row = db.prepare('SELECT id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language FROM users WHERE id = ?').get(id);
+  return Promise.resolve(row || null);
+}
+
+function updateUserPreferences(id, { preferredStore, preferredDepartment, preferredCurrency, preferredLanguage }) {
+  const row = db.prepare('SELECT id, preferred_store, preferred_department, preferred_currency, preferred_language FROM users WHERE id = ?').get(id);
+  if (!row) return Promise.resolve(null);
+  const storeVal = preferredStore !== undefined ? (preferredStore != null ? String(preferredStore).trim() : null) : row.preferred_store;
+  const deptVal = preferredDepartment !== undefined ? (preferredDepartment != null ? String(preferredDepartment).trim() : null) : row.preferred_department;
+  const currencyVal = preferredCurrency !== undefined ? (preferredCurrency != null ? String(preferredCurrency).trim() : null) : row.preferred_currency;
+  const languageVal = preferredLanguage !== undefined ? (preferredLanguage != null ? String(preferredLanguage).trim() : null) : row.preferred_language;
+  db.prepare('UPDATE users SET preferred_store = ?, preferred_department = ?, preferred_currency = ?, preferred_language = ? WHERE id = ?').run(
+    storeVal,
+    deptVal,
+    currencyVal,
+    languageVal,
+    id
+  );
+  return getUserById(id);
+}
+
+function createUser({ username, displayName, passwordHash, role }) {
+  const id = require('crypto').randomUUID();
+  const un = String(username).trim();
+  const dn = displayName != null ? String(displayName).trim() : null;
+  const r = role === 'admin' ? 'admin' : 'user';
+  db.prepare(
+    'INSERT INTO users (id, username, display_name, password_hash, role) VALUES (?, ?, ?, ?, ?)'
+  ).run(id, un, dn || null, passwordHash, r);
+  return Promise.resolve({ id, username: un, display_name: dn || null, role: r });
+}
+
+function updateUser(id, { username, displayName, passwordHash, role }) {
+  const row = db.prepare('SELECT id FROM users WHERE id = ?').get(id);
+  if (!row) return Promise.resolve(null);
+  const updates = [];
+  const params = [];
+  if (username !== undefined) {
+    updates.push('username = ?');
+    params.push(String(username).trim());
+  }
+  if (passwordHash !== undefined && passwordHash !== '') {
+    updates.push('password_hash = ?');
+    params.push(passwordHash);
+  }
+  if (displayName !== undefined) {
+    updates.push('display_name = ?');
+    params.push(displayName != null ? String(displayName).trim() : null);
+  }
+  if (role !== undefined) {
+    updates.push('role = ?');
+    params.push(role === 'admin' ? 'admin' : 'user');
+  }
+  if (updates.length === 0) return getUserById(id);
+  params.push(id);
+  db.prepare('UPDATE users SET ' + updates.join(', ') + ' WHERE id = ?').run(...params);
+  return getUserById(id);
+}
+
+function deleteUser(id) {
+  const r = db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  return Promise.resolve(r.changes > 0);
+}
+
+function countUsers() {
+  const row = db.prepare('SELECT COUNT(*) AS n FROM users').get();
+  return Promise.resolve(row ? row.n : 0);
+}
+
+function countAdmins() {
+  const row = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get();
+  return Promise.resolve(row ? row.n : 0);
+}
+
 module.exports = {
   getStores,
   saveStores,
+  getExchangeRate,
+  saveExchangeRate,
+  updateUserPreferences,
   saveReport,
   getReport,
   getAvailableDates,
   getUploadLog,
   getBusinessHours,
   saveBusinessHours,
+  getUsers,
+  getUserByUsername,
+  getUserById,
+  createUser,
+  updateUser,
+  deleteUser,
+  countUsers,
+  countAdmins,
 };

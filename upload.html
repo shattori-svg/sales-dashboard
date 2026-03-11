@@ -15,6 +15,7 @@
     <button type="button" class="tab active" data-tab="upload" aria-selected="true">アップロード</button>
     <button type="button" class="tab" data-tab="log" aria-selected="false">データ受信ログ</button>
     <button type="button" class="tab" data-tab="stores" aria-selected="false">店舗マスター</button>
+    <button type="button" class="tab" data-tab="users" aria-selected="false">ユーザーマスタ</button>
     <button type="button" class="tab" data-tab="settings" aria-selected="false">各種設定</button>
   </nav>
 
@@ -55,9 +56,106 @@
       <p id="upload-log-empty" class="hint" aria-live="polite">読み込み中…</p>
     </section>
 
+    <section id="users-panel" class="panel" style="max-width: 1240px;">
+      <p class="hint"><a href="/">← Back to Report</a></p>
+      <h2>ユーザーマスタ</h2>
+      <p class="hint">ユーザー一覧の参照・新規作成・変更・削除ができます。権限は「一般」と「管理者」の2種類です。管理者のみ Setup 画面にアクセスできます。外部認証利用時はパスワード管理は不要です。</p>
+      <div class="table-wrapper">
+        <table class="report-table users-master-table" aria-label="User list">
+          <thead>
+            <tr>
+              <th>ユーザー名</th>
+              <th>表示名</th>
+              <th>権限</th>
+              <th>店舗</th>
+              <th>部門</th>
+              <th>表示通貨</th>
+              <th>表示言語</th>
+              <th>作成日時</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="users-tbody">
+          </tbody>
+        </table>
+      </div>
+      <p id="users-empty" class="hint" aria-live="polite">読み込み中…</p>
+      <div id="users-form-area" style="margin-top: 1rem;">
+        <h3 id="users-form-title">新規作成</h3>
+        <form id="users-form">
+          <input type="hidden" id="user-edit-id" name="id" value="">
+          <div class="form-group">
+            <label for="user-username">ユーザー名</label>
+            <input type="text" id="user-username" name="username" required minlength="1" placeholder="ログインID">
+          </div>
+          <div class="form-group">
+            <label for="user-display-name">表示名</label>
+            <input type="text" id="user-display-name" name="displayName" placeholder="画面表示用の名前（任意）">
+          </div>
+          <div class="form-group user-password-group">
+            <label for="user-password">パスワード <span id="user-password-optional" style="display:none;">（空欄の場合は変更しない）</span></label>
+            <input type="password" id="user-password" name="password" placeholder="6文字以上" minlength="6" autocomplete="new-password">
+          </div>
+          <div class="form-group user-password-group">
+            <label for="user-password-confirm">パスワード（確認）</label>
+            <input type="password" id="user-password-confirm" name="passwordConfirm" placeholder="同じパスワードを再入力" minlength="6" autocomplete="new-password">
+          </div>
+          <div class="form-group">
+            <label for="user-role">権限</label>
+            <select id="user-role" name="role">
+              <option value="user">一般</option>
+              <option value="admin">管理者</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="user-preferred-store">店舗（初期表示）</label>
+            <select id="user-preferred-store" name="preferredStore">
+              <option value="">— 未設定 —</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="user-preferred-department">部門（初期表示）</label>
+            <select id="user-preferred-department" name="preferredDepartment">
+              <option value="Total">Total</option>
+              <option value="Grocery">Grocery</option>
+              <option value="Fruit & Vegetable">Fruit & Vegetable</option>
+              <option value="Fish & Seafood">Fish & Seafood</option>
+              <option value="Meat">Meat</option>
+              <option value="Delicatessen">Delicatessen</option>
+              <option value="Store Management">Store Management</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="user-preferred-currency">表示通貨</label>
+            <select id="user-preferred-currency" name="preferredCurrency">
+              <option value="THB">バーツ (THB)</option>
+              <option value="JPY">円 (JPY)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="user-preferred-language">表示言語</label>
+            <select id="user-preferred-language" name="preferredLanguage">
+              <option value="ja">日本語</option>
+              <option value="en">English</option>
+              <option value="th">ไทย</option>
+            </select>
+          </div>
+          <button type="submit" id="users-form-submit" class="btn-primary">作成</button>
+          <button type="button" id="users-form-cancel" class="btn-secondary" style="display:none;">キャンセル</button>
+        </form>
+        <p id="users-form-error" class="error" role="alert" hidden></p>
+      </div>
+    </section>
+
     <section id="stores-panel" class="panel" style="max-width: 640px;">
       <p class="hint"><a href="/">← Back to Report</a></p>
       <h2>店舗マスター (Store Master)</h2>
+      <div class="exchange-rate-block" style="margin-bottom: 1rem; padding: 0.75rem; background: #f5f5f5; border-radius: 6px;">
+        <label for="exchange-rate-input" style="display: block; margin-bottom: 0.25rem; font-weight: 600;">為替レート (THB→JPY)</label>
+        <p class="hint" style="margin-bottom: 0.5rem;">全店舗共通（タイ店舗は一律）。1 バーツ = 何円か入力してください。</p>
+        <input type="number" id="exchange-rate-input" step="any" min="0" placeholder="例: 4.5" style="width: 8em; margin-right: 0.5rem;">
+        <span>最終登録日: </span><span id="exchange-rate-updated-at">—</span>
+      </div>
       <p class="hint">登録した店舗がレポート・アップロードの店舗選択に表示されます。ID は半角英数字で一意にしてください。</p>
       <table class="report-table" aria-label="Store list">
         <thead>
@@ -79,6 +177,12 @@
       <p class="hint"><a href="/">← Back to Report</a></p>
       <h2>Settings — Business Hours (営業時間)</h2>
       <p class="hint">Set business hours per weekday. Only time slots within these hours are shown on the report. Other times are hidden.</p>
+      <div class="form-group" style="max-width: 320px; margin-bottom: 0.75rem;">
+        <label for="bh-store-select">対象店舗</label>
+        <select id="bh-store-select" aria-label="Store for business hours">
+          <option value="default">Default</option>
+        </select>
+      </div>
       <table class="business-hours-table" aria-label="Business hours by weekday">
         <thead>
           <tr>

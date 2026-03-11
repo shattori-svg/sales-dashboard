@@ -18,7 +18,7 @@ database so reports can be recalled by date without re-uploading.
   (Week over Week) are shown when corresponding dates exist.
 
 • Hourly aggregation (時間別集計): For a selected output date, view:
-  - Hourly table: time slot, gross/net sales, DoD/WoW, discount rate,
+  - Hourly table: time slot, gross/net sales, DoD/WoW,
     quantity sold, receipt count.
   - Summary table: today vs yesterday vs last week (net sales, receipt count,
     etc.) with DoD/WoW.

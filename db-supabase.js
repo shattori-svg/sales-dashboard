@@ -19,8 +19,10 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 
 const TABLE = 'reports';
 const MASTERS_TABLE = 'masters';
+const USERS_TABLE = 'users';
 const BUSINESS_HOURS_KEY = 'business_hours';
 const STORES_KEY = 'stores';
+const EXCHANGE_RATE_KEY = 'exchange_rate';
 const DEFAULT_STORES = [{ id: 'default', name: 'Default' }];
 const DEFAULT_BUSINESS_HOURS = Object.fromEntries(
   [0, 1, 2, 3, 4, 5, 6].map((d) => [d, { start: '00:00', end: '24:00' }])
@@ -52,6 +54,34 @@ function saveStores(stores) {
     .then(({ error }) => {
       if (error) throw error;
       return stores;
+    });
+}
+
+function getExchangeRate() {
+  return supabase
+    .from(MASTERS_TABLE)
+    .select('value')
+    .eq('key', EXCHANGE_RATE_KEY)
+    .maybeSingle()
+    .then(({ data: row, error }) => {
+      if (error) throw error;
+      if (!row || row.value == null) return { rate: null, updated_at: null };
+      const v = typeof row.value === 'object' ? row.value : JSON.parse(row.value);
+      const rate = v && typeof v.rate === 'number' && !Number.isNaN(v.rate) && v.rate > 0 ? v.rate : null;
+      const updated_at = v && typeof v.updated_at === 'string' ? v.updated_at : null;
+      return { rate, updated_at };
+    });
+}
+
+function saveExchangeRate(rate) {
+  const now = new Date().toISOString();
+  const value = { rate: Number(rate), updated_at: now };
+  return supabase
+    .from(MASTERS_TABLE)
+    .upsert({ key: EXCHANGE_RATE_KEY, value }, { onConflict: 'key' })
+    .then(({ error }) => {
+      if (error) throw error;
+      return { rate: Number(rate), updated_at: now };
     });
 }
 
@@ -161,13 +191,156 @@ function saveBusinessHours(settings, storeId = 'default') {
     });
 }
 
+function getUsers() {
+  return supabase
+    .from(USERS_TABLE)
+    .select('id, username, display_name, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language')
+    .order('created_at', { ascending: true })
+    .then(({ data: rows, error }) => {
+      if (error) throw error;
+      return rows || [];
+    });
+}
+
+function getUserByUsername(username) {
+  const un = String(username).trim();
+  return supabase
+    .from(USERS_TABLE)
+    .select('id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language')
+    .eq('username', un)
+    .maybeSingle()
+    .then(({ data: row, error }) => {
+      if (error) throw error;
+      return row || null;
+    });
+}
+
+function getUserById(id) {
+  return supabase
+    .from(USERS_TABLE)
+    .select('id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language')
+    .eq('id', id)
+    .maybeSingle()
+    .then(({ data: row, error }) => {
+      if (error) throw error;
+      return row || null;
+    });
+}
+
+function updateUserPreferences(id, { preferredStore, preferredDepartment, preferredCurrency, preferredLanguage }) {
+  const body = {};
+  if (preferredStore !== undefined) body.preferred_store = preferredStore != null ? String(preferredStore).trim() : null;
+  if (preferredDepartment !== undefined) body.preferred_department = preferredDepartment != null ? String(preferredDepartment).trim() : null;
+  if (preferredCurrency !== undefined) body.preferred_currency = preferredCurrency != null ? String(preferredCurrency).trim() : null;
+  if (preferredLanguage !== undefined) body.preferred_language = preferredLanguage != null ? String(preferredLanguage).trim() : null;
+  if (Object.keys(body).length === 0) return getUserById(id);
+  return supabase
+    .from(USERS_TABLE)
+    .update(body)
+    .eq('id', id)
+    .select()
+    .single()
+    .then(({ data: row, error }) => {
+      if (error) throw error;
+      return row
+        ? {
+            id: row.id,
+            username: row.username,
+            role: row.role,
+            preferred_store: row.preferred_store,
+            preferred_department: row.preferred_department,
+            preferred_currency: row.preferred_currency,
+            preferred_language: row.preferred_language
+          }
+        : null;
+    });
+}
+
+function createUser({ username, displayName, passwordHash, role }) {
+  const id = require('crypto').randomUUID();
+  const un = String(username).trim();
+  const dn = displayName != null ? String(displayName).trim() : null;
+  const r = role === 'admin' ? 'admin' : 'user';
+  return supabase
+    .from(USERS_TABLE)
+    .insert({ id, username: un, display_name: dn || null, password_hash: passwordHash, role: r })
+    .select('id, username, display_name, role')
+    .single()
+    .then(({ data: row, error }) => {
+      if (error) throw error;
+      return row;
+    });
+}
+
+function updateUser(id, { username, displayName, passwordHash, role }) {
+  const body = {};
+  if (username !== undefined) body.username = String(username).trim();
+  if (displayName !== undefined) body.display_name = displayName != null ? String(displayName).trim() : null;
+  if (passwordHash !== undefined && passwordHash !== '') body.password_hash = passwordHash;
+  if (role !== undefined) body.role = role === 'admin' ? 'admin' : 'user';
+  if (Object.keys(body).length === 0) return getUserById(id);
+  return supabase
+    .from(USERS_TABLE)
+    .update(body)
+    .eq('id', id)
+    .select()
+    .single()
+    .then(({ data: row, error }) => {
+      if (error) throw error;
+      return row ? { id: row.id, username: row.username, display_name: row.display_name, password_hash: row.password_hash, role: row.role, created_at: row.created_at } : null;
+    });
+}
+
+function deleteUser(id) {
+  return supabase
+    .from(USERS_TABLE)
+    .delete()
+    .eq('id', id)
+    .then(({ error }) => {
+      if (error) throw error;
+      return true;
+    });
+}
+
+function countUsers() {
+  return supabase
+    .from(USERS_TABLE)
+    .select('*', { count: 'exact', head: true })
+    .then(({ count, error }) => {
+      if (error) throw error;
+      return count || 0;
+    });
+}
+
+function countAdmins() {
+  return supabase
+    .from(USERS_TABLE)
+    .select('*', { count: 'exact', head: true })
+    .eq('role', 'admin')
+    .then(({ count, error }) => {
+      if (error) throw error;
+      return count || 0;
+    });
+}
+
 module.exports = {
   getStores,
   saveStores,
+  getExchangeRate,
+  saveExchangeRate,
   saveReport,
   getReport,
   getAvailableDates,
   getUploadLog,
   getBusinessHours,
   saveBusinessHours,
+  getUsers,
+  getUserByUsername,
+  getUserById,
+  createUser,
+  updateUser,
+  updateUserPreferences,
+  deleteUser,
+  countUsers,
+  countAdmins,
 };
