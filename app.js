@@ -975,7 +975,7 @@
     if (qtyEl) qtyEl.textContent = formatInt(qtySum);
     if (receiptsEl) receiptsEl.textContent = formatInt(receiptSum);
     if (panelReceipts) {
-      var showReceiptCard = isTotal && authState && authState.role === 'admin';
+      var showReceiptCard = !!isTotal;
       panelReceipts.style.display = showReceiptCard ? '' : 'none';
     }
     if (panelTxnPerHour) panelTxnPerHour.style.display = isTotal ? '' : 'none';
