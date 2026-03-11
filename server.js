@@ -210,6 +210,7 @@ function requireAuth(req, res, next) {
 }
 
 function requireAdmin(req, res, next) {
+  if (req.method === 'POST' && req.path === '/api/upload') return next();
   if (req.session && req.session.role === 'admin') return next();
   const isApi = req.path.startsWith('/api/');
   if (isApi) return res.status(403).json({ error: 'Forbidden' });
