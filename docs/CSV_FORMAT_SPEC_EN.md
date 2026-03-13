@@ -23,12 +23,12 @@ This document defines the CSV format for uploading daily sales data to the Sales
 | 1 | **Business_Date** | Yes | Date | Business date. Format: `YYYY-MM-DD` |
 | 2 | **Store_Id** | Yes | String | Store identifier (e.g. `1001`). Used to support multiple stores in one file. |
 | 3 | **Department_Code** | Yes | String | Department code. `00` = store total; `01`–`06` = department (see table below). |
-| 4 | **Start_Time** | No | Time | Start of time slot. Format: `HH:MM` only. Leave empty for daily total row. |
-| 5 | **End_Time** | No | Time | End of time slot. Format: `HH:MM` only. Leave empty for daily total row. |
+| 4 | **Start_Time** | No | Time | Start of time slot. Format: `HH:MM` or 4-digit (`0000`, `0100`, `2300`). Leave empty for daily total row. |
+| 5 | **End_Time** | No | Time | End of time slot. Format: `HH:MM` or 4-digit (`0000`, `0100`, `2300`). Leave empty for daily total row. |
 | 6 | **Net_Sales** | Yes | Numeric | Net sales (Baht). |
 | 7 | **Gross_Sales** | No | Numeric | Gross sales (Baht). |
 | 8 | **Quantity_Sold** | No | Numeric | Quantity sold. |
-| 9 | **Receipt_Count** | No | Numeric | Receipt count. Typically populated for Total (00) rows; may be empty for department rows. |
+| 9 | **Receipt_Count** | No | Numeric | Receipt count. Recommended for Total (00) rows; may be empty for department rows, but department values are also accepted. |
 
 ---
 
@@ -51,7 +51,7 @@ This document defines the CSV format for uploading daily sales data to the Sales
 - **Daily total row**: One row per store per day with **Start_Time** and **End_Time** empty, **Department_Code** = `00`, and daily aggregates in Net_Sales, Quantity_Sold, Receipt_Count.
 - **Hourly rows**: For each time slot (e.g. 09:00–10:00, 10:00–11:00), include:
   - One row with Department_Code = `00` (hourly total; Receipt_Count populated when applicable).
-  - Rows with Department_Code = `01`–`06` for per-department breakdown (Receipt_Count may be empty).
+  - Rows with Department_Code = `01`–`06` for per-department breakdown (Receipt_Count may be empty or populated).
 - **Time slots**: Use 24 hourly slots in `HH:MM` format (e.g. `00:00`–`01:00`, `01:00`–`02:00`, … , `23:00`–`00:00`). For integration during 09:00–23:00, only the relevant slots need to be present.
 - **Multiple stores**: Include all stores in the same CSV; distinguish by **Store_Id**. Each store should have its own daily total row and hourly/department rows.
 
@@ -69,7 +69,7 @@ Business_Date,Store_Id,Department_Code,Start_Time,End_Time,Net_Sales,Gross_Sales
 
 1. Daily total: one row per store (Start_Time, End_Time empty, Department_Code 00).
 2. Hourly totals: for each time slot, one row with Department_Code 00 and Receipt_Count.
-3. Hourly by department: for each time slot, rows with Department_Code 01–06 (Receipt_Count may be empty).
+3. Hourly by department: for each time slot, rows with Department_Code 01–06 (Receipt_Count may be empty or populated).
 
 ---
 

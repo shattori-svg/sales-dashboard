@@ -15,10 +15,10 @@ Business_Date,Store_Id,Department_Code,Start_Time,End_Time,Net_Sales,Gross_Sales
 - **Business_Date**: 営業日（YYYY-MM-DD）
 - **Store_Id**: 店舗ID（必須。例: 1001）
 - **Department_Code**: 00＝店舗合計、01～06＝部門
-- **Start_Time**, **End_Time**: 時間帯。HH:MM（例: 10:00, 11:00）または4桁（例: 0000, 0100, 1000, 2300）で指定。空欄の行は日計行
+- **Start_Time**, **End_Time**: 時間帯。`HH:MM`（例: 10:00, 11:00）または4桁（例: 0000, 0100, 1000, 2300）で指定。空欄の行は日計行
 - **Net_Sales**, **Gross_Sales**: 正味売上・総売上（数値）
 - **Quantity_Sold**: 販売数量
-- **Receipt_Count**: レシート数（Total のみ。部門行は空欄可）
+- **Receipt_Count**: レシート数（Total は推奨必須。部門行も値があれば取り込み可能、空欄でも可）
 
 ## 部門コード
 
@@ -36,6 +36,6 @@ Business_Date,Store_Id,Department_Code,Start_Time,End_Time,Net_Sales,Gross_Sales
 
 1. 日計 1 行（Start_Time, End_Time 空、Department_Code 00）
 2. 時間帯別 Total（各時間帯ごとに Department_Code 00、Receipt_Count あり）
-3. 時間帯別・部門別（01～06、Receipt_Count は空欄）
+3. 時間帯別・部門別（01～06、`Receipt_Count` は空欄可／値があれば取り込み）
 
 文字コード: UTF-8（BOM あり可）。区切り: カンマ。

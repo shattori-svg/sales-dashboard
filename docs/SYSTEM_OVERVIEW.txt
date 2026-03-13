@@ -6,71 +6,81 @@ Daily Sales Report (Hourly Sales by Department) — System Overview
 ----------
 Web application for viewing and analyzing daily sales data from LS-Central
 "Daily Sales Report (Hourly Sales by Department)" Excel exports. Users can
-upload one or more Excel files, then view time-based (hourly) and day-based
-(daily) aggregations with tables and charts. Data is stored in a local SQLite
-database so reports can be recalled by date without re-uploading.
+upload one or more Excel/CSV files, then view store-level snapshots and
+all-store rankings with tables and charts. Data is stored in SQLite or
+Supabase so reports can be recalled by date without re-uploading.
 
 2. MAIN FEATURES
 ----------------
-• Input: Upload Excel files (.xlsx/.xls). Each file is parsed and stored by
+• Input: Upload Excel/CSV files (.xlsx/.xls/.csv). Each file is parsed and stored by
   the BusinessDate in the data; the system assigns data to "Today", "Yesterday",
   or "Last Week" (same weekday) for comparison. DoD (Day over Day) and WoW
   (Week over Week) are shown when corresponding dates exist.
 
-• Hourly aggregation (時間別集計): For a selected output date, view:
-  - Hourly table: time slot, gross/net sales, DoD/WoW,
+• Store snapshot (店別速報): For a selected date/store, view:
+  - Hourly table: time slot, net sales, DoD/WoW,
     quantity sold, receipt count.
-  - Summary table: today vs yesterday vs last week (net sales, receipt count,
-    etc.) with DoD/WoW.
+  - KPI cards: net sales, quantity sold, sales per hour, unit per transaction,
+    average selling price, and (non-total department) share.
   - Department composition by time slot: table and stacked bar chart (share of
     net sales per department per slot).
   - Bar charts: hourly net sales and receipt count (with optional comparison).
   - Line charts: landing forecast (projected end-of-day totals) for net sales
     and receipt count.
-  Users can filter by department and time range.
+  Users can filter by department and time range. UI supports ja/en/th and
+  responsive mobile layout.
 
-• Daily aggregation (日別集計): For a chosen week-ending date, view the
-  previous 7 days:
-  - Sales by department (net sales per day, table + stacked bar chart).
-  - Department composition by day (share % table + 100% stacked bar chart).
-  - Key metrics table and trend line chart: sales per hour, receipts per hour,
-    receipt count, avg receipt value, items per receipt, quantity sold, avg
-    item price.
+• All stores snapshot (全店速報):
+  - Ranks stores in Thailand for the selected date and department.
+  - Columns: rank, store name, net sales, quantity sold, receipt count, DoD, WoW.
+  - Sort by net sales, quantity sold, receipt count, store name, DoD, or WoW.
+
+• Settings and master maintenance:
+  - Per-user preferences (store, department, language, currency).
+  - User master maintenance (including preferred language/currency).
+  - Store-specific business hours.
 
 3. TECHNOLOGY
 -------------
 • Backend: Node.js (v18+), Express. Serves static files and REST APIs.
-• Database: SQLite (better-sqlite3). One table stores report JSON per
-  business_date. Optional DATA_DIR env var for persistent volume in cloud.
-• Parsing: xlsx library to read Excel; parser derives BusinessDate, hourly
-  totals, and per-department hourly data.
+• Database: SQLite (better-sqlite3) or Supabase. Report JSON is saved by
+  (store_id, business_date), with master/user tables for settings.
+• Parsing: xlsx + CSV parser; derives BusinessDate, hourly totals, and
+  per-department hourly data.
 • Frontend: Plain HTML/CSS/JS; Chart.js for all graphs. No framework.
 • File upload: Multer (memory storage), max 10 MB per file.
+• Auth: Session-based local auth and optional Microsoft Entra ID login.
 
 4. API ENDPOINTS
 ----------------
 • GET  /health              — Health check (returns { ok: true }).
-• GET  /api/dates           — List of stored business_date values (for dropdowns).
-• GET  /api/report          — Query: referenceDate (YYYY-MM-DD). Returns
-                              today, yesterday, lastWeek report objects.
-• GET  /api/daily-summary   — Query: referenceDate, days (default 7). Returns
-                              daily summaries (totals, by department, metrics)
-                              for the last N days ending on referenceDate.
+• GET  /api/auth/status     — Authentication status, role, and user preferences.
+• PUT  /api/me/preferences  — Save current user preferences.
+• GET  /api/stores          — Store master list.
+• PUT  /api/stores          — Update store master list (admin).
+• GET  /api/business-hours  — Get business hours by store.
+• PUT  /api/business-hours  — Save business hours by store (admin).
+• GET  /api/dates           — List stored business_date values.
+• GET  /api/report          — Query: referenceDate, storeId. Returns
+                              today/yesterday/lastWeek objects.
 • POST /api/upload          — Multipart form with "files" (multiple). Parses
                               Excel, saves by BusinessDate, returns saved
                               report set and updated date list.
+                              Note: currently allowed without authentication.
+• GET  /api/users           — User master list (admin).
+• POST /api/users           — Create user (admin).
+• PUT  /api/users/:id       — Update user (admin).
+• DELETE /api/users/:id     — Delete user (admin).
 
 5. DATA FLOW
 ------------
 • Upload: User selects Excel files → POST /api/upload → parse each file →
-  saveReport(businessDate, data) → response includes today/yesterday/lastWeek
-  and savedDates. Client switches to Hourly tab and can change output date.
-• Hourly view: User selects output date → GET /api/report?referenceDate=... →
+  saveReport(businessDate, data, storeId) → response includes saved dates.
+• Store snapshot view: User selects output date/store → GET /api/report →
   client receives today/yesterday/lastWeek → tables and charts rendered from
   total and byDepartment hourly data.
-• Daily view: User selects week-ending date → GET /api/daily-summary →
-  server aggregates stored reports for that range → client renders tables and
-  weekly charts (sales by department, composition %, key metrics).
+• All stores snapshot view: Client fetches stores and combines report data for
+  ranking table with sortable metrics including DoD/WoW.
 
 6. DEPLOYMENT
 -------------
@@ -81,12 +91,13 @@ database so reports can be recalled by date without re-uploading.
 
 7. FILES (MAIN)
 ---------------
-• server.js   — Express app, upload handler, API routes, addDays/daily-summary logic.
+• server.js   — Express app, auth middleware, upload handler, API routes.
 • db.js       — SQLite init, saveReport, getReport, getAvailableDates.
-• parser.js   — Excel parsing, BusinessDate detection, hourly and department data.
-• index.html  — Markup for Input, Hourly, Daily panels and chart canvases.
+• parser.js   — Excel/CSV parsing, BusinessDate detection, hourly and department data.
+• index.html  — Markup for store snapshot and all stores snapshot panels.
 • app.js      — Client state, rendering (tables, Chart.js), API calls, tab logic.
 • style.css   — Layout and styling.
+• upload.html / upload.js — Setup page (upload, users, stores, business hours).
 • DEPLOY.md   — Cloud deployment instructions.
 • docs/       — LS-Central integration notes, this overview.
 

@@ -33,9 +33,10 @@ After LS-Central runs the report, it **POSTs** the generated Excel to **this app
   - **Cloud / Power Automate:** Export the report to Excel → use the “HTTP” action in a flow to POST the file to this app’s URL.
 - Send right after the report runs or when the scheduled job completes.
 
-**This app (to be implemented):**
+**This app (current behavior):**
 - Existing `POST /api/upload` can be used as-is.
-- Add simple authentication (API key or token) for integration (validate in headers).
+- For integration compatibility, this endpoint currently accepts unauthenticated POST.
+- If you need tighter security, restrict by network (Cloud Run ingress/VPC/WAF/IP allowlist) or add a shared secret/header validation at application layer.
 - Define rules for treating received files as “today”, “yesterday”, “last week” (by filename or date parameters) and have the front end show the latest data.
 
 **Pros:** No shared folder; easy to use from cloud.  
@@ -94,7 +95,7 @@ No changes. Keep using “upload 3 files in the Input tab and generate report”
 ## Next Steps
 
 - **“We want LS-Central to send files on a schedule”**  
-  → Prefer method 2: add authentication (API key) to `POST /api/upload` and logic to store received files by date.
+  → Prefer method 2: use `POST /api/upload` and define operational security controls (network restriction and/or app-level shared secret), then store files by date.
 - **“We already output to a shared folder”**  
   → Implement method 1 (folder watch) in this app and auto-load the latest files from that folder.
 
