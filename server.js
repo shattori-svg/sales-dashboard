@@ -487,7 +487,7 @@ app.post('/api/bootstrap-admin', async (req, res) => {
   }
 });
 
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname), { etag: false, lastModified: false, setHeaders: (res, filePath) => { if (/\.(js|css|html)$/.test(filePath)) res.setHeader('Cache-Control', 'no-store'); } }));
 
 app.get('/setup', requireAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, 'upload.html'), (err) => {

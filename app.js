@@ -926,13 +926,12 @@
       card.hidden = true;
       return;
     }
-    var thailandNowForSnapshot = getThailandTimeStr();
-    var endedToday = filterByThailandCurrentTime(todayHourly, thailandNowForSnapshot);
-    var isTodayRef = String(referenceDate || '') === getThailandDateStr();
-    var useSameTimeBaseline = isTodayRef && endedToday.length > 0 && endedToday.length < todayHourly.length;
-    var compareTodayHourly = useSameTimeBaseline ? endedToday : todayHourly;
-    var compareYesterdayHourly = useSameTimeBaseline ? filterByThailandCurrentTime(yesterdayHourly, thailandNowForSnapshot) : yesterdayHourly;
-    var compareLastWeekHourly = useSameTimeBaseline ? filterByThailandCurrentTime(lastWeekHourly, thailandNowForSnapshot) : lastWeekHourly;
+    // テーブル（rowsHourly）と同じ基準: netSales > 0 のスロットのみ
+    // yesterdayHourly/lastWeekHourly は renderReport で todayKeySet 済みのため再フィルタ不要
+    var useSameTimeBaseline = false;
+    var compareTodayHourly = (todayHourly || []).filter(function (h) { return (h.netSales || 0) > 0; });
+    var compareYesterdayHourly = yesterdayHourly;
+    var compareLastWeekHourly = lastWeekHourly;
 
     var netSum = 0, qtySum = 0, receiptSum = 0;
     compareTodayHourly.forEach(function (h) {
@@ -1169,7 +1168,6 @@
         state.businessHoursSettings = settings;
         var startEl = document.getElementById('time-start');
         var endEl = document.getElementById('time-end');
-        if (startEl && endEl && state.referenceDate) fillTimeSelects(state.referenceDate);
         renderReport();
       }
     }).catch(function () {});
@@ -1378,8 +1376,8 @@
       });
     }
 
-    var dod = netSumY > 0 ? Math.round((netSum / netSumY) * 100) : null;
-    var wow = netSumW > 0 ? Math.round((netSum / netSumW) * 100) : null;
+    var dod = netSumY > 0 ? pctRatio(netSum, netSumY) : null;
+    var wow = netSumW > 0 ? pctRatio(netSum, netSumW) : null;
     var receiptCell = isTotal ? formatInt(receiptSum) : '—';
 
     return '<tr>' +
@@ -1421,8 +1419,8 @@
     refreshCurrencyTexts();
     var dept = document.getElementById('department-select').value;
     var isTotal = (dept === 'Total');
-    var startTime = (document.getElementById('time-start') && document.getElementById('time-start').value) || '00:00';
-    var endTime = (document.getElementById('time-end') && document.getElementById('time-end').value) || '24:00';
+    var startTime = '00:00';
+    var endTime = '24:00';
 
     var todayRaw = getHourlyData(state.today, dept);
     var yesterdayRaw = getHourlyData(state.yesterday, dept);
@@ -1440,6 +1438,12 @@
     var compositionSection = document.getElementById('composition-section');
 
     var rowsHourly = (todayHourly || []).filter(function (h) { return (h && (h.netSales || 0) > 0); });
+
+    // DoD/WoW比較は今日に売上があるtimeKeyのスロットのみで行う（当日途中の場合に全日合計と比べないため）
+    var todayKeySet = {};
+    rowsHourly.forEach(function (h) { todayKeySet[h.timeKey] = true; });
+    if (yesterdayHourly) yesterdayHourly = yesterdayHourly.filter(function (h) { return todayKeySet[h.timeKey]; });
+    if (lastWeekHourly) lastWeekHourly = lastWeekHourly.filter(function (h) { return todayKeySet[h.timeKey]; });
 
     if (!rowsHourly || !rowsHourly.length) {
       reportTitle.textContent = getDepartmentDisplayName(dept);
@@ -1501,7 +1505,7 @@
     var summaryReceiptToday = isTotal ? receiptToday : null;
     var summaryReceiptYesterday = isTotal ? receiptYesterday : null;
     var summaryReceiptLastWeek = isTotal ? receiptLastWeek : null;
-    var sumToday = computeSummary(todayHourly, summaryReceiptToday, fallbackReceiptToday);
+    var sumToday = computeSummary(rowsHourly, summaryReceiptToday, fallbackReceiptToday);
     var sumYesterday = yesterdayHourly ? computeSummary(yesterdayHourly, summaryReceiptYesterday, fallbackReceiptYesterday) : null;
     var sumLastWeek = lastWeekHourly ? computeSummary(lastWeekHourly, summaryReceiptLastWeek, fallbackReceiptLastWeek) : null;
 
@@ -1615,7 +1619,6 @@
             state.yesterday = data.yesterday || null;
             state.lastWeek = data.lastWeek || null;
             state.referenceDate = data.referenceDate;
-            fillTimeSelects(state.referenceDate);
             renderReport();
           });
         }).then(function () { hideLoading(); }).catch(function () { hideLoading(); });
@@ -2526,8 +2529,6 @@
 
     var departmentSelect = document.getElementById('department-select');
     if (departmentSelect) departmentSelect.addEventListener('change', function () { renderReport(); updateHourlyFiltersSummaryBar(); });
-    fillTimeSelects(state.referenceDate);
-
     var chartTabSales = document.getElementById('chart-tab-sales');
     var chartTabReceipts = document.getElementById('chart-tab-receipts');
     if (chartTabSales) {
@@ -2564,7 +2565,6 @@
         state.yesterday = body.yesterday || null;
         state.lastWeek = body.lastWeek || null;
         state.referenceDate = body.referenceDate;
-        fillTimeSelects(state.referenceDate);
         renderReport();
         updateHourlyFiltersSummaryBar();
       }).then(function () { hideLoading(); }).catch(function () { hideLoading(); });
@@ -2577,20 +2577,15 @@
     if (allstoresDeptEl) allstoresDeptEl.addEventListener('change', renderAllStoresDigest);
     if (allstoresSortKeyEl) allstoresSortKeyEl.addEventListener('change', renderAllStoresDigest);
 
-    var timeStart = document.getElementById('time-start');
-    var timeEnd = document.getElementById('time-end');
     var langSelect = document.getElementById('lang-select');
     var logoutLink = document.getElementById('logout-link');
     var setupLink = document.getElementById('setup-link');
-    if (timeStart) timeStart.addEventListener('change', function () { renderReport(); updateHourlyFiltersSummaryBar(); });
-    if (timeEnd) timeEnd.addEventListener('change', function () { renderReport(); updateHourlyFiltersSummaryBar(); });
     if (langSelect) langSelect.addEventListener('change', closeMobileMenu);
     if (logoutLink) logoutLink.addEventListener('click', closeMobileMenu);
     if (setupLink) setupLink.addEventListener('click', closeMobileMenu);
 
     window.addEventListener('languageChange', function () {
       refreshDepartmentSelectLabels();
-      fillTimeSelects(state.referenceDate);
       refreshCurrencyTexts();
       renderReport();
       renderAllStoresDigest();
