@@ -35,6 +35,8 @@
   <nav class="tabs">
     <button type="button" class="tab active" data-tab="hourly" aria-selected="true" data-i18n="tab_hourly">店別速報</button>
     <button type="button" class="tab" data-tab="allstores" aria-selected="false" data-i18n="tab_allstores">全店速報</button>
+    <button type="button" class="tab" data-tab="daily" aria-selected="false" data-i18n="tab_daily">日次集計</button>
+    <button type="button" class="tab" data-tab="weekly" aria-selected="false" data-i18n="tab_weekly">週次集計</button>
     <button type="button" class="tab" data-tab="ai" aria-selected="false" data-i18n="tab_ai">AIレポート</button>
   </nav>
 
@@ -252,6 +254,65 @@
         </table>
       </div>
       <p id="allstores-empty" class="empty-message" data-i18n="allstores_empty" hidden>該当日の全店データがありません。</p>
+    </section>
+
+    <section id="daily-panel" class="panel">
+      <h3 class="section-title" data-i18n="daily_section_title">日次集計</h3>
+      <p class="hint" data-i18n="daily_hint">View weekly sales trend and department composition by day.</p>
+      <div class="output-header">
+        <span class="output-header-item">
+          <label for="daily-store-select" class="store-label" data-i18n="store">店舗</label>
+          <select id="daily-store-select" aria-label="Select store for daily view">
+            <option value="default">Default</option>
+          </select>
+        </span>
+        <label for="daily-start-date" class="output-header-sep" data-i18n="daily_start_date">Start date</label>
+        <input type="date" id="daily-start-date" aria-label="Select start date for daily view">
+        <label for="daily-end-date" class="output-header-sep" data-i18n="daily_end_date">End date</label>
+        <input type="date" id="daily-end-date" aria-label="Select end date for daily view">
+        <label for="daily-export-select" class="output-header-sep" data-i18n="output_data">出力データ</label>
+        <select id="daily-export-select" aria-label="Select data to export">
+          <option value="all" data-i18n-option="output_all">すべて</option>
+          <option value="0" data-i18n-option="period_total_section">期間合計</option>
+          <option value="1" data-i18n-option="daily_sales_by_dept">部門別売上</option>
+          <option value="2" data-i18n-option="daily_composition_pct">部門構成%</option>
+          <option value="3" data-i18n-option="key_metrics">主要指標</option>
+        </select>
+        <button type="button" id="btn-daily-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
+      </div>
+      <div id="daily-summary-tables"></div>
+      <p id="daily-empty" class="empty-message" data-i18n="daily_empty" hidden>Select an end date to load the daily summary.</p>
+    </section>
+
+    <section id="weekly-panel" class="panel">
+      <h3 class="section-title" data-i18n="weekly_section_title">週次集計</h3>
+      <p class="hint" data-i18n="weekly_hint">週単位で売上・部門別構成を表示します。</p>
+      <div class="output-header">
+        <span class="output-header-item">
+          <label for="weekly-store-select" class="store-label" data-i18n="store">店舗</label>
+          <select id="weekly-store-select" aria-label="Select store for weekly view">
+            <option value="default">Default</option>
+          </select>
+        </span>
+        <label for="weekly-end-date" class="output-header-sep" data-i18n="weekly_end_date">週の終了日</label>
+        <input type="date" id="weekly-end-date" aria-label="Select end date for weekly view">
+        <label for="weekly-num-weeks" class="output-header-sep" data-i18n="num_weeks">表示週数</label>
+        <select id="weekly-num-weeks" aria-label="Number of weeks">
+          <option value="2" data-i18n-option="weeks_2">2週間</option>
+          <option value="3" data-i18n-option="weeks_3">3週間</option>
+          <option value="4" selected data-i18n-option="weeks_4">4週間</option>
+        </select>
+        <label for="weekly-export-select" class="output-header-sep" data-i18n="output_data">出力データ</label>
+        <select id="weekly-export-select" aria-label="Select data to export">
+          <option value="all" data-i18n-option="output_all">すべて</option>
+          <option value="0" data-i18n-option="weekly_net_title">週別 Net Sales</option>
+          <option value="1" data-i18n-option="sales_by_dept">部門別売上</option>
+          <option value="2" data-i18n-option="dept_composition_pct">部門構成%</option>
+        </select>
+        <button type="button" id="btn-weekly-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
+      </div>
+      <div id="weekly-summary-tables"></div>
+      <p id="weekly-empty" class="empty-message" data-i18n="weekly_empty" hidden>週の終了日を選択してください。</p>
     </section>
 
     <section id="ai-panel" class="panel">
