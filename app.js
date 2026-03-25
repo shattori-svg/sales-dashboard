@@ -28,6 +28,13 @@
     exchangeRateUpdatedAt: null
   };
 
+  var AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+  var autoRefreshTimer = null;
+  var autoRefreshCountdownTimer = null;
+  var nextAutoRefreshAt = null;
+  var selectedCompositionDept = null;
+  var showDetailedKpis = false;
+
   function getSelectedStoreId() {
     var el = document.getElementById('store-select');
     return el && el.value ? el.value : 'default';
@@ -269,7 +276,7 @@
     function deptTone(name) {
       var toneMap = {
         'Fruit & Vegetable': { bg: '#eef9f0', border: '#9dd7ab', accent: '#22a352', details: '#f6fcf7', peak: '#dbf4e2' }, // green
-        'Grocery': { bg: '#f3f4f6', border: '#cbd5e1', accent: '#6b7280', details: '#f8fafc', peak: '#eceff3' }, // gray
+        'Grocery': { bg: '#fefce8', border: '#fde047', accent: '#a16207', details: '#fffbeb', peak: '#fef3c7' }, // yellow
         'Delicatessen': { bg: '#fff5eb', border: '#fdba74', accent: '#ea580c', details: '#fffaf5', peak: '#ffe9d2' }, // orange
         'Fish & Seafood': { bg: '#eef8ff', border: '#93c5fd', accent: '#0284c7', details: '#f5fbff', peak: '#deefff' }, // light blue
         'Meat': { bg: '#fff0f6', border: '#f9a8d4', accent: '#db2777', details: '#fff7fb', peak: '#ffe2f0' }, // pink
@@ -327,8 +334,12 @@
         var chev = btn.querySelector('.composition-chevron');
         if (chev) chev.textContent = expanded ? 'v' : '^';
         if (details) details.hidden = expanded;
+        selectedCompositionDept = expanded ? null : btn.getAttribute('data-dept');
+        renderDepartmentProductBreakdown(state.today, selectedCompositionDept || null, true);
+        syncInsightsSplitHeight();
       });
     });
+    syncInsightsSplitHeight();
   }
 
   function updateCompositionTableHead(compositionData, isNarrow) {
@@ -551,6 +562,9 @@
 
     var hasYesterday = yesterdayHourly && yesterdayHourly.length > 0;
     var hasLastWeek = lastWeekHourly && lastWeekHourly.length > 0;
+    function numericSorted(arr) {
+      return arr.filter(function (v) { return typeof v === 'number' && Number.isFinite(v) && v > 0; }).sort(function (a, b) { return a - b; });
+    }
 
     var moneyRate = getCurrencyCode() === 'JPY' ? (getExchangeRate() || 1) : 1;
     function convertSeries(arr) {
@@ -559,15 +573,43 @@
     var todayNetDisplay = convertSeries(todayNet);
     var yesterdayNetDisplay = convertSeries(yesterdayNet);
     var lastWeekNetDisplay = convertSeries(lastWeekNet);
+    var todayPositive = numericSorted(todayNetDisplay);
+    var refPositive = numericSorted([].concat(yesterdayNetDisplay || [], lastWeekNetDisplay || []));
+    var allPositive = numericSorted([].concat(todayNetDisplay || [], yesterdayNetDisplay || [], lastWeekNetDisplay || []));
+    var overallMax = allPositive.length ? allPositive[allPositive.length - 1] : 0;
+    var median = allPositive.length ? allPositive[Math.floor(allPositive.length / 2)] : 0;
+    var todayMax = todayPositive.length ? todayPositive[todayPositive.length - 1] : 0;
+    var hasAnomalousScale = overallMax > 0 && median > 0 && overallMax >= median * 4 && todayMax <= overallMax * 0.4;
+    var chartAnomalyNote = document.getElementById('chart-anomaly-note');
+    if (chartAnomalyNote) {
+      chartAnomalyNote.hidden = !hasAnomalousScale;
+      chartAnomalyNote.textContent = hasAnomalousScale ? '前日/先週の異常値を検知したため対数スケールで表示しています。' : '';
+    }
+
+    var CHART_OPTS = {
+      color: '#6b7280',
+      grid: 'rgba(0,0,0,0.06)',
+      today:     { bg: 'rgba(29,78,216,0.80)',   border: 'rgb(29,78,216)' },
+      yesterday: { bg: 'rgba(251,146,60,0.70)',  border: 'rgb(251,146,60)' },
+      lastWeek:  { bg: 'rgba(156,163,175,0.55)', border: 'rgb(156,163,175)' },
+      receipts:  { bg: 'rgba(22,163,74,0.75)',   border: 'rgb(22,163,74)' },
+      forecast:  { line: 'rgb(217,119,6)',  band: 'rgba(217,119,6,0.10)' },
+      actual:    { line: 'rgb(29,78,216)',  fill: 'rgba(29,78,216,0.07)' }
+    };
+    var chartScaleDefaults = {
+      grid: { color: CHART_OPTS.grid },
+      ticks: { color: CHART_OPTS.color },
+      title: { color: CHART_OPTS.color }
+    };
 
     var salesDatasets = [
-      { label: t('today'), data: todayNetDisplay, backgroundColor: 'rgba(37, 99, 235, 0.8)', borderColor: 'rgb(37, 99, 235)', borderWidth: 1 }
+      { label: t('today'), data: todayNetDisplay, backgroundColor: CHART_OPTS.today.bg, borderColor: CHART_OPTS.today.border, borderWidth: 1 }
     ];
     if (hasYesterday) {
-      salesDatasets.push({ label: t('yesterday'), data: yesterdayNetDisplay, backgroundColor: 'rgba(107, 114, 128, 0.6)', borderColor: 'rgb(107, 114, 128)', borderWidth: 1 });
+      salesDatasets.push({ label: t('yesterday'), data: yesterdayNetDisplay, backgroundColor: CHART_OPTS.yesterday.bg, borderColor: CHART_OPTS.yesterday.border, borderWidth: 1 });
     }
     if (hasLastWeek) {
-      salesDatasets.push({ label: t('last_week'), data: lastWeekNetDisplay, backgroundColor: 'rgba(156, 163, 175, 0.5)', borderColor: 'rgb(156, 163, 175)', borderWidth: 1 });
+      salesDatasets.push({ label: t('last_week'), data: lastWeekNetDisplay, backgroundColor: CHART_OPTS.lastWeek.bg, borderColor: CHART_OPTS.lastWeek.border, borderWidth: 1 });
     }
 
     chartInstances.sales = new Chart(salesCanvas, {
@@ -576,23 +618,23 @@
       options: {
         responsive: true,
         maintainAspectRatio: true,
-        plugins: { legend: { position: 'top' } },
+        plugins: { legend: { position: 'top', labels: { color: CHART_OPTS.color } } },
         scales: {
-          x: { title: { display: true, text: 'Time Slot' } },
-          y: { beginAtZero: true, title: { display: true, text: 'Net Sales (' + getCurrencyLabel() + ')' } }
+          x: Object.assign({ title: { display: true, text: 'Time Slot' } }, chartScaleDefaults),
+          y: Object.assign({ beginAtZero: true, type: hasAnomalousScale ? 'logarithmic' : 'linear', title: { display: true, text: 'Net Sales (' + getCurrencyLabel() + ')' } }, chartScaleDefaults)
         }
       }
     });
 
     if (receiptsCanvas) {
       var receiptDatasets = [
-        { label: t('today'), data: todayReceipts, backgroundColor: 'rgba(34, 197, 94, 0.8)', borderColor: 'rgb(34, 197, 94)', borderWidth: 1 }
+        { label: t('today'), data: todayReceipts, backgroundColor: CHART_OPTS.receipts.bg, borderColor: CHART_OPTS.receipts.border, borderWidth: 1 }
       ];
       if (hasYesterday) {
-        receiptDatasets.push({ label: t('yesterday'), data: yesterdayReceipts, backgroundColor: 'rgba(107, 114, 128, 0.6)', borderColor: 'rgb(107, 114, 128)', borderWidth: 1 });
+        receiptDatasets.push({ label: t('yesterday'), data: yesterdayReceipts, backgroundColor: CHART_OPTS.yesterday.bg, borderColor: CHART_OPTS.yesterday.border, borderWidth: 1 });
       }
       if (hasLastWeek) {
-        receiptDatasets.push({ label: t('last_week'), data: lastWeekReceipts, backgroundColor: 'rgba(156, 163, 175, 0.5)', borderColor: 'rgb(156, 163, 175)', borderWidth: 1 });
+        receiptDatasets.push({ label: t('last_week'), data: lastWeekReceipts, backgroundColor: CHART_OPTS.lastWeek.bg, borderColor: CHART_OPTS.lastWeek.border, borderWidth: 1 });
       }
       chartInstances.receipts = new Chart(receiptsCanvas, {
         type: 'bar',
@@ -600,10 +642,10 @@
         options: {
           responsive: true,
           maintainAspectRatio: true,
-          plugins: { legend: { position: 'top' } },
+          plugins: { legend: { position: 'top', labels: { color: CHART_OPTS.color } } },
           scales: {
-            x: { title: { display: true, text: t('time_slot') } },
-            y: { beginAtZero: true, title: { display: true, text: t('receipt_count') } }
+            x: Object.assign({ title: { display: true, text: t('time_slot') } }, chartScaleDefaults),
+            y: Object.assign({ beginAtZero: true, title: { display: true, text: t('receipt_count') } }, chartScaleDefaults)
           }
         }
       });
@@ -619,6 +661,12 @@
       actualCum: convertSeries(forecastSalesDataRaw.actualCum),
       lastActual: forecastSalesDataRaw.lastActual
     };
+    var hasForecastFuture = forecastSalesData.lastActual < labels.length - 1;
+    var forecastStatusNote = document.getElementById('forecast-status-note');
+    if (forecastStatusNote) {
+      forecastStatusNote.hidden = hasForecastFuture;
+      forecastStatusNote.textContent = hasForecastFuture ? '' : '予測データ未設定';
+    }
     var forecastReceiptsData = (optionalForecast && optionalForecast.forecastReceiptsData) ? optionalForecast.forecastReceiptsData : buildForecastChartDataActualOnly(todayReceipts, todayHourly, thailandNow);
 
     chartInstances.forecastSales = new Chart(forecastSalesCanvas, {
@@ -630,7 +678,7 @@
             label: t('forecast_band'),
             data: forecastSalesData.forecastLower,
             borderColor: 'transparent',
-            backgroundColor: 'rgba(234, 88, 12, 0.15)',
+            backgroundColor: CHART_OPTS.forecast.band,
             fill: '+1',
             pointRadius: 0,
             pointHoverRadius: 0,
@@ -649,7 +697,7 @@
           {
             label: t('forecast_line'),
             data: forecastSalesData.forecastLine,
-            borderColor: 'rgb(234, 88, 12)',
+            borderColor: CHART_OPTS.forecast.line,
             backgroundColor: 'transparent',
             borderWidth: 2,
             borderDash: [6, 4],
@@ -662,8 +710,8 @@
           {
             label: t('actual_cumulative'),
             data: forecastSalesData.actualCum,
-            borderColor: 'rgb(37, 99, 235)',
-            backgroundColor: 'rgba(37, 99, 235, 0.08)',
+            borderColor: CHART_OPTS.actual.line,
+            backgroundColor: CHART_OPTS.actual.fill,
             borderWidth: 2,
             fill: true,
             pointRadius: 3,
@@ -680,7 +728,13 @@
         plugins: {
           legend: {
             position: 'top',
-            labels: { filter: function (item, ch) { return item.datasetIndex !== 1; } }
+            labels: {
+              color: CHART_OPTS.color,
+              filter: function (item) {
+                if (!hasForecastFuture) return item.datasetIndex === 3;
+                return item.datasetIndex !== 1;
+              }
+            }
           },
           tooltip: {
             callbacks: {
@@ -695,8 +749,8 @@
           }
         },
         scales: {
-          x: { title: { display: true, text: t('time_slot') } },
-          y: { beginAtZero: true, title: { display: true, text: 'Net Sales (' + getCurrencyLabel() + ')' } }
+          x: Object.assign({ title: { display: true, text: t('time_slot') } }, chartScaleDefaults),
+          y: Object.assign({ beginAtZero: true, title: { display: true, text: 'Net Sales (' + getCurrencyLabel() + ')' } }, chartScaleDefaults)
         }
       }
     });
@@ -730,7 +784,7 @@
           {
             label: t('forecast_line'),
             data: forecastReceiptsData.forecastLine,
-            borderColor: 'rgb(234, 88, 12)',
+            borderColor: CHART_OPTS.forecast.line,
             backgroundColor: 'transparent',
             borderWidth: 2,
             borderDash: [6, 4],
@@ -743,8 +797,8 @@
           {
             label: t('actual_cumulative'),
             data: forecastReceiptsData.actualCum,
-            borderColor: 'rgb(37, 99, 235)',
-            backgroundColor: 'rgba(37, 99, 235, 0.08)',
+            borderColor: CHART_OPTS.actual.line,
+            backgroundColor: CHART_OPTS.actual.fill,
             borderWidth: 2,
             fill: true,
             pointRadius: 3,
@@ -761,7 +815,13 @@
         plugins: {
           legend: {
             position: 'top',
-            labels: { filter: function (item, ch) { return item.datasetIndex !== 1; } }
+            labels: {
+              color: CHART_OPTS.color,
+              filter: function (item) {
+                if (forecastReceiptsData.lastActual >= labels.length - 1) return item.datasetIndex === 3;
+                return item.datasetIndex !== 1;
+              }
+            }
           },
           tooltip: {
             callbacks: {
@@ -776,8 +836,8 @@
           }
         },
         scales: {
-          x: { title: { display: true, text: t('time_slot') } },
-          y: { beginAtZero: true, title: { display: true, text: t('forecast_total_count') } }
+          x: Object.assign({ title: { display: true, text: t('time_slot') } }, chartScaleDefaults),
+          y: Object.assign({ beginAtZero: true, title: { display: true, text: t('forecast_total_count') } }, chartScaleDefaults)
         }
       }
     });
@@ -809,17 +869,13 @@
     var storeEl = document.getElementById('store-select');
     var deptEl = document.getElementById('department-select');
     var dateEl = document.getElementById('output-date');
-    var startEl = document.getElementById('time-start');
-    var endEl = document.getElementById('time-end');
     var storeText = storeEl && storeEl.options && storeEl.selectedIndex >= 0 ? (storeEl.options[storeEl.selectedIndex].textContent || storeEl.value || '') : '';
     var deptText = deptEl ? (deptEl.value || '') : '';
     var dateText = dateEl ? (dateEl.value || '') : '';
-    var rangeText = (startEl && endEl && startEl.value && endEl.value) ? (startEl.value + '〜' + endEl.value) : '';
     var items = [
       { label: t('store') || 'Store', value: storeText },
       { label: t('department') || 'Dept', value: deptText },
-      { label: t('output_date') || 'Date', value: dateText },
-      { label: t('time_range') || 'Time', value: rangeText }
+      { label: t('output_date') || 'Date', value: dateText }
     ].filter(function (item) { return !!item.value; });
     summaryEl.innerHTML = '';
     if (!items.length) {
@@ -892,16 +948,19 @@
   }
 
   function fmtTrendBadgeHtml(pct, label) {
+    var noDataReason = String(label || '').toLowerCase().indexOf('wow') !== -1
+      ? (t('no_last_week_data') || '先週データなし')
+      : (t('no_prev_data') || '前日データなし');
     if (pct == null) {
       return '<span class="snapshot-trend-item neutral">' +
-        '<span class="snapshot-trend-main">--</span>' +
+        '<span class="snapshot-trend-main" title="' + escapeHtml(noDataReason) + '">-</span>' +
         '<span class="snapshot-trend-label">' + label + '</span>' +
       '</span>';
     }
     var n = Math.round(Number(pct));
     if (!Number.isFinite(n)) {
       return '<span class="snapshot-trend-item neutral">' +
-        '<span class="snapshot-trend-main">--</span>' +
+        '<span class="snapshot-trend-main" title="' + escapeHtml(noDataReason) + '">-</span>' +
         '<span class="snapshot-trend-label">' + label + '</span>' +
       '</span>';
     }
@@ -921,6 +980,23 @@
       var endTime = timeKey.indexOf('-') >= 0 ? timeKey.split('-')[1].trim() : '';
       return endTime && endTime <= t;
     });
+  }
+
+  function applySnapshotDetailVisibility() {
+    var isMobile = typeof window !== 'undefined' && window.innerWidth <= 767;
+    var shouldShowDetails = isMobile ? showDetailedKpis : true;
+    var detailIds = ['snapshot-txn-per-hour', 'snapshot-unit-per-txn', 'snapshot-avg-txn-price', 'snapshot-avg-selling-price'];
+    detailIds.forEach(function (id) {
+      var valueEl = document.getElementById(id);
+      var panel = valueEl ? valueEl.closest('.snapshot-panel') : null;
+      if (!panel) return;
+      panel.classList.toggle('is-collapsed-detail', !shouldShowDetails);
+    });
+    var toggleBtn = document.getElementById('snapshot-details-toggle');
+    if (toggleBtn) {
+      toggleBtn.setAttribute('aria-expanded', shouldShowDetails ? 'true' : 'false');
+      toggleBtn.textContent = shouldShowDetails ? '詳細を閉じる' : '詳細を表示';
+    }
   }
 
   function renderSnapshotCard(storeName, dept, referenceDate, todayHourly, yesterdayHourly, lastWeekHourly, isTotal, todayData, startTime, endTime, sumToday, sumYesterday, sumLastWeek) {
@@ -989,6 +1065,7 @@
     if (shareEl) shareEl.textContent = '—';
     if (shareSubEl) shareSubEl.innerHTML = '';
     if (rankEl) rankEl.textContent = '—';
+    applySnapshotDetailVisibility();
 
     function setSnapshotMetric(valueId, subId, val, yVal, wVal, formatter) {
       formatter = formatter || function (v) { return v != null ? String(v) : '—'; };
@@ -1112,11 +1189,15 @@
   function showLoading() {
     var el = document.getElementById('loading-overlay');
     if (el) { el.hidden = false; el.setAttribute('aria-busy', 'true'); }
+    var hourlyLoadingEl = document.getElementById('hourly-loading-indicator');
+    if (hourlyLoadingEl) hourlyLoadingEl.hidden = false;
   }
 
   function hideLoading() {
     var el = document.getElementById('loading-overlay');
     if (el) { el.hidden = true; el.setAttribute('aria-busy', 'false'); }
+    var hourlyLoadingEl = document.getElementById('hourly-loading-indicator');
+    if (hourlyLoadingEl) hourlyLoadingEl.hidden = true;
   }
 
   function tableToCsv(tableEl) {
@@ -1304,17 +1385,21 @@
     var netHeader = document.getElementById('hourly-th-net');
     var isPhone = typeof window !== 'undefined' && window.innerWidth <= 480;
     var lang = window.i18n && window.i18n.getCurrentLang ? window.i18n.getCurrentLang() : 'ja';
-    var timeHeader = document.querySelector('#hourly-table thead th:nth-child(1)');
+    var timeHeader = document.getElementById('hourly-th-time');
     if (timeHeader) timeHeader.textContent = isPhone ? (lang === 'ja' ? '時間' : 'Time') : (t('time_range_col') || 'Time range');
     if (netHeader) netHeader.textContent = isPhone ? (lang === 'ja' ? '純売' : 'Net') : ((t('snapshot_net_sales') || 'Net Sales') + ' (' + cur + ')');
-    var dodHeader = document.querySelector('#hourly-table thead th:nth-child(3)');
+    var dodHeader = document.getElementById('hourly-th-dod');
     if (dodHeader) dodHeader.textContent = isPhone ? (lang === 'ja' ? 'D' : 'DoD') : (t('dod') || 'DoD');
-    var wowHeader = document.querySelector('#hourly-table thead th:nth-child(4)');
+    var wowHeader = document.getElementById('hourly-th-wow');
     if (wowHeader) wowHeader.textContent = isPhone ? (lang === 'ja' ? 'W' : 'WoW') : (t('wow') || 'WoW');
-    var qtyHeader = document.querySelector('#hourly-table thead th:nth-child(5)');
+    var qtyHeader = document.getElementById('hourly-th-qty');
     if (qtyHeader) qtyHeader.textContent = isPhone ? (lang === 'ja' ? '点' : 'Qty') : (t('qty_sold') || 'Qty of Items Sold');
-    var receiptHeader = document.querySelector('#hourly-table thead th:nth-child(6)');
+    var receiptHeader = document.getElementById('hourly-th-receipt');
     if (receiptHeader) receiptHeader.textContent = isPhone ? (lang === 'ja' ? '枚' : 'Rcpt') : (t('receipt_count') || 'Receipt Count');
+    var unitPerTxnHeader = document.getElementById('hourly-th-unitptx');
+    if (unitPerTxnHeader) unitPerTxnHeader.textContent = t('unit_per_txn') || 'Unit Per Transaction';
+    var avgTxnPriceHeader = document.getElementById('hourly-th-avgtxn');
+    if (avgTxnPriceHeader) avgTxnPriceHeader.textContent = t('avg_txn_price') || 'Average Transaction Price';
     var netLabel = document.getElementById('snapshot-net-label');
     if (netLabel) netLabel.textContent = t('snapshot_net_sales') || 'Net Sales';
     var salesTitle = document.getElementById('chart-sales-title');
@@ -1324,8 +1409,36 @@
   }
 
   function formatPct(n) {
-    if (n == null) return '';
+    if (n == null) return '<span class="na-value" title="' + escapeHtml(t('no_prev_data') || '前日データなし') + '">-</span>';
     return Math.round(Number(n)) + '%';
+  }
+
+  function shouldShowHourlyTotalExtras(isTotal) {
+    var isMobile = false;
+    if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+      isMobile = window.matchMedia('(max-width: 1024px)').matches;
+    } else if (typeof window !== 'undefined') {
+      isMobile = window.innerWidth <= 1024;
+    }
+    return !!(isTotal && !isMobile);
+  }
+
+  function renderHourlyTableHeader(isTotal) {
+    var theadTr = document.querySelector('#hourly-table thead tr');
+    if (!theadTr) return;
+    var showExtras = shouldShowHourlyTotalExtras(isTotal);
+    var extraCols = showExtras
+      ? '<th id="hourly-th-unitptx">' + (t('unit_per_txn') || 'Unit Per Transaction') + '</th>' +
+        '<th id="hourly-th-avgtxn">' + (t('avg_txn_price') || 'Average Transaction Price') + '</th>'
+      : '';
+    theadTr.innerHTML = '' +
+      '<th id="hourly-th-time">' + (t('time_range_col') || 'Time range') + '</th>' +
+      '<th id="hourly-th-net">' + (t('snapshot_net_sales') || 'Net Sales') + ' (' + getCurrencyLabel() + ')</th>' +
+      '<th id="hourly-th-dod">' + (t('dod') || 'DoD') + '</th>' +
+      '<th id="hourly-th-wow">' + (t('wow') || 'WoW') + '</th>' +
+      '<th id="hourly-th-qty">' + (t('qty_sold') || 'Qty of Items Sold') + '</th>' +
+      '<th id="hourly-th-receipt">' + (t('receipt_count') || 'Receipt Count') + '</th>' +
+      extraCols;
   }
 
   function renderHourlyRow(hour, yesterdayHour, lastWeekHour, isTotal) {
@@ -1336,14 +1449,25 @@
     var isNarrow = typeof window !== 'undefined' && window.innerWidth <= 640;
     var timeLabel = hour.timeLabel || '';
     if (isNarrow && timeLabel.indexOf('-') >= 0) timeLabel = timeLabel.split('-')[0].trim();
-    var receiptCell = isTotal ? formatInt(hour.receiptCount) : '—';
-    return '<tr>' +
+    var receiptCount = Number(hour.receiptCount || 0);
+    var quantitySold = Number(hour.quantitySold || 0);
+    var receiptCell = isTotal ? formatInt(receiptCount) : '—';
+    var showExtras = shouldShowHourlyTotalExtras(isTotal);
+    var unitPerTxnCell = showExtras ? (receiptCount > 0 ? formatCurrency(quantitySold / receiptCount) : '-') : '';
+    var avgTxnPriceCell = showExtras ? (receiptCount > 0 ? formatMoneyNoUnit(net / receiptCount) : '-') : '';
+    var startLabel = (hour.timeKey || '').split('-')[0] || '';
+    var nowTh = getThailandTimeStr();
+    var isToday = state.referenceDate === getThailandDateStr();
+    var isCurrentSlot = !!(isToday && startLabel && nowTh && startLabel <= nowTh && nowTh <= ((hour.timeKey || '').split('-')[1] || '24:00'));
+    return '<tr class="' + (isCurrentSlot ? 'current-time-row' : '') + '">' +
       '<td>' + timeLabel + '</td>' +
       '<td>' + formatMoneyNoUnit(net) + '</td>' +
       '<td>' + formatPct(dod) + '</td>' +
       '<td>' + formatPct(wow) + '</td>' +
-      '<td>' + formatInt(hour.quantitySold) + '</td>' +
+      '<td>' + formatInt(quantitySold) + '</td>' +
       '<td>' + receiptCell + '</td>' +
+      (showExtras ? ('<td>' + unitPerTxnCell + '</td>' +
+        '<td>' + avgTxnPriceCell + '</td>') : '') +
     '</tr>';
   }
 
@@ -1360,13 +1484,17 @@
     var netSumY = 0, receiptSumY = 0, qtySumY = 0;
     var netSumW = 0, receiptSumW = 0, qtySumW = 0;
 
+    // 今日のtimeKeyセット（存在するスロットのみで比較）
+    var todayKeys = {};
     todayHourly.forEach(function (h) {
       netSum += h.netSales || 0;
       receiptSum += h.receiptCount || 0;
       qtySum += h.quantitySold || 0;
+      todayKeys[h.timeKey] = true;
     });
     if (yesterdayHourly) {
       yesterdayHourly.forEach(function (h) {
+        if (!todayKeys[h.timeKey]) return;
         netSumY += h.netSales || 0;
         receiptSumY += h.receiptCount || 0;
         qtySumY += h.quantitySold || 0;
@@ -1374,6 +1502,7 @@
     }
     if (lastWeekHourly) {
       lastWeekHourly.forEach(function (h) {
+        if (!todayKeys[h.timeKey]) return;
         netSumW += h.netSales || 0;
         receiptSumW += h.receiptCount || 0;
         qtySumW += h.quantitySold || 0;
@@ -1383,6 +1512,12 @@
     var dod = netSumY > 0 ? pctRatio(netSum, netSumY) : null;
     var wow = netSumW > 0 ? pctRatio(netSum, netSumW) : null;
     var receiptCell = isTotal ? formatInt(receiptSum) : '—';
+    var showExtras = shouldShowHourlyTotalExtras(isTotal);
+    var hoursWithSales = 0;
+    todayHourly.forEach(function (h) { if ((h.netSales || 0) > 0) hoursWithSales++; });
+    if (hoursWithSales === 0) hoursWithSales = 1;
+    var unitPerTxnCell = showExtras ? (receiptSum > 0 ? formatCurrency(qtySum / receiptSum) : '-') : '';
+    var avgTxnPriceCell = showExtras ? (receiptSum > 0 ? formatMoneyNoUnit(netSum / receiptSum) : '-') : '';
 
     return '<tr>' +
       '<td>' + t('total') + '</td>' +
@@ -1391,6 +1526,8 @@
       '<td>' + formatPct(wow) + '</td>' +
       '<td>' + formatInt(qtySum) + '</td>' +
       '<td>' + receiptCell + '</td>' +
+      (showExtras ? ('<td>' + unitPerTxnCell + '</td>' +
+        '<td>' + avgTxnPriceCell + '</td>') : '') +
     '</tr>';
   }
 
@@ -1402,7 +1539,7 @@
     hourly.forEach(function (h) {
       var n = h.netSales || 0;
       netSum += n;
-      var rc = h.receiptCount != null ? h.receiptCount : (receiptByTimeKey && receiptByTimeKey[h.timeKey] != null) ? receiptByTimeKey[h.timeKey] : 0;
+      var rc = (receiptByTimeKey && receiptByTimeKey[h.timeKey] != null) ? receiptByTimeKey[h.timeKey] : (h.receiptCount != null ? h.receiptCount : 0);
       receiptSum += rc;
       qtySum += h.quantitySold || 0;
       if (n > 0) hoursWithSales++;
@@ -1420,9 +1557,11 @@
   }
 
   function renderReport() {
-    refreshCurrencyTexts();
+    updateConfirmedBadge();
     var dept = document.getElementById('department-select').value;
     var isTotal = (dept === 'Total');
+    renderHourlyTableHeader(isTotal);
+    refreshCurrencyTexts();
     var startTime = '00:00';
     var endTime = '24:00';
 
@@ -1467,6 +1606,7 @@
       }
       destroyCharts();
       renderComposition(null);
+      renderDepartmentProductBreakdown(null, dept);
       return;
     }
 
@@ -1495,20 +1635,22 @@
     var fallbackReceiptYesterday = (state.yesterday && state.yesterday.total && state.yesterday.total.totalRow && (state.yesterday.total.totalRow.receiptCount != null)) ? state.yesterday.total.totalRow.receiptCount : null;
     var fallbackReceiptLastWeek = (state.lastWeek && state.lastWeek.total && state.lastWeek.total.totalRow && (state.lastWeek.total.totalRow.receiptCount != null)) ? state.lastWeek.total.totalRow.receiptCount : null;
     if (!isTotal) {
-      fallbackReceiptToday = (state.today && state.today.byDepartment && state.today.byDepartment[dept] && state.today.byDepartment[dept].totalRow && (state.today.byDepartment[dept].totalRow.receiptCount != null))
-        ? state.today.byDepartment[dept].totalRow.receiptCount
-        : null;
-      fallbackReceiptYesterday = (state.yesterday && state.yesterday.byDepartment && state.yesterday.byDepartment[dept] && state.yesterday.byDepartment[dept].totalRow && (state.yesterday.byDepartment[dept].totalRow.receiptCount != null))
-        ? state.yesterday.byDepartment[dept].totalRow.receiptCount
-        : null;
-      fallbackReceiptLastWeek = (state.lastWeek && state.lastWeek.byDepartment && state.lastWeek.byDepartment[dept] && state.lastWeek.byDepartment[dept].totalRow && (state.lastWeek.byDepartment[dept].totalRow.receiptCount != null))
-        ? state.lastWeek.byDepartment[dept].totalRow.receiptCount
-        : null;
+      // Use dept-specific totalRow receipt count if available, otherwise keep total-store fallback
+      if (state.today && state.today.byDepartment && state.today.byDepartment[dept] && state.today.byDepartment[dept].totalRow && (state.today.byDepartment[dept].totalRow.receiptCount != null)) {
+        fallbackReceiptToday = state.today.byDepartment[dept].totalRow.receiptCount;
+      }
+      if (state.yesterday && state.yesterday.byDepartment && state.yesterday.byDepartment[dept] && state.yesterday.byDepartment[dept].totalRow && (state.yesterday.byDepartment[dept].totalRow.receiptCount != null)) {
+        fallbackReceiptYesterday = state.yesterday.byDepartment[dept].totalRow.receiptCount;
+      }
+      if (state.lastWeek && state.lastWeek.byDepartment && state.lastWeek.byDepartment[dept] && state.lastWeek.byDepartment[dept].totalRow && (state.lastWeek.byDepartment[dept].totalRow.receiptCount != null)) {
+        fallbackReceiptLastWeek = state.lastWeek.byDepartment[dept].totalRow.receiptCount;
+      }
     }
 
-    var summaryReceiptToday = isTotal ? receiptToday : null;
-    var summaryReceiptYesterday = isTotal ? receiptYesterday : null;
-    var summaryReceiptLastWeek = isTotal ? receiptLastWeek : null;
+    // Pass total-store per-slot receipt map for all views so computeSummary uses correct receipts
+    var summaryReceiptToday = receiptToday;
+    var summaryReceiptYesterday = receiptYesterday;
+    var summaryReceiptLastWeek = receiptLastWeek;
     var sumToday = computeSummary(rowsHourly, summaryReceiptToday, fallbackReceiptToday);
     var sumYesterday = yesterdayHourly ? computeSummary(yesterdayHourly, summaryReceiptYesterday, fallbackReceiptYesterday) : null;
     var sumLastWeek = lastWeekHourly ? computeSummary(lastWeekHourly, summaryReceiptLastWeek, fallbackReceiptLastWeek) : null;
@@ -1523,7 +1665,7 @@
     });
     tbody.innerHTML = html;
 
-    tfoot.innerHTML = renderTotalsRow(todayHourly, yesterdayHourly, lastWeekHourly, isTotal);
+    tfoot.innerHTML = renderTotalsRow(rowsHourly, yesterdayHourly, lastWeekHourly, isTotal);
 
     var hourlyTableEl = document.getElementById('hourly-table');
     if (hourlyTableEl) hourlyTableEl.classList.toggle('hide-receipt-col', !isTotal);
@@ -1548,6 +1690,7 @@
 
     var compositionData = getDepartmentCompositionByTime(state.today, startTime, endTime);
     renderComposition(compositionData);
+    renderDepartmentProductBreakdown(state.today, dept);
   }
 
   function fillOutputDateSelect(dates, selectedValue) {
@@ -1583,6 +1726,74 @@
     } catch (e) { return ''; }
   }
 
+  function updateConfirmedBadge() {
+    var badge = document.getElementById('confirmed-badge');
+    if (!badge) return;
+    badge.hidden = !(state.today && state.today._isFinal);
+  }
+
+  function updateAutoRefreshStatus() {
+    var el = document.getElementById('auto-refresh-status');
+    if (!el) return;
+    var ts = state.today && state.today._updatedAt;
+    if (!ts) { el.textContent = ''; return; }
+    // _updatedAt is UTC ISO string from SQLite ("2026-03-17 08:42:11")
+    var d = new Date(ts.indexOf('T') === -1 ? ts.replace(' ', 'T') + 'Z' : ts);
+    var hh = String(d.getHours()).padStart(2, '0');
+    var mm = String(d.getMinutes()).padStart(2, '0');
+    var text = t('auto_refresh_label') + hh + ':' + mm;
+    if (nextAutoRefreshAt && state.referenceDate === getThailandDateStr()) {
+      var remainMs = nextAutoRefreshAt - Date.now();
+      if (remainMs < 0) remainMs = 0;
+      var totalSec = Math.floor(remainMs / 1000);
+      var min = Math.floor(totalSec / 60);
+      var sec = totalSec % 60;
+      text += ' / 次の更新まで ' + String(min) + ':' + String(sec).padStart(2, '0');
+    }
+    el.textContent = text;
+  }
+
+  function silentRefreshReport() {
+    var date = state.referenceDate;
+    var storeId = getSelectedStoreId();
+    if (!date || !storeId) return;
+    fetch('/api/report?referenceDate=' + encodeURIComponent(date) + '&storeId=' + encodeURIComponent(storeId))
+      .then(function (res) { return parseJsonResponse(res).then(function (body) { return { res: res, body: body }; }); })
+      .then(function (r) {
+        if (!r.res.ok) return;
+        state.today = r.body.today;
+        state.yesterday = r.body.yesterday || null;
+        state.lastWeek = r.body.lastWeek || null;
+        nextAutoRefreshAt = Date.now() + AUTO_REFRESH_INTERVAL_MS;
+        renderReport();
+        updateAutoRefreshStatus();
+      })
+      .catch(function () {});
+  }
+
+  function stopAutoRefresh() {
+    if (autoRefreshTimer !== null) {
+      clearInterval(autoRefreshTimer);
+      autoRefreshTimer = null;
+    }
+    if (autoRefreshCountdownTimer !== null) {
+      clearInterval(autoRefreshCountdownTimer);
+      autoRefreshCountdownTimer = null;
+    }
+    nextAutoRefreshAt = null;
+  }
+
+  function startAutoRefresh() {
+    stopAutoRefresh();
+    if (state.referenceDate !== getThailandDateStr()) return;
+    nextAutoRefreshAt = Date.now() + AUTO_REFRESH_INTERVAL_MS;
+    autoRefreshTimer = setInterval(silentRefreshReport, AUTO_REFRESH_INTERVAL_MS);
+    autoRefreshCountdownTimer = setInterval(function () {
+      if (!nextAutoRefreshAt) return;
+      updateAutoRefreshStatus();
+    }, 1000);
+  }
+
   function refreshOutputDateSelect() {
     var el = document.getElementById('output-date');
     if (!el) return;
@@ -1608,6 +1819,8 @@
       var chosen = el.value;
       var allstoresDateEl = document.getElementById('allstores-date');
       if (allstoresDateEl && chosen) allstoresDateEl.value = chosen;
+      var productsDateEl2 = document.getElementById('products-date');
+      if (productsDateEl2 && chosen) productsDateEl2.value = chosen;
       if (chosen) {
         fetch('/api/report?referenceDate=' + encodeURIComponent(chosen) + '&storeId=' + encodeURIComponent(storeId)).then(function (r) {
           return parseJsonResponse(r).then(function (data) {
@@ -1624,6 +1837,8 @@
             state.lastWeek = data.lastWeek || null;
             state.referenceDate = data.referenceDate;
             renderReport();
+            updateAutoRefreshStatus();
+            startAutoRefresh();
           });
         }).then(function () { hideLoading(); }).catch(function () { hideLoading(); });
       } else {
@@ -1764,6 +1979,7 @@
       renderReport();
     }
     if (tabName === 'allstores') renderAllStoresDigest();
+    if (tabName === 'products') renderProductsTab();
     if (tabName === 'daily') refreshDailyDateSelect();
     if (tabName === 'weekly') refreshWeeklyDateSelect();
     if (tabName === 'ai') {
@@ -1847,7 +2063,8 @@
   function getMondayOfWeek(dateStr) {
     var d = new Date(dateStr + 'T12:00:00');
     var day = d.getDay();
-    return addDays(dateStr, -((day + 6) % 7));
+    var toMonday = (day + 6) % 7;
+    return addDays(dateStr, -toMonday);
   }
 
   function fillWeeklyEndDateSelect(dates, selectedValue) {
@@ -1880,7 +2097,11 @@
     var container = document.getElementById('weekly-summary-tables');
     var emptyEl = document.getElementById('weekly-empty');
     if (!container) return;
-    if (!endDate) { container.innerHTML = ''; if (emptyEl) emptyEl.hidden = false; return; }
+    if (!endDate) {
+      container.innerHTML = '';
+      if (emptyEl) emptyEl.hidden = false;
+      return;
+    }
     var mondayOfEndWeek = getMondayOfWeek(endDate);
     var firstMonday = addDays(mondayOfEndWeek, -(numWeeks - 1) * 7);
     var apiEndDate = addDays(firstMonday, daysToFetch - 1);
@@ -1894,7 +2115,11 @@
       });
     }).then(function (body) {
       var days = body.days || [];
-      if (days.length === 0) { container.innerHTML = ''; if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = t('weekly_no_data'); } return; }
+      if (days.length === 0) {
+        container.innerHTML = '';
+        if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = t('weekly_no_data'); }
+        return;
+      }
       var weeks = [];
       for (var w = 0; w < numWeeks; w++) {
         var chunk = days.slice(w * 7, (w + 1) * 7);
@@ -1906,11 +2131,19 @@
           totalNetSales += d.totalNetSales || 0;
           receiptCount += d.receiptCount || 0;
           quantitySold += d.quantitySold || 0;
-          DEPARTMENTS.forEach(function (dept) { byDepartment[dept] += (d.byDepartment && d.byDepartment[dept]) ? d.byDepartment[dept] : 0; });
+          DEPARTMENTS.forEach(function (dept) {
+            byDepartment[dept] += (d.byDepartment && d.byDepartment[dept]) ? d.byDepartment[dept] : 0;
+          });
         });
-        weeks.push({ label: chunk[0].date + ' ～ ' + chunk[chunk.length - 1].date, shortLabel: chunk[0].date.slice(5) + '～' + chunk[chunk.length - 1].date.slice(5), totalNetSales: totalNetSales, receiptCount: receiptCount, quantitySold: quantitySold, byDepartment: byDepartment });
+        weeks.push({
+          label: chunk[0].date + ' ～ ' + chunk[chunk.length - 1].date,
+          shortLabel: chunk[0].date.slice(5) + '～' + chunk[chunk.length - 1].date.slice(5),
+          totalNetSales: totalNetSales, receiptCount: receiptCount, quantitySold: quantitySold,
+          byDepartment: byDepartment
+        });
       }
       if (weeks.length === 0) { container.innerHTML = ''; if (emptyEl) emptyEl.hidden = false; return; }
+
       var sumNetSales = 0, sumReceipts = 0, sumQty = 0;
       weeks.forEach(function (w) { sumNetSales += w.totalNetSales || 0; sumReceipts += w.receiptCount || 0; sumQty += w.quantitySold || 0; });
       var table1 = '<section class="summary-section"><h3>' + t('weekly_net_title') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th><th>' + t('net_sales_thb') + '</th><th>' + t('wow') + '</th><th>' + t('receipt_count') + '</th><th>' + t('qty_sold_short') + '</th></tr></thead><tbody>';
@@ -1920,11 +2153,13 @@
         table1 += '<tr><td>' + w.label + '</td><td>' + formatInt(w.totalNetSales) + '</td><td>' + (wow === '—' ? wow : wow + '%') + '</td><td>' + formatInt(w.receiptCount) + '</td><td>' + formatInt(w.quantitySold) + '</td></tr>';
       });
       table1 += '<tr class="total-row"><td>' + t('total') + '</td><td>' + formatInt(sumNetSales) + '</td><td>—</td><td>' + formatInt(sumReceipts) + '</td><td>' + formatInt(sumQty) + '</td></tr></tbody></table></section>';
+
       var deptTotals = {};
       DEPARTMENTS.forEach(function (d) { deptTotals[d] = 0; });
       weeks.forEach(function (w) { DEPARTMENTS.forEach(function (dept) { deptTotals[dept] += w.byDepartment[dept] || 0; }); });
       var grandTotalAll = 0;
       DEPARTMENTS.forEach(function (d) { grandTotalAll += deptTotals[d] || 0; });
+
       var table2 = '<section class="summary-section"><h3>' + t('sales_by_dept') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
       DEPARTMENTS.forEach(function (d) { table2 += '<th>' + d + '</th>'; });
       table2 += '<th>' + t('total') + '</th></tr></thead><tbody>';
@@ -1937,18 +2172,23 @@
       table2 += '<tr class="total-row"><td>' + t('total') + '</td>';
       DEPARTMENTS.forEach(function (d) { table2 += '<td>' + formatInt(deptTotals[d]) + '</td>'; });
       table2 += '<td>' + formatInt(grandTotalAll) + '</td></tr></tbody></table></section>';
+
       var table3 = '<section class="summary-section"><h3>' + t('dept_composition_pct') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
       DEPARTMENTS.forEach(function (d) { table3 += '<th>' + d + '</th>'; });
       table3 += '<th>' + t('total') + '</th></tr></thead><tbody>';
       weeks.forEach(function (w) {
         var weekTotal = w.totalNetSales || 1;
         table3 += '<tr><td>' + w.shortLabel + '</td>';
-        DEPARTMENTS.forEach(function (dept) { var v = w.byDepartment[dept] || 0; table3 += '<td>' + (weekTotal ? ((v / weekTotal) * 100).toFixed(1) : '—') + '%</td>'; });
+        DEPARTMENTS.forEach(function (dept) {
+          var v = w.byDepartment[dept] || 0;
+          table3 += '<td>' + (weekTotal ? ((v / weekTotal) * 100).toFixed(1) : '—') + '%</td>';
+        });
         table3 += '<td>100%</td></tr>';
       });
       table3 += '<tr class="total-row"><td>' + t('total') + '</td>';
       DEPARTMENTS.forEach(function (d) { table3 += '<td>' + (grandTotalAll ? ((deptTotals[d] || 0) / grandTotalAll * 100).toFixed(1) : '—') + '%</td>'; });
       table3 += '<td>100%</td></tr></tbody></table></section>';
+
       container.innerHTML = table1 + table2 + table3;
     }).then(function () { hideLoading(); }).catch(function () {
       container.innerHTML = '';
@@ -2197,11 +2437,208 @@
     });
   }
 
+  /* ── Products Tab ────────────────────────────────────── */
+
+  function renderProductsTab() {
+    var storeEl = document.getElementById('products-store-select');
+    var dateEl = document.getElementById('products-date');
+    var deptFilterEl = document.getElementById('products-dept-filter');
+    var sortKeyEl = document.getElementById('products-sort-key');
+    var limitEl = document.getElementById('products-limit');
+    var tbody = document.getElementById('products-tbody');
+    var emptyEl = document.getElementById('products-empty');
+    var noDataEl = document.getElementById('products-no-data');
+    var tableWrapper = document.getElementById('products-table-wrapper');
+    if (!tbody) return;
+
+    var storeId = storeEl ? storeEl.value : 'default';
+    var date = dateEl ? dateEl.value : '';
+    var deptFilter = deptFilterEl ? deptFilterEl.value : '';
+    var sortKey = sortKeyEl ? sortKeyEl.value : 'net';
+    var limit = limitEl ? parseInt(limitEl.value, 10) : 20;
+
+    if (!date) {
+      tbody.innerHTML = '';
+      if (emptyEl) emptyEl.hidden = false;
+      if (noDataEl) noDataEl.hidden = true;
+      if (tableWrapper) tableWrapper.style.display = 'none';
+      return;
+    }
+
+    showLoading();
+    fetch('/api/report?referenceDate=' + encodeURIComponent(date) + '&storeId=' + encodeURIComponent(storeId))
+      .then(function (res) { return parseJsonResponse(res); })
+      .then(function (body) {
+        hideLoading();
+        var todayData = body.today;
+        var yesterdayData = body.yesterday || null;
+        var lastWeekData = body.lastWeek || null;
+
+        if (!todayData || !todayData.byProduct) {
+          tbody.innerHTML = '';
+          if (emptyEl) emptyEl.hidden = !todayData;
+          if (noDataEl) noDataEl.hidden = !!todayData;
+          if (tableWrapper) tableWrapper.style.display = 'none';
+          return;
+        }
+
+        var products = Object.values(todayData.byProduct);
+        if (deptFilter) {
+          products = products.filter(function (p) { return p.departmentName === deptFilter; });
+        }
+        products.sort(function (a, b) {
+          if (sortKey === 'qty') return (b.totalQuantitySold || 0) - (a.totalQuantitySold || 0);
+          return (b.totalNetSales || 0) - (a.totalNetSales || 0);
+        });
+        products = products.slice(0, limit);
+
+        var grandTotal = products.reduce(function (s, p) { return s + (p.totalNetSales || 0); }, 0);
+
+        if (!products.length) {
+          tbody.innerHTML = '';
+          if (emptyEl) emptyEl.hidden = false;
+          if (noDataEl) noDataEl.hidden = true;
+          if (tableWrapper) tableWrapper.style.display = 'none';
+          return;
+        }
+
+        if (emptyEl) emptyEl.hidden = true;
+        if (noDataEl) noDataEl.hidden = true;
+        if (tableWrapper) tableWrapper.style.display = '';
+
+        var html = '';
+        products.forEach(function (p, i) {
+          var yNet = yesterdayData && yesterdayData.byProduct && yesterdayData.byProduct[p.itemCode] ? yesterdayData.byProduct[p.itemCode].totalNetSales : null;
+          var wNet = lastWeekData && lastWeekData.byProduct && lastWeekData.byProduct[p.itemCode] ? lastWeekData.byProduct[p.itemCode].totalNetSales : null;
+          var dod = (yNet != null && yNet > 0) ? ((p.totalNetSales - yNet) / yNet * 100) : null;
+          var wow = (wNet != null && wNet > 0) ? ((p.totalNetSales - wNet) / wNet * 100) : null;
+          var sharePct = grandTotal > 0 ? (p.totalNetSales / grandTotal * 100) : 0;
+          html += '<tr>';
+          html += '<td>' + (i + 1) + '</td>';
+          html += '<td>' + escapeHtml(p.itemCode) + '</td>';
+          html += '<td>' + escapeHtml(p.itemName) + '</td>';
+          html += '<td>' + escapeHtml(p.departmentName) + '</td>';
+          html += '<td>' + formatCurrencyInteger(p.totalNetSales) + '</td>';
+          html += '<td class="' + (dod == null ? 'na-value' : dod >= 0 ? 'positive' : 'negative') + '">' + (dod == null ? '<span title="' + escapeHtml(t('no_prev_data') || '前日データなし') + '">-</span>' : (dod >= 0 ? '+' : '') + dod.toFixed(1) + '%') + '</td>';
+          html += '<td class="' + (wow == null ? 'na-value' : wow >= 0 ? 'positive' : 'negative') + '">' + (wow == null ? '<span title="' + escapeHtml(t('no_last_week_data') || '先週データなし') + '">-</span>' : (wow >= 0 ? '+' : '') + wow.toFixed(1) + '%') + '</td>';
+          html += '<td>' + formatInt(p.totalQuantitySold) + '</td>';
+          html += '<td>' + sharePct.toFixed(1) + '%</td>';
+          html += '</tr>';
+        });
+        tbody.innerHTML = html;
+      })
+      .catch(function () {
+        hideLoading();
+        tbody.innerHTML = '';
+        if (emptyEl) emptyEl.hidden = false;
+        if (noDataEl) noDataEl.hidden = true;
+        if (tableWrapper) tableWrapper.style.display = 'none';
+      });
+  }
+
+  function renderDepartmentProductBreakdown(todayData, dept, forceFilterFromComposition) {
+    var section = document.getElementById('product-breakdown-section');
+    var list = document.getElementById('product-breakdown-list');
+    var moreLink = document.getElementById('product-breakdown-more');
+    if (!section || !list) return;
+
+    var selectedDept = forceFilterFromComposition ? dept : null;
+    var isTotal = !dept || dept === 'Total';
+    if (!selectedDept && !isTotal) selectedDept = dept;
+
+    if (!todayData || !todayData.byProduct) {
+      section.hidden = true;
+      list.innerHTML = '';
+      if (moreLink) moreLink.hidden = true;
+      if (list) {
+        list.style.maxHeight = '';
+        list.style.overflowY = '';
+      }
+      return;
+    }
+
+    var products = Object.values(todayData.byProduct).filter(function (p) {
+      if (!selectedDept || selectedDept === 'Total') return true;
+      return p.departmentName === selectedDept;
+    });
+    products.sort(function (a, b) { return (b.totalNetSales || 0) - (a.totalNetSales || 0); });
+    products = products.slice(0, 10);
+
+    if (!products.length) {
+      section.hidden = true;
+      list.innerHTML = '';
+      if (moreLink) moreLink.hidden = true;
+      if (list) {
+        list.style.maxHeight = '';
+        list.style.overflowY = '';
+      }
+      return;
+    }
+
+    var grandTotal = products.reduce(function (s, p) { return s + (p.totalNetSales || 0); }, 0);
+    var html = '<div class="product-breakdown-row header">' +
+      '<span>順</span><span>商品名</span><span>' + (t('qty_sold') || '販売数量') + '</span><span>売上高</span><span>構成比</span>' +
+      '</div>';
+    products.forEach(function (p, i) {
+      var sharePct = grandTotal > 0 ? (p.totalNetSales / grandTotal * 100) : 0;
+      html += '<div class="product-breakdown-row">';
+      html += '<span class="product-breakdown-rank">' + (i + 1) + '</span>';
+      html += '<span class="product-breakdown-name">' + escapeHtml(p.itemName || p.itemCode) + '</span>';
+      html += '<span class="product-breakdown-qty">' + formatInt(p.totalQuantitySold || 0) + '</span>';
+      html += '<span class="product-breakdown-value">' + formatCurrencyInteger(p.totalNetSales) + '</span>';
+      html += '<span class="product-breakdown-pct">' + sharePct.toFixed(1) + '%</span>';
+      html += '<span class="product-breakdown-bar"><span class="product-breakdown-bar-fill" style="width:' + Math.max(4, Math.round(sharePct)) + '%"></span></span>';
+      html += '</div>';
+    });
+    list.innerHTML = html;
+    if (moreLink) moreLink.hidden = false;
+    section.hidden = false;
+    syncInsightsSplitHeight();
+  }
+
+  function syncInsightsSplitHeight() {
+    var split = document.getElementById('insights-split');
+    var left = document.getElementById('composition-section');
+    var right = document.getElementById('product-breakdown-section');
+    var list = document.getElementById('product-breakdown-list');
+    if (!split || !left || !right || !list || right.hidden) return;
+    if (window.innerWidth <= 767) {
+      right.style.height = '';
+      right.style.overflow = '';
+      list.style.maxHeight = '';
+      list.style.height = '';
+      list.style.overflowY = 'visible';
+      return;
+    }
+    var leftHeight = left.getBoundingClientRect().height;
+    if (!(leftHeight > 0)) return;
+    right.style.height = Math.ceil(leftHeight) + 'px';
+    right.style.overflow = 'hidden';
+    var title = right.querySelector('h3');
+    var more = document.getElementById('product-breakdown-more');
+    var titleH = title ? title.getBoundingClientRect().height : 0;
+    var moreH = (more && !more.hidden) ? more.getBoundingClientRect().height : 0;
+    var style = window.getComputedStyle(right);
+    var paddingTop = parseFloat(style.paddingTop) || 0;
+    var paddingBottom = parseFloat(style.paddingBottom) || 0;
+    var gap = 12;
+    var available = Math.max(160, Math.floor(leftHeight - titleH - moreH - paddingTop - paddingBottom - gap));
+    list.style.maxHeight = available + 'px';
+    list.style.height = available + 'px';
+    list.style.overflowY = 'auto';
+  }
+
+  function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   function fillStoreSelect() {
     var sel = document.getElementById('store-select');
     var dailySel = document.getElementById('daily-store-select');
     var weeklySel = document.getElementById('weekly-store-select');
     var aiSel = document.getElementById('ai-store-select');
+    var productsSel = document.getElementById('products-store-select');
     if (!sel) return Promise.resolve();
     return fetch('/api/stores').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
       var stores = body.stores || [];
@@ -2225,6 +2662,7 @@
       fillOne(dailySel);
       fillOne(weeklySel);
       fillOne(aiSel);
+      fillOne(productsSel);
       state.storeId = getSelectedStoreId();
     }).catch(function () {
       var def = '<option value="default">Default</option>';
@@ -2232,6 +2670,7 @@
       if (dailySel) dailySel.innerHTML = def;
       if (weeklySel) weeklySel.innerHTML = def;
       if (aiSel) aiSel.innerHTML = def;
+      if (productsSel) productsSel.innerHTML = def;
       state.storeId = 'default';
     });
   }
@@ -2476,10 +2915,9 @@
         authState.needsProfileSetup = !!data.needsProfileSetup;
 
         var usernameEl = document.getElementById('header-username');
-        if (usernameEl) {
-          usernameEl.textContent = data.displayName || data.username || '';
-          usernameEl.style.display = data.loggedIn ? '' : 'none';
-        }
+        if (usernameEl) usernameEl.textContent = data.displayName || data.username || '';
+        var userMenuEl = document.getElementById('user-menu');
+        if (userMenuEl) userMenuEl.style.display = data.loggedIn ? '' : 'none';
         var settingsEl = document.getElementById('settings-link');
         if (settingsEl) settingsEl.style.display = data.loggedIn ? '' : 'none';
         var logoutEl = document.getElementById('logout-link');
@@ -2502,8 +2940,8 @@
         authState.preferredCurrency = null;
         authState.preferredLanguage = null;
         authState.needsProfileSetup = false;
-        var usernameEl = document.getElementById('header-username');
-        if (usernameEl) usernameEl.style.display = 'none';
+        var userMenuEl = document.getElementById('user-menu');
+        if (userMenuEl) userMenuEl.style.display = 'none';
         var settingsEl = document.getElementById('settings-link');
         if (settingsEl) settingsEl.style.display = 'none';
         var logoutEl = document.getElementById('logout-link');
@@ -2619,11 +3057,41 @@
       window.addEventListener('resize', updateMobileMenuLayout);
     }
 
+    var userMenuButton = document.getElementById('user-menu-button');
+    var userMenuDropdown = document.getElementById('user-menu-dropdown');
+    function closeUserMenu() {
+      if (!userMenuButton || !userMenuDropdown) return;
+      userMenuButton.setAttribute('aria-expanded', 'false');
+      userMenuDropdown.hidden = true;
+    }
+    if (userMenuButton && userMenuDropdown) {
+      userMenuButton.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var expanded = userMenuButton.getAttribute('aria-expanded') === 'true';
+        userMenuButton.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        userMenuDropdown.hidden = expanded;
+      });
+      document.addEventListener('click', function (e) {
+        if (userMenuDropdown.hidden) return;
+        if (userMenuDropdown.contains(e.target) || userMenuButton.contains(e.target)) return;
+        closeUserMenu();
+      });
+    }
+
     document.querySelectorAll('.tab').forEach(function (btn) {
       btn.addEventListener('click', function () {
         switchTab(btn.getAttribute('data-tab'));
       });
     });
+
+    var snapshotDetailsToggle = document.getElementById('snapshot-details-toggle');
+    if (snapshotDetailsToggle) {
+      snapshotDetailsToggle.addEventListener('click', function () {
+        showDetailedKpis = !showDetailedKpis;
+        applySnapshotDetailVisibility();
+      });
+      applySnapshotDetailVisibility();
+    }
 
     var storeSelectEl = document.getElementById('store-select');
     if (storeSelectEl) storeSelectEl.addEventListener('change', onStoreChange);
@@ -2656,7 +3124,14 @@
     window.addEventListener('resize', updateHourlyFiltersLayout);
 
     var departmentSelect = document.getElementById('department-select');
-    if (departmentSelect) departmentSelect.addEventListener('change', function () { renderReport(); updateHourlyFiltersSummaryBar(); });
+    if (departmentSelect) {
+      departmentSelect.addEventListener('change', function () {
+        selectedCompositionDept = null;
+        renderReport();
+        updateHourlyFiltersSummaryBar();
+      });
+    }
+
     var chartTabSales = document.getElementById('chart-tab-sales');
     var chartTabReceipts = document.getElementById('chart-tab-receipts');
     if (chartTabSales) {
@@ -2675,6 +3150,11 @@
     }
     window.addEventListener('resize', function () {
       if (lastCompositionData) renderComposition(lastCompositionData);
+      syncInsightsSplitHeight();
+      var hourlyPanel = document.getElementById('hourly-panel');
+      if (hourlyPanel && hourlyPanel.classList.contains('active') && state.today) {
+        renderReport();
+      }
     });
 
     var outputDateEl = document.getElementById('output-date');
@@ -2693,8 +3173,14 @@
         state.yesterday = body.yesterday || null;
         state.lastWeek = body.lastWeek || null;
         state.referenceDate = body.referenceDate;
+        var allstoresSync = document.getElementById('allstores-date');
+        if (allstoresSync) allstoresSync.value = date;
+        var productsSync = document.getElementById('products-date');
+        if (productsSync) productsSync.value = date;
         renderReport();
         updateHourlyFiltersSummaryBar();
+        updateAutoRefreshStatus();
+        startAutoRefresh();
       }).then(function () { hideLoading(); }).catch(function () { hideLoading(); });
     });
 
@@ -2705,12 +3191,66 @@
     if (allstoresDeptEl) allstoresDeptEl.addEventListener('change', renderAllStoresDigest);
     if (allstoresSortKeyEl) allstoresSortKeyEl.addEventListener('change', renderAllStoresDigest);
 
+    var productsDeptFilterEl = document.getElementById('products-dept-filter');
+    var productsSortKeyEl = document.getElementById('products-sort-key');
+    var productsLimitEl = document.getElementById('products-limit');
+    var productsStoreEl = document.getElementById('products-store-select');
+    var productsDateEl = document.getElementById('products-date');
+    if (productsDeptFilterEl) productsDeptFilterEl.addEventListener('change', renderProductsTab);
+    if (productsSortKeyEl) productsSortKeyEl.addEventListener('change', renderProductsTab);
+    if (productsLimitEl) productsLimitEl.addEventListener('change', renderProductsTab);
+    if (productsStoreEl) productsStoreEl.addEventListener('change', renderProductsTab);
+    if (productsDateEl) productsDateEl.addEventListener('change', renderProductsTab);
+    var productBreakdownMore = document.getElementById('product-breakdown-more');
+    if (productBreakdownMore) {
+      productBreakdownMore.addEventListener('click', function (e) {
+        e.preventDefault();
+        switchTab('products');
+        var deptFilterEl = document.getElementById('products-dept-filter');
+        if (deptFilterEl && selectedCompositionDept) deptFilterEl.value = selectedCompositionDept;
+        renderProductsTab();
+      });
+    }
+
     var langSelect = document.getElementById('lang-select');
     var logoutLink = document.getElementById('logout-link');
     var setupLink = document.getElementById('setup-link');
+    var settingsLinkForMenu = document.getElementById('settings-link');
     if (langSelect) langSelect.addEventListener('change', closeMobileMenu);
-    if (logoutLink) logoutLink.addEventListener('click', closeMobileMenu);
+    if (logoutLink) logoutLink.addEventListener('click', function () { closeMobileMenu(); closeUserMenu(); });
     if (setupLink) setupLink.addEventListener('click', closeMobileMenu);
+    if (settingsLinkForMenu) settingsLinkForMenu.addEventListener('click', closeUserMenu);
+
+    var dailyStoreEl = document.getElementById('daily-store-select');
+    var dailyStartEl = document.getElementById('daily-start-date');
+    var dailyEndEl = document.getElementById('daily-end-date');
+    if (dailyStoreEl) dailyStoreEl.addEventListener('change', function () { refreshDailyDateSelect(); });
+    if (dailyStartEl) dailyStartEl.addEventListener('change', renderDailySummary);
+    if (dailyEndEl) dailyEndEl.addEventListener('change', renderDailySummary);
+
+    var weeklyStoreEl = document.getElementById('weekly-store-select');
+    var weeklyEndEl = document.getElementById('weekly-end-date');
+    var weeklyNumEl = document.getElementById('weekly-num-weeks');
+    if (weeklyStoreEl) weeklyStoreEl.addEventListener('change', function () { refreshWeeklyDateSelect(); });
+    if (weeklyEndEl) weeklyEndEl.addEventListener('change', renderWeeklySummary);
+    if (weeklyNumEl) weeklyNumEl.addEventListener('change', renderWeeklySummary);
+
+    var btnDailyCsv = document.getElementById('btn-daily-csv');
+    if (btnDailyCsv) {
+      btnDailyCsv.addEventListener('click', function () {
+        var sel = document.getElementById('daily-export-select');
+        var opt = sel ? sel.value : 'all';
+        exportPanelTablesCsv('daily-summary-tables', 'daily_summary', opt);
+      });
+    }
+    var btnWeeklyCsv = document.getElementById('btn-weekly-csv');
+    if (btnWeeklyCsv) {
+      btnWeeklyCsv.addEventListener('click', function () {
+        var sel = document.getElementById('weekly-export-select');
+        var opt = sel ? sel.value : 'all';
+        exportPanelTablesCsv('weekly-summary-tables', 'weekly_summary', opt);
+      });
+    }
 
     var dailyStoreEl = document.getElementById('daily-store-select');
     var dailyStartEl = document.getElementById('daily-start-date');
