@@ -335,7 +335,8 @@
         if (chev) chev.textContent = expanded ? 'v' : '^';
         if (details) details.hidden = expanded;
         selectedCompositionDept = expanded ? null : btn.getAttribute('data-dept');
-        renderDepartmentProductBreakdown(state.today, selectedCompositionDept || null, true);
+        var mainDept = (function () { var el = document.getElementById('department-select'); return el ? el.value : 'Total'; }());
+        renderDepartmentProductBreakdown(state.today, mainDept);
         syncInsightsSplitHeight();
       });
     });
@@ -2440,37 +2441,137 @@
 
   /* ── Products Tab ────────────────────────────────────── */
 
+  // Product master cache: { [itemNo]: { barcodeNo, nameEng, nameTha, nameJpn, deptCode } }
+  var productMasterCache = null;
+
+  function loadProductMaster() {
+    if (productMasterCache !== null) return Promise.resolve(productMasterCache);
+    return fetch('/api/product-master')
+      .then(function (res) { return parseJsonResponse(res); })
+      .then(function (body) {
+        productMasterCache = (body && body.master) ? body.master : {};
+        return productMasterCache;
+      })
+      .catch(function () {
+        productMasterCache = {};
+        return {};
+      });
+  }
+
+  // Pagination state for products tab
+  var productsPagination = { page: 0, pageSize: 20, total: 0, filtered: [] };
+
+  function renderProductsPage() {
+    var tbody = document.getElementById('products-tbody');
+    var tableWrapper = document.getElementById('products-table-wrapper');
+    var emptyEl = document.getElementById('products-empty');
+    var noDataEl = document.getElementById('products-no-data');
+    var paginationEl = document.getElementById('products-pagination');
+    var pageInfoEl = document.getElementById('products-page-info');
+    var prevBtn = document.getElementById('products-prev');
+    var nextBtn = document.getElementById('products-next');
+    if (!tbody) return;
+
+    var filtered = productsPagination.filtered;
+    var pageSize = productsPagination.pageSize;
+    var page = productsPagination.page;
+    var total = filtered.length;
+
+    if (!total) {
+      tbody.innerHTML = '';
+      if (emptyEl) emptyEl.hidden = false;
+      if (noDataEl) noDataEl.hidden = true;
+      if (tableWrapper) tableWrapper.style.display = 'none';
+      if (paginationEl) paginationEl.style.display = 'none';
+      return;
+    }
+
+    var totalPages = Math.ceil(total / pageSize);
+    if (page >= totalPages) page = totalPages - 1;
+    productsPagination.page = page;
+
+    var start = page * pageSize;
+    var pageItems = filtered.slice(start, start + pageSize);
+    var grandTotal = filtered.reduce(function (s, p) { return s + (p.totalNetSales || 0); }, 0);
+
+    if (emptyEl) emptyEl.hidden = true;
+    if (noDataEl) noDataEl.hidden = true;
+    if (tableWrapper) tableWrapper.style.display = '';
+    if (paginationEl) {
+      paginationEl.style.display = total > pageSize ? 'flex' : 'none';
+    }
+    if (pageInfoEl) pageInfoEl.textContent = (start + 1) + '–' + Math.min(start + pageSize, total) + ' / ' + total + ' 件';
+    if (prevBtn) prevBtn.disabled = page === 0;
+    if (nextBtn) nextBtn.disabled = page >= totalPages - 1;
+
+    var yData = productsPagination.yesterdayData;
+    var wData = productsPagination.lastWeekData;
+    var master = productMasterCache || {};
+    var html = '';
+    pageItems.forEach(function (p, i) {
+      var rank = start + i + 1;
+      var masterEntry = master[p.itemCode] || null;
+      var barcode = masterEntry && masterEntry.barcodeNo ? masterEntry.barcodeNo : p.itemCode;
+      var displayName = (masterEntry && masterEntry.nameEng) ? masterEntry.nameEng : (p.itemName || p.itemCode);
+      var yNet = yData && yData.byProduct && yData.byProduct[p.itemCode] ? yData.byProduct[p.itemCode].totalNetSales : null;
+      var wNet = wData && wData.byProduct && wData.byProduct[p.itemCode] ? wData.byProduct[p.itemCode].totalNetSales : null;
+      var dod = (yNet != null && yNet > 0) ? ((p.totalNetSales - yNet) / yNet * 100) : null;
+      var wow = (wNet != null && wNet > 0) ? ((p.totalNetSales - wNet) / wNet * 100) : null;
+      var sharePct = grandTotal > 0 ? (p.totalNetSales / grandTotal * 100) : 0;
+      html += '<tr>';
+      html += '<td>' + rank + '</td>';
+      html += '<td>' + escapeHtml(barcode) + '</td>';
+      html += '<td>' + escapeHtml(displayName) + '</td>';
+      html += '<td>' + escapeHtml(p.departmentName) + '</td>';
+      html += '<td>' + formatCurrencyInteger(p.totalNetSales) + '</td>';
+      html += '<td class="' + (dod == null ? 'na-value' : dod >= 0 ? 'positive' : 'negative') + '">' + (dod == null ? '<span title="' + escapeHtml(t('no_prev_data') || '前日データなし') + '">-</span>' : (dod >= 0 ? '+' : '') + dod.toFixed(1) + '%') + '</td>';
+      html += '<td class="' + (wow == null ? 'na-value' : wow >= 0 ? 'positive' : 'negative') + '">' + (wow == null ? '<span title="' + escapeHtml(t('no_last_week_data') || '先週データなし') + '">-</span>' : (wow >= 0 ? '+' : '') + wow.toFixed(1) + '%') + '</td>';
+      html += '<td>' + formatInt(p.totalQuantitySold) + '</td>';
+      html += '<td>' + sharePct.toFixed(1) + '%</td>';
+      html += '</tr>';
+    });
+    tbody.innerHTML = html;
+  }
+
   function renderProductsTab() {
     var storeEl = document.getElementById('products-store-select');
     var dateEl = document.getElementById('products-date');
     var deptFilterEl = document.getElementById('products-dept-filter');
     var sortKeyEl = document.getElementById('products-sort-key');
-    var limitEl = document.getElementById('products-limit');
+    var searchEl = document.getElementById('products-search');
+    var pageSizeEl = document.getElementById('products-page-size');
     var tbody = document.getElementById('products-tbody');
     var emptyEl = document.getElementById('products-empty');
     var noDataEl = document.getElementById('products-no-data');
     var tableWrapper = document.getElementById('products-table-wrapper');
+    var paginationEl = document.getElementById('products-pagination');
     if (!tbody) return;
 
     var storeId = storeEl ? storeEl.value : 'default';
     var date = dateEl ? dateEl.value : '';
     var deptFilter = deptFilterEl ? deptFilterEl.value : '';
     var sortKey = sortKeyEl ? sortKeyEl.value : 'net';
-    var limit = limitEl ? parseInt(limitEl.value, 10) : 20;
+    var searchQ = searchEl ? searchEl.value.trim().toLowerCase() : '';
+    var pageSize = pageSizeEl ? parseInt(pageSizeEl.value, 10) : 20;
 
     if (!date) {
       tbody.innerHTML = '';
       if (emptyEl) emptyEl.hidden = false;
       if (noDataEl) noDataEl.hidden = true;
       if (tableWrapper) tableWrapper.style.display = 'none';
+      if (paginationEl) paginationEl.style.display = 'none';
       return;
     }
 
     showLoading();
-    fetch('/api/report?referenceDate=' + encodeURIComponent(date) + '&storeId=' + encodeURIComponent(storeId))
-      .then(function (res) { return parseJsonResponse(res); })
-      .then(function (body) {
+    Promise.all([
+      fetch('/api/report?referenceDate=' + encodeURIComponent(date) + '&storeId=' + encodeURIComponent(storeId)).then(function (res) { return parseJsonResponse(res); }),
+      loadProductMaster(),
+    ])
+      .then(function (results) {
         hideLoading();
+        var body = results[0];
+        var master = results[1];
         var todayData = body.today;
         var yesterdayData = body.yesterday || null;
         var lastWeekData = body.lastWeek || null;
@@ -2480,6 +2581,7 @@
           if (emptyEl) emptyEl.hidden = !todayData;
           if (noDataEl) noDataEl.hidden = !!todayData;
           if (tableWrapper) tableWrapper.style.display = 'none';
+          if (paginationEl) paginationEl.style.display = 'none';
           return;
         }
 
@@ -2491,42 +2593,27 @@
           if (sortKey === 'qty') return (b.totalQuantitySold || 0) - (a.totalQuantitySold || 0);
           return (b.totalNetSales || 0) - (a.totalNetSales || 0);
         });
-        products = products.slice(0, limit);
 
-        var grandTotal = products.reduce(function (s, p) { return s + (p.totalNetSales || 0); }, 0);
-
-        if (!products.length) {
-          tbody.innerHTML = '';
-          if (emptyEl) emptyEl.hidden = false;
-          if (noDataEl) noDataEl.hidden = true;
-          if (tableWrapper) tableWrapper.style.display = 'none';
-          return;
+        // Apply search filter using product master data
+        if (searchQ) {
+          products = products.filter(function (p) {
+            var m = master[p.itemCode] || {};
+            return (
+              (p.itemCode && p.itemCode.toLowerCase().includes(searchQ)) ||
+              (p.itemName && p.itemName.toLowerCase().includes(searchQ)) ||
+              (m.barcodeNo && m.barcodeNo.toLowerCase().includes(searchQ)) ||
+              (m.nameEng && m.nameEng.toLowerCase().includes(searchQ)) ||
+              (m.nameTha && m.nameTha.toLowerCase().includes(searchQ))
+            );
+          });
         }
 
-        if (emptyEl) emptyEl.hidden = true;
-        if (noDataEl) noDataEl.hidden = true;
-        if (tableWrapper) tableWrapper.style.display = '';
-
-        var html = '';
-        products.forEach(function (p, i) {
-          var yNet = yesterdayData && yesterdayData.byProduct && yesterdayData.byProduct[p.itemCode] ? yesterdayData.byProduct[p.itemCode].totalNetSales : null;
-          var wNet = lastWeekData && lastWeekData.byProduct && lastWeekData.byProduct[p.itemCode] ? lastWeekData.byProduct[p.itemCode].totalNetSales : null;
-          var dod = (yNet != null && yNet > 0) ? ((p.totalNetSales - yNet) / yNet * 100) : null;
-          var wow = (wNet != null && wNet > 0) ? ((p.totalNetSales - wNet) / wNet * 100) : null;
-          var sharePct = grandTotal > 0 ? (p.totalNetSales / grandTotal * 100) : 0;
-          html += '<tr>';
-          html += '<td>' + (i + 1) + '</td>';
-          html += '<td>' + escapeHtml(p.itemCode) + '</td>';
-          html += '<td>' + escapeHtml(p.itemName) + '</td>';
-          html += '<td>' + escapeHtml(p.departmentName) + '</td>';
-          html += '<td>' + formatCurrencyInteger(p.totalNetSales) + '</td>';
-          html += '<td class="' + (dod == null ? 'na-value' : dod >= 0 ? 'positive' : 'negative') + '">' + (dod == null ? '<span title="' + escapeHtml(t('no_prev_data') || '前日データなし') + '">-</span>' : (dod >= 0 ? '+' : '') + dod.toFixed(1) + '%') + '</td>';
-          html += '<td class="' + (wow == null ? 'na-value' : wow >= 0 ? 'positive' : 'negative') + '">' + (wow == null ? '<span title="' + escapeHtml(t('no_last_week_data') || '先週データなし') + '">-</span>' : (wow >= 0 ? '+' : '') + wow.toFixed(1) + '%') + '</td>';
-          html += '<td>' + formatInt(p.totalQuantitySold) + '</td>';
-          html += '<td>' + sharePct.toFixed(1) + '%</td>';
-          html += '</tr>';
-        });
-        tbody.innerHTML = html;
+        productsPagination.filtered = products;
+        productsPagination.pageSize = pageSize;
+        productsPagination.page = 0;
+        productsPagination.yesterdayData = yesterdayData;
+        productsPagination.lastWeekData = lastWeekData;
+        renderProductsPage();
       })
       .catch(function () {
         hideLoading();
@@ -2534,6 +2621,7 @@
         if (emptyEl) emptyEl.hidden = false;
         if (noDataEl) noDataEl.hidden = true;
         if (tableWrapper) tableWrapper.style.display = 'none';
+        if (paginationEl) paginationEl.style.display = 'none';
       });
   }
 
@@ -2543,9 +2631,7 @@
     var moreLink = document.getElementById('product-breakdown-more');
     if (!section || !list) return;
 
-    var selectedDept = forceFilterFromComposition ? dept : null;
-    var isTotal = !dept || dept === 'Total';
-    if (!selectedDept && !isTotal) selectedDept = dept;
+    var selectedDept = (!dept || dept === 'Total') ? null : dept;
 
     if (!todayData || !todayData.byProduct) {
       section.hidden = true;
@@ -2974,6 +3060,14 @@
         el.value = department;
       }
     });
+    // Products tab dept filter: 'Total' maps to '' (all depts)
+    var productsDeptEl = document.getElementById('products-dept-filter');
+    if (productsDeptEl) {
+      var prodDept = (department === 'Total') ? '' : department;
+      if (Array.prototype.some.call(productsDeptEl.options, function (o) { return o.value === prodDept; })) {
+        productsDeptEl.value = prodDept;
+      }
+    }
     if (preferredCurrency === 'THB' || preferredCurrency === 'JPY') {
       state.currency = preferredCurrency;
     }
@@ -3194,14 +3288,35 @@
 
     var productsDeptFilterEl = document.getElementById('products-dept-filter');
     var productsSortKeyEl = document.getElementById('products-sort-key');
-    var productsLimitEl = document.getElementById('products-limit');
     var productsStoreEl = document.getElementById('products-store-select');
     var productsDateEl = document.getElementById('products-date');
-    if (productsDeptFilterEl) productsDeptFilterEl.addEventListener('change', renderProductsTab);
-    if (productsSortKeyEl) productsSortKeyEl.addEventListener('change', renderProductsTab);
-    if (productsLimitEl) productsLimitEl.addEventListener('change', renderProductsTab);
-    if (productsStoreEl) productsStoreEl.addEventListener('change', renderProductsTab);
-    if (productsDateEl) productsDateEl.addEventListener('change', renderProductsTab);
+    var productsSearchEl = document.getElementById('products-search');
+    var productsPageSizeEl = document.getElementById('products-page-size');
+    var productsPrevBtn = document.getElementById('products-prev');
+    var productsNextBtn = document.getElementById('products-next');
+    if (productsDeptFilterEl) productsDeptFilterEl.addEventListener('change', function () { productsPagination.page = 0; renderProductsTab(); });
+    if (productsSortKeyEl) productsSortKeyEl.addEventListener('change', function () { productsPagination.page = 0; renderProductsTab(); });
+    if (productsStoreEl) productsStoreEl.addEventListener('change', function () { productsPagination.page = 0; renderProductsTab(); });
+    if (productsDateEl) productsDateEl.addEventListener('change', function () { productsPagination.page = 0; renderProductsTab(); });
+    if (productsPageSizeEl) productsPageSizeEl.addEventListener('change', function () {
+      productsPagination.pageSize = parseInt(this.value, 10);
+      productsPagination.page = 0;
+      renderProductsPage();
+    });
+    if (productsSearchEl) {
+      var productsSearchTimer;
+      productsSearchEl.addEventListener('input', function () {
+        clearTimeout(productsSearchTimer);
+        productsSearchTimer = setTimeout(function () { productsPagination.page = 0; renderProductsTab(); }, 200);
+      });
+    }
+    if (productsPrevBtn) productsPrevBtn.addEventListener('click', function () {
+      if (productsPagination.page > 0) { productsPagination.page--; renderProductsPage(); }
+    });
+    if (productsNextBtn) productsNextBtn.addEventListener('click', function () {
+      var totalPages = Math.ceil(productsPagination.filtered.length / productsPagination.pageSize);
+      if (productsPagination.page < totalPages - 1) { productsPagination.page++; renderProductsPage(); }
+    });
     var productBreakdownMore = document.getElementById('product-breakdown-more');
     if (productBreakdownMore) {
       productBreakdownMore.addEventListener('click', function (e) {

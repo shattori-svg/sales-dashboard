@@ -44,6 +44,12 @@ db.exec(`
   )
 `);
 
+(function addIsFinalColumnIfNeeded() {
+  try {
+    db.exec("ALTER TABLE reports ADD COLUMN is_final INTEGER DEFAULT 0");
+  } catch (_) { /* already exists */ }
+})();
+
 (function addUserPreferencesColumnsIfNeeded() {
   try {
     const info = db.prepare('PRAGMA table_info(users)').all();
@@ -89,6 +95,7 @@ db.exec(`
 
 const STORES_KEY = 'stores';
 const EXCHANGE_RATE_KEY = 'exchange_rate';
+const PRODUCT_MASTER_KEY = 'product_master';
 const DEFAULT_STORES = [{ id: 'default', name: 'Default' }];
 
 function getStores() {
@@ -134,21 +141,37 @@ function saveExchangeRate(rate) {
   return Promise.resolve({ rate: Number(rate), updated_at: now });
 }
 
-function saveReport(businessDate, data, storeId = 'default') {
+function getProductMaster() {
+  const row = db.prepare('SELECT value FROM masters WHERE key = ?').get(PRODUCT_MASTER_KEY);
+  if (!row || !row.value) return Promise.resolve({});
+  try { return Promise.resolve(JSON.parse(row.value)); } catch (_) { return Promise.resolve({}); }
+}
+
+function saveProductMaster(master) {
+  db.prepare('INSERT INTO masters (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(
+    PRODUCT_MASTER_KEY, JSON.stringify(master)
+  );
+  return Promise.resolve(master);
+}
+
+function saveReport(businessDate, data, storeId = 'default', isFinal = false) {
   const sid = String(storeId || 'default').trim() || 'default';
   const stmt = db.prepare(
-    'INSERT INTO reports (store_id, business_date, data) VALUES (?, ?, ?) ON CONFLICT(store_id, business_date) DO UPDATE SET data = excluded.data, created_at = datetime(\'now\')'
+    'INSERT INTO reports (store_id, business_date, data, is_final) VALUES (?, ?, ?, ?) ON CONFLICT(store_id, business_date) DO UPDATE SET data = excluded.data, created_at = datetime(\'now\'), is_final = excluded.is_final'
   );
-  stmt.run(sid, businessDate, JSON.stringify(data));
+  stmt.run(sid, businessDate, JSON.stringify(data), isFinal ? 1 : 0);
   return Promise.resolve();
 }
 
 function getReport(businessDate, storeId = 'default') {
   const sid = String(storeId || 'default').trim() || 'default';
-  const row = db.prepare('SELECT data FROM reports WHERE store_id = ? AND business_date = ?').get(sid, businessDate);
+  const row = db.prepare('SELECT data, created_at, is_final FROM reports WHERE store_id = ? AND business_date = ?').get(sid, businessDate);
   if (!row) return Promise.resolve(null);
   try {
-    return Promise.resolve(typeof row.data === 'string' ? JSON.parse(row.data) : row.data);
+    const parsed = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+    if (parsed && row.created_at) parsed._updatedAt = row.created_at;
+    if (parsed) parsed._isFinal = !!row.is_final;
+    return Promise.resolve(parsed);
   } catch (e) {
     return Promise.resolve(null);
   }
@@ -295,6 +318,8 @@ module.exports = {
   saveStores,
   getExchangeRate,
   saveExchangeRate,
+  getProductMaster,
+  saveProductMaster,
   updateUserPreferences,
   saveReport,
   getReport,

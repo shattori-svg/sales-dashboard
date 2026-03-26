@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LOPIA Thailand Sales Report</title>
+  <title>LOPIA Thailand Sales Dashboard</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,7 +14,7 @@
     </div>
   </div>
   <header>
-    <h1 data-i18n="app_title">LOPIA Thailand Sales Report</h1>
+    <h1 data-i18n="app_title">LOPIA Thailand Sales Dashboard</h1>
     <button type="button" id="mobile-menu-toggle" class="mobile-menu-toggle" aria-label="Open menu" aria-expanded="false">☰</button>
     <div class="header-actions" id="header-menu">
       <div class="lang-switcher">
@@ -25,10 +25,16 @@
           <option value="th">ไทย</option>
         </select>
       </div>
-      <span id="header-username" class="header-username" style="display:none" aria-hidden="true"></span>
-      <a href="#" id="settings-link" class="settings-link" style="display:none" data-i18n="settings_link">Settings</a>
       <a href="/setup" id="setup-link" class="setup-link" style="display:none" data-i18n="setup_link">Setup</a>
-      <a href="/logout" id="logout-link" class="logout-link" data-i18n="logout" style="display:none">ログアウト</a>
+      <div id="user-menu" class="user-menu" style="display:none">
+        <button type="button" id="user-menu-button" class="user-menu-button" aria-haspopup="menu" aria-expanded="false">
+          <span id="header-username" class="header-username" aria-hidden="true"></span>
+        </button>
+        <div id="user-menu-dropdown" class="user-menu-dropdown" role="menu" hidden>
+          <a href="#" id="settings-link" class="settings-link" data-i18n="settings_link" role="menuitem">Settings</a>
+          <a href="/logout" id="logout-link" class="logout-link" data-i18n="logout" role="menuitem">ログアウト</a>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -80,6 +86,7 @@
         <span class="output-header-item csv-export-control">
           <button type="button" id="btn-hourly-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
         </span>
+        <span id="hourly-loading-indicator" class="output-header-loading" hidden>更新中...</span>
       </div>
       <div id="snapshot-card" class="snapshot-panels-wrap" aria-live="polite" hidden>
         <div class="snapshot-panel snapshot-panel-primary snapshot-panel-kpi">
@@ -133,7 +140,10 @@
           <span class="snapshot-panel-sub" aria-hidden="true"></span>
         </div>
       </div>
+      <button type="button" id="snapshot-details-toggle" class="snapshot-details-toggle" aria-expanded="false">詳細を表示</button>
       <p id="last-upload-time" class="last-upload-time" aria-live="polite"></p>
+      <span id="confirmed-badge" class="confirmed-badge" hidden data-i18n="confirmed_badge">確定済み</span>
+      <p id="auto-refresh-status" class="last-upload-time" aria-live="polite"></p>
 
       <div id="report-title" class="report-title">Total</div>
 
@@ -141,12 +151,12 @@
         <table id="hourly-table" class="report-table">
           <thead>
             <tr>
-              <th data-i18n="time_range_col">Time range</th>
+              <th id="hourly-th-time" data-i18n="time_range_col">Time range</th>
               <th id="hourly-th-net" data-i18n="net_sales">Net Sales (Baht)</th>
-              <th data-i18n="dod">DoD</th>
-              <th data-i18n="wow">WoW</th>
-              <th data-i18n="qty_sold">Qty of Items Sold</th>
-              <th data-i18n="receipt_count">Receipt Count</th>
+              <th id="hourly-th-dod" data-i18n="dod">DoD</th>
+              <th id="hourly-th-wow" data-i18n="wow">WoW</th>
+              <th id="hourly-th-qty" data-i18n="qty_sold">Qty of Items Sold</th>
+              <th id="hourly-th-receipt" data-i18n="receipt_count">Receipt Count</th>
             </tr>
           </thead>
           <tbody id="hourly-tbody">
@@ -158,10 +168,18 @@
         </table>
       </div>
 
-      <section class="composition-section" id="composition-section">
-        <h3 data-i18n="composition_title">部門別構成比</h3>
-        <div id="composition-list" class="composition-accordion" aria-live="polite"></div>
-      </section>
+      <div id="insights-split" class="insights-split">
+        <section class="composition-section" id="composition-section">
+          <h3 data-i18n="composition_title">部門別構成比</h3>
+          <div id="composition-list" class="composition-accordion" aria-live="polite"></div>
+        </section>
+
+        <section class="composition-section" id="product-breakdown-section" hidden>
+          <h3 data-i18n="products_breakdown_title">商品内訳 (Top 10)</h3>
+          <div id="product-breakdown-list" class="product-breakdown-list"></div>
+          <a href="#" id="product-breakdown-more" class="product-breakdown-more">もっと見る → 商品別タブ</a>
+        </section>
+      </div>
 
       <div class="chart-section" id="chart-section">
         <div class="hourly-bar-tabs-wrap">
@@ -172,6 +190,7 @@
         </div>
         <div class="chart-wrapper chart-hourly-panel" id="hourly-chart-sales-panel">
           <h3 class="chart-title" id="chart-sales-title" data-i18n="chart_hourly_net">時間別売上金額</h3>
+          <p id="chart-anomaly-note" class="chart-note" hidden></p>
           <canvas id="chart-sales" width="800" height="320"></canvas>
         </div>
         <div class="chart-wrapper chart-hourly-panel" id="hourly-chart-receipts-panel" hidden>
@@ -186,6 +205,7 @@
         </div>
         <div class="chart-wrapper chart-forecast-panel" id="forecast-chart-sales-panel">
           <h3 class="chart-title" id="chart-forecast-sales-title" data-i18n="chart_forecast_net">累計売上金額</h3>
+          <p id="forecast-status-note" class="chart-note" hidden></p>
           <canvas id="chart-forecast-sales" width="800" height="260"></canvas>
         </div>
         <div class="chart-wrapper chart-forecast-panel" id="forecast-chart-receipts-panel" hidden>

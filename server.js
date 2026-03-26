@@ -7,14 +7,45 @@ const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
 const bcrypt = require('bcrypt');
-const { parseSheet, parseCsv } = require('./parser');
-const useSupabase = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
-const db = useSupabase ? require('./db-supabase') : require('./db');
+const { parseSheet, parseCsv, parseItemSalesExcel, parseProductMasterExcel } = require('./parser');
+const DB_PROVIDER = String(process.env.DB_PROVIDER || 'supabase').trim().toLowerCase();
+const hasSupabaseConfig = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+const hasPostgresConfig = !!process.env.DATABASE_URL;
+let db;
+let activeDatabaseLabel;
+if (DB_PROVIDER === 'postgres') {
+  if (!hasPostgresConfig) {
+    console.warn('DB_PROVIDER=postgres requires DATABASE_URL. Falling back to SQLite.');
+    db = require('./db');
+    activeDatabaseLabel = 'SQLite (data/sales.db) [fallback]';
+  } else {
+    db = require('./db-postgres');
+    activeDatabaseLabel = 'Cloud SQL (PostgreSQL)';
+  }
+} else if (DB_PROVIDER === 'supabase') {
+  if (!hasSupabaseConfig) {
+    console.warn('DB_PROVIDER=supabase requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. Falling back to SQLite.');
+    db = require('./db');
+    activeDatabaseLabel = 'SQLite (data/sales.db) [fallback]';
+  } else {
+    db = require('./db-supabase');
+    activeDatabaseLabel = 'Supabase';
+  }
+} else if (DB_PROVIDER === 'sqlite') {
+  db = require('./db');
+  activeDatabaseLabel = 'SQLite (data/sales.db)';
+} else {
+  console.warn('Unsupported DB_PROVIDER: ' + DB_PROVIDER + '. Falling back to SQLite.');
+  db = require('./db');
+  activeDatabaseLabel = 'SQLite (data/sales.db) [fallback]';
+}
 const {
   getStores,
   saveStores,
   getExchangeRate,
   saveExchangeRate,
+  getProductMaster,
+  saveProductMaster,
   saveReport,
   getReport,
   getAvailableDates,
@@ -178,11 +209,27 @@ if (EXTERNAL_AUTH_MODE) {
   });
 }
 
+function checkBasicAuth(req) {
+  const header = req.headers && req.headers['authorization'];
+  if (!header || !header.startsWith('Basic ')) return false;
+  const b64 = header.slice(6);
+  let decoded;
+  try { decoded = Buffer.from(b64, 'base64').toString('utf8'); } catch (_) { return false; }
+  const colon = decoded.indexOf(':');
+  if (colon < 0) return false;
+  const user = decoded.slice(0, colon);
+  const pass = decoded.slice(colon + 1);
+  const expectedUser = process.env.ERP_UPLOAD_USERNAME || '';
+  const expectedPass = process.env.ERP_UPLOAD_PASSWORD || '';
+  return expectedUser && expectedPass && user === expectedUser && pass === expectedPass;
+}
+
 function requireAuth(req, res, next) {
   const isStatic = /\.(css|js|ico|png|jpg|jpeg|gif|svg|woff2?|ttf|eot)$/i.test(req.path);
   if (isStatic) return next();
   if (req.path === '/login' || req.path === '/login/') return next();
   if (req.method === 'POST' && req.path === '/api/upload') return next();
+  if (req.method === 'POST' && req.path === '/api/upload/final' && checkBasicAuth(req)) return next();
   if (req.path === '/auth/callback') return next();
 
   // Session check first — Entra users have no DB row, so countUsers() may be 0
@@ -211,6 +258,7 @@ function requireAuth(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (req.method === 'POST' && req.path === '/api/upload') return next();
+  if (req.method === 'POST' && req.path === '/api/upload/final' && checkBasicAuth(req)) return next();
   if (req.session && req.session.role === 'admin') return next();
   const isApi = req.path.startsWith('/api/');
   if (isApi) return res.status(403).json({ error: 'Forbidden' });
@@ -797,7 +845,7 @@ app.get('/api/ai/hourly-forecast', async (req, res) => {
   }
 });
 
-app.post('/api/upload', requireAdmin, upload.array('files', 10), async (req, res) => {
+async function handleUpload(req, res, isFinal) {
   try {
     const files = req.files || [];
     if (files.length === 0) {
@@ -808,9 +856,15 @@ app.post('/api/upload', requireAdmin, upload.array('files', 10), async (req, res
     for (const f of files) {
       if (!f.buffer) continue;
       const isCsv = (f.originalname || '').toLowerCase().endsWith('.csv');
-      let data;
+      let results;
       try {
-        data = isCsv ? parseCsv(f.buffer) : parseSheet(f.buffer);
+        if (isCsv) {
+          const arr = parseCsv(f.buffer);
+          results = arr; // array or null
+        } else {
+          const single = parseSheet(f.buffer);
+          results = single ? [single] : null;
+        }
       } catch (parseErr) {
         const msg = parseErr && (parseErr.message || String(parseErr));
         console.error('Parse error for file:', f.originalname || 'unknown', msg, parseErr && parseErr.stack);
@@ -818,12 +872,15 @@ app.post('/api/upload', requireAdmin, upload.array('files', 10), async (req, res
           error: (isCsv ? 'Failed to parse CSV: ' : 'Failed to parse Excel: ') + (msg || 'Invalid or unsupported file.'),
         });
       }
-      const hasHourly = data && data.total && data.total.hourly && data.total.hourly.length > 0;
-      const hasTotalRow = data && data.total && data.total.totalRow;
-      if (data && data.total && data.businessDate && (hasHourly || hasTotalRow)) {
-        const storeId = (data.storeId && String(data.storeId).trim()) || 'default';
-        const storeName = (data.storeName && String(data.storeName).trim()) || 'Default';
-        parsed.push({ businessDate: data.businessDate, data, storeId, storeName });
+      if (!results) continue;
+      for (const data of results) {
+        const hasHourly = data && data.total && data.total.hourly && data.total.hourly.length > 0;
+        const hasTotalRow = data && data.total && data.total.totalRow;
+        if (data && data.total && data.businessDate && (hasHourly || hasTotalRow)) {
+          const storeId = (data.storeId && String(data.storeId).trim()) || 'default';
+          const storeName = (data.storeName && String(data.storeName).trim()) || 'Default';
+          parsed.push({ businessDate: data.businessDate, data, storeId, storeName });
+        }
       }
     }
 
@@ -842,9 +899,15 @@ app.post('/api/upload', requireAdmin, upload.array('files', 10), async (req, res
     const yesterdayStr = addDays(refDateStr, -1);
     const lastWeekStr = addDays(refDateStr, -7);
 
-    for (const { businessDate, data, storeId, storeName } of parsed) {
-      await saveReport(businessDate, data, storeId);
-      console.log('Saved to DB:', storeId, businessDate);
+    for (const { businessDate, data, storeId } of parsed) {
+      await saveReport(businessDate, data, storeId, isFinal);
+      console.log('Saved to DB:', storeId, businessDate, isFinal ? '(final)' : '(provisional)');
+    }
+
+    if (isFinal) {
+      // ERP 確定値: 保存確認のみ返す
+      const saved = parsed.map((p) => ({ storeId: p.storeId, businessDate: p.businessDate }));
+      return res.json({ ok: true, saved });
     }
 
     const refItem = parsed.find((p) => p.businessDate === refDateStr);
@@ -879,6 +942,103 @@ app.post('/api/upload', requireAdmin, upload.array('files', 10), async (req, res
     console.error('Upload error:', msg);
     if (stack) console.error(stack);
     res.status(500).json({ error: 'Error processing files: ' + (msg || 'Unknown error') });
+  }
+}
+
+app.post('/api/upload', requireAdmin, upload.array('files', 10), (req, res) => handleUpload(req, res, false));
+
+app.post('/api/upload/final', requireAdmin, upload.array('files', 10), (req, res) => handleUpload(req, res, true));
+
+app.post('/api/upload/item-sales', requireAdmin, upload.single('file'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file || !file.buffer) {
+      return res.status(400).json({ error: 'Excel file is required (field name: file).' });
+    }
+    const businessDate = req.body && req.body.businessDate ? String(req.body.businessDate).trim() : '';
+    if (!businessDate || !/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) {
+      return res.status(400).json({ error: 'businessDate (YYYY-MM-DD) is required.' });
+    }
+    const storeId = (req.body && req.body.storeId ? String(req.body.storeId).trim() : '') || 'default';
+
+    let itemSalesData;
+    try {
+      itemSalesData = parseItemSalesExcel(file.buffer, businessDate, storeId);
+    } catch (parseErr) {
+      return res.status(400).json({ error: 'Failed to parse Item Sales Excel: ' + (parseErr && parseErr.message || String(parseErr)) });
+    }
+    if (!itemSalesData) {
+      return res.status(400).json({ error: 'No valid Item Sales data found in the file. Check that the file is an LS-Central Item Sales report.' });
+    }
+
+    // Merge byProduct into existing report for this store/date
+    let existing = null;
+    try {
+      existing = await getReport(businessDate, storeId);
+    } catch (_) {}
+
+    let merged;
+    if (existing) {
+      // Keep existing report data; replace byProduct with Item Sales data
+      merged = Object.assign({}, existing, {
+        byProduct: itemSalesData.byProduct,
+        _updatedAt: undefined,
+        _isFinal: undefined,
+      });
+    } else {
+      merged = itemSalesData;
+    }
+
+    await saveReport(businessDate, merged, storeId, false);
+    console.log('Item Sales imported:', storeId, businessDate, Object.keys(itemSalesData.byProduct).length, 'products');
+
+    const savedDates = await getAvailableDates(storeId);
+    res.json({
+      ok: true,
+      storeId,
+      businessDate,
+      productCount: Object.keys(itemSalesData.byProduct).length,
+      savedDates,
+    });
+  } catch (err) {
+    const msg = err && (err.message || String(err));
+    console.error('Item Sales upload error:', msg);
+    res.status(500).json({ error: 'Error processing Item Sales file: ' + (msg || 'Unknown error') });
+  }
+});
+
+app.get('/api/product-master', requireAdmin, async (req, res) => {
+  try {
+    const master = await getProductMaster();
+    res.json({ master });
+  } catch (err) {
+    res.status(500).json({ error: err && err.message || 'Server error' });
+  }
+});
+
+app.post('/api/product-master/import', requireAdmin, upload.single('file'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file || !file.buffer) {
+      return res.status(400).json({ error: 'Excel file is required (field name: file).' });
+    }
+    let master;
+    try {
+      master = parseProductMasterExcel(file.buffer);
+    } catch (parseErr) {
+      return res.status(400).json({ error: 'Failed to parse product master: ' + (parseErr && parseErr.message || String(parseErr)) });
+    }
+    if (!master) {
+      return res.status(400).json({ error: 'No valid product master data found. Check that the file is an LS-Central Item list export with columns: Item No., Barcode No., Description (ENG).' });
+    }
+    await saveProductMaster(master);
+    const count = Object.keys(master).length;
+    console.log('Product master imported:', count, 'items');
+    res.json({ ok: true, count });
+  } catch (err) {
+    const msg = err && (err.message || String(err));
+    console.error('Product master import error:', msg);
+    res.status(500).json({ error: 'Error processing product master: ' + (msg || 'Unknown error') });
   }
 });
 
@@ -1009,7 +1169,6 @@ app.delete('/api/users/:id', requireAdmin, async (req, res) => {
 
 app.listen(PORT, () => {
   console.log('Sales Reports server: http://localhost:' + PORT);
-  if (useSupabase) console.log('Database: Supabase');
-  else console.log('Database: SQLite (data/sales.db)');
+  console.log('Database: ' + activeDatabaseLabel);
   startExchangeRateScheduler();
 });

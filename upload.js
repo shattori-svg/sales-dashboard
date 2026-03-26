@@ -610,7 +610,10 @@
       formData.append('files', files[i]);
     }
 
-    fetch('/api/upload', {
+    var isFinal = document.getElementById('upload-is-final') && document.getElementById('upload-is-final').checked;
+    var uploadUrl = isFinal ? '/api/upload/final' : '/api/upload';
+
+    fetch(uploadUrl, {
       method: 'POST',
       body: formData
     }).then(function (res) {
@@ -641,4 +644,149 @@
     document.getElementById('name-files').textContent = names;
     if (files && files.length > 0) doUpload(files);
   });
+
+  // Product master import
+  (function () {
+    var fileInput = document.getElementById('product-master-file');
+    var fileNameEl = document.getElementById('product-master-file-name');
+    var submitBtn = document.getElementById('product-master-submit');
+    var statusEl = document.getElementById('product-master-status');
+    var errEl = document.getElementById('product-master-error');
+    if (!submitBtn) return;
+
+    if (fileInput && fileNameEl) {
+      fileInput.addEventListener('change', function () {
+        fileNameEl.textContent = this.files.length ? this.files[0].name : '';
+      });
+    }
+
+    submitBtn.addEventListener('click', function () {
+      if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+      if (statusEl) statusEl.textContent = '';
+      var file = fileInput && fileInput.files.length ? fileInput.files[0] : null;
+      if (!file) {
+        if (errEl) { errEl.textContent = 'Excel ファイルを選択してください。'; errEl.hidden = false; }
+        return;
+      }
+      submitBtn.disabled = true;
+      if (statusEl) statusEl.textContent = 'インポート中…';
+      var formData = new FormData();
+      formData.append('file', file);
+      fetch('/api/product-master/import', { method: 'POST', body: formData })
+        .then(function (res) {
+          return parseJsonResponse(res).then(function (body) {
+            if (!res.ok) throw new Error(body.error || 'Import failed');
+            return body;
+          });
+        })
+        .then(function (body) {
+          submitBtn.disabled = false;
+          if (statusEl) statusEl.textContent = '完了: ' + (body.count || 0) + ' 件の商品マスターをインポートしました。';
+          if (fileInput) fileInput.value = '';
+          if (fileNameEl) fileNameEl.textContent = '';
+        })
+        .catch(function (err) {
+          submitBtn.disabled = false;
+          if (statusEl) statusEl.textContent = '';
+          if (errEl) { errEl.textContent = err.message || 'Import failed.'; errEl.hidden = false; }
+        });
+    });
+  }());
+
+  // Item Sales import
+  (function () {
+    // Populate store selector
+    fetch('/api/stores').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
+      var stores = body && body.stores ? body.stores : [];
+      var sel = document.getElementById('item-sales-store');
+      if (!sel) return;
+      sel.innerHTML = '';
+      stores.forEach(function (s) {
+        var opt = document.createElement('option');
+        opt.value = s.id || 'default';
+        opt.textContent = s.name || s.id || 'default';
+        sel.appendChild(opt);
+      });
+      if (!stores.length) {
+        var opt = document.createElement('option');
+        opt.value = 'default';
+        opt.textContent = 'Default';
+        sel.appendChild(opt);
+      }
+    }).catch(function () {});
+
+    // Set default date to today
+    var dateInput = document.getElementById('item-sales-date');
+    if (dateInput) {
+      var today = new Date();
+      var y = today.getFullYear();
+      var m = String(today.getMonth() + 1).padStart(2, '0');
+      var d = String(today.getDate()).padStart(2, '0');
+      dateInput.value = y + '-' + m + '-' + d;
+    }
+
+    // File name display
+    var fileInput = document.getElementById('item-sales-file');
+    var fileNameEl = document.getElementById('item-sales-file-name');
+    if (fileInput && fileNameEl) {
+      fileInput.addEventListener('change', function () {
+        fileNameEl.textContent = this.files.length ? this.files[0].name : '';
+      });
+    }
+
+    // Submit handler
+    var submitBtn = document.getElementById('item-sales-submit');
+    if (submitBtn) {
+      submitBtn.addEventListener('click', function () {
+        var statusEl = document.getElementById('item-sales-status');
+        var errEl = document.getElementById('item-sales-error');
+        errEl.hidden = true;
+        errEl.textContent = '';
+        if (statusEl) statusEl.textContent = '';
+
+        var businessDate = dateInput ? dateInput.value.trim() : '';
+        var storeId = document.getElementById('item-sales-store') ? document.getElementById('item-sales-store').value : '';
+        var file = fileInput && fileInput.files.length ? fileInput.files[0] : null;
+
+        if (!businessDate) {
+          errEl.textContent = '営業日を入力してください。';
+          errEl.hidden = false;
+          return;
+        }
+        if (!file) {
+          errEl.textContent = 'Excel ファイルを選択してください。';
+          errEl.hidden = false;
+          return;
+        }
+
+        submitBtn.disabled = true;
+        if (statusEl) statusEl.textContent = 'インポート中…';
+
+        var formData = new FormData();
+        formData.append('file', file);
+        formData.append('businessDate', businessDate);
+        formData.append('storeId', storeId);
+
+        fetch('/api/upload/item-sales', {
+          method: 'POST',
+          body: formData,
+        }).then(function (res) {
+          return parseJsonResponse(res).then(function (body) {
+            if (!res.ok) throw new Error(body.error || 'Upload failed');
+            return body;
+          });
+        }).then(function (body) {
+          submitBtn.disabled = false;
+          if (statusEl) statusEl.textContent = '完了: ' + (body.productCount || 0) + ' 件の商品データをインポートしました。';
+          if (fileInput) fileInput.value = '';
+          if (fileNameEl) fileNameEl.textContent = '';
+        }).catch(function (err) {
+          submitBtn.disabled = false;
+          if (statusEl) statusEl.textContent = '';
+          errEl.textContent = err.message || 'Import failed.';
+          errEl.hidden = false;
+        });
+      });
+    }
+  }());
 })();

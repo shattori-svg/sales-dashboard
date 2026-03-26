@@ -6,8 +6,12 @@ create table if not exists public.reports (
   business_date text not null,
   data jsonb not null,
   created_at timestamptz default now(),
+  is_final boolean default false,
   primary key (store_id, business_date)
 );
+
+-- Migration: add is_final if upgrading from older schema
+alter table public.reports add column if not exists is_final boolean default false;
 
 alter table public.reports enable row level security;
 
