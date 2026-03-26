@@ -120,6 +120,8 @@ function resolveExcelColumns(headerRow) {
     totalGrossSales: idx(['total gross'], COL.TotalGrossSales),
     totalNetSales: idx(['total net'], COL.TotalNetSales),
     totalQuantitySold: idx(['total quantity'], COL.TotalQuantitySold),
+    itemCode: findExcelColumn(headerRow, ['item_code', 'item code', 'barcode', 'sku']),
+    itemName: findExcelColumn(headerRow, ['item_name', 'item name', '商品名']),
   };
 }
 
@@ -194,6 +196,7 @@ function parseSheet(buffer) {
 
   const total = { hourly: [], totalRow: null };
   const byDept = {};
+  const byProduct = {};
   DEPARTMENTS.forEach((d) => {
     byDept[d] = { hourly: [] };
   });
@@ -226,6 +229,19 @@ function parseSheet(buffer) {
           quantitySold: toNum(row[c.totalQuantitySold]),
         };
       }
+      // 日別商品行（時間なし + Item_Code あり）
+      if (isEmpty && c.itemCode >= 0) {
+        const itemCode = row[c.itemCode] != null ? String(row[c.itemCode]).trim() : '';
+        const itemName = c.itemName >= 0 && row[c.itemName] != null ? String(row[c.itemName]).trim() : '';
+        const deptName = row[c.departmentName];
+        if (itemCode && deptName) {
+          if (!byProduct[itemCode]) {
+            byProduct[itemCode] = { itemCode, itemName, departmentCode: '', departmentName: deptName, totalNetSales: 0, totalQuantitySold: 0 };
+          }
+          byProduct[itemCode].totalNetSales += toNum(row[c.totalNetSales]) || 0;
+          byProduct[itemCode].totalQuantitySold += toNum(row[c.totalQuantitySold]) || 0;
+        }
+      }
       continue;
     }
 
@@ -252,7 +268,19 @@ function parseSheet(buffer) {
     }
 
     const deptName = row[c.departmentName];
-    if (deptName && byDept[deptName]) {
+    const itemCode = c.itemCode >= 0 && row[c.itemCode] != null ? String(row[c.itemCode]).trim() : '';
+    const itemName = c.itemName >= 0 && row[c.itemName] != null ? String(row[c.itemName]).trim() : '';
+
+    if (itemCode && deptName) {
+      // 商品行: byProduct にのみ書き込む（byDepartment には加算しない）
+      const deptNet = toNum(row[c.netSales]) || 0;
+      const deptQty = toNum(row[c.quantitySold]) || 0;
+      if (!byProduct[itemCode]) {
+        byProduct[itemCode] = { itemCode, itemName, departmentCode: '', departmentName: deptName, totalNetSales: 0, totalQuantitySold: 0 };
+      }
+      byProduct[itemCode].totalNetSales += deptNet;
+      byProduct[itemCode].totalQuantitySold += deptQty;
+    } else if (deptName && byDept[deptName]) {
       const deptNet = toNum(row[c.netSales]) || 0;
       const deptQty = toNum(row[c.quantitySold]) || 0;
       byDept[deptName].hourly.push({
@@ -278,6 +306,7 @@ function parseSheet(buffer) {
     storeName: storeName || 'Default',
     total,
     byDepartment: byDept,
+    byProduct: Object.keys(byProduct).length > 0 ? byProduct : undefined,
   };
 }
 
@@ -294,9 +323,9 @@ const DEPARTMENT_CODE_TO_NAME = {
 };
 
 /**
- * Parse CSV in agreed format. Returns same shape as parseSheet():
- * { businessDate, storeId, storeName, total: { hourly, totalRow }, byDepartment }.
- * Header (column order): Business_Date,Store_Id,Department_Code,Start_Time,End_Time,Net_Sales,Gross_Sales,Quantity_Sold,Receipt_Count
+ * Parse CSV in agreed format.
+ * Returns an array of per-store result objects (same shape as parseSheet()), or null on failure.
+ * Header (column order): Business_Date,Store_Id,Department_Code,Start_Time,End_Time,Net_Sales,Gross_Sales,Quantity_Sold,Receipt_Count[,Discount_Amount,Item_Code,Cost_Amount]
  */
 function parseCsv(buffer) {
   const text = (buffer instanceof Buffer ? buffer.toString('utf8') : String(buffer))
@@ -319,17 +348,31 @@ function parseCsv(buffer) {
   const iGross = col('Gross_Sales');
   const iQty = col('Quantity_Sold');
   const iReceipt = col('Receipt_Count');
+  const iItem = col('Item_Code');
+  const iItemName = col('Item_Name');
+  const iDiscount = col('Discount_Amount');
+  const iCost = col('Cost_Amount');
   if (iDate < 0 || iStore < 0 || iDept < 0 || iNet < 0 || iQty < 0 || iReceipt < 0) return null;
 
-  let businessDate = null;
-  let storeId = '1001';
-  const total = { hourly: [], totalRow: null };
-  const byDept = {};
-  DEPARTMENTS.forEach((d) => {
-    byDept[d] = { hourly: [] };
-  });
-  const slotTotals = new Map();
-  const hourlyTotalRows = [];
+  // Accumulate results per storeId
+  const storeMap = new Map(); // storeId -> store accumulator
+
+  function getOrCreateStore(sid) {
+    if (!storeMap.has(sid)) {
+      const byDept = {};
+      DEPARTMENTS.forEach((d) => { byDept[d] = { hourly: [] }; });
+      storeMap.set(sid, {
+        businessDate: null,
+        storeId: sid,
+        total: { hourly: [], totalRow: null },
+        byDept,
+        byProduct: {},
+        slotTotals: new Map(),
+        hourlyTotalRows: [],
+      });
+    }
+    return storeMap.get(sid);
+  }
 
   for (let i = 1; i < lines.length; i++) {
     const cells = parseCsvLine(lines[i]);
@@ -339,18 +382,45 @@ function parseCsv(buffer) {
     const startRaw = get(iStart);
     const endRaw = get(iEnd);
     const deptCode = get(iDept);
+    const rawStore = get(iStore);
+    const sid = rawStore || '1001';
+    const store = getOrCreateStore(sid);
 
-    if (!businessDate && get(iDate)) businessDate = parseBusinessDate(get(iDate)) || get(iDate);
-    if (get(iStore)) storeId = String(get(iStore)).trim() || '1001';
+    if (!store.businessDate && get(iDate)) store.businessDate = parseBusinessDate(get(iDate)) || get(iDate);
 
     if (!startRaw && !endRaw) {
       if (deptCode === '00' || deptCode === '') {
-        total.totalRow = {
+        store.total.totalRow = {
           netSales: getNum(iNet),
           grossSales: getNum(iGross),
           quantitySold: getNum(iQty),
           receiptCount: getNum(iReceipt),
+          ...(iDiscount >= 0 && { discountAmount: getNum(iDiscount) }),
+          ...(iCost >= 0 && { costAmount: getNum(iCost) }),
         };
+      } else {
+        const deptName = DEPARTMENT_CODE_TO_NAME[deptCode];
+        const itemCode = iItem >= 0 ? get(iItem) : '';
+        const itemName = iItemName >= 0 ? get(iItemName) : '';
+        if (itemCode && deptName) {
+          // 商品日計行: byProduct にのみ書き込む
+          if (!store.byProduct[itemCode]) {
+            store.byProduct[itemCode] = { itemCode, itemName, departmentCode: deptCode, departmentName: deptName, totalNetSales: 0, totalQuantitySold: 0 };
+          }
+          store.byProduct[itemCode].totalNetSales += getNum(iNet) || 0;
+          store.byProduct[itemCode].totalQuantitySold += getNum(iQty) || 0;
+          if (iDiscount >= 0) store.byProduct[itemCode].discountAmount = (store.byProduct[itemCode].discountAmount || 0) + (getNum(iDiscount) || 0);
+          if (iCost >= 0) store.byProduct[itemCode].costAmount = (store.byProduct[itemCode].costAmount || 0) + (getNum(iCost) || 0);
+        } else if (deptName && store.byDept[deptName]) {
+          // 部門日計行: discountAmount / costAmount を daily に格納
+          store.byDept[deptName].daily = {
+            netSales: getNum(iNet),
+            grossSales: getNum(iGross),
+            quantitySold: getNum(iQty),
+            ...(iDiscount >= 0 && { discountAmount: getNum(iDiscount) }),
+            ...(iCost >= 0 && { costAmount: getNum(iCost) }),
+          };
+        }
       }
       continue;
     }
@@ -365,20 +435,32 @@ function parseCsv(buffer) {
     const receiptCount = getNum(iReceipt) || 0;
 
     if (deptCode === '00') {
-      hourlyTotalRows.push({
+      const slot = {
         timeKey,
         timeLabel,
         grossSales: grossSales != null ? grossSales : null,
         netSales,
         quantitySold,
         receiptCount,
-      });
+      };
+      if (iDiscount >= 0) slot.discountAmount = getNum(iDiscount);
+      store.hourlyTotalRows.push(slot);
       continue;
     }
 
     const deptName = DEPARTMENT_CODE_TO_NAME[deptCode];
-    if (deptName && byDept[deptName]) {
-      byDept[deptName].hourly.push({
+    const itemCode = iItem >= 0 ? get(iItem) : '';
+    const itemName = iItemName >= 0 ? get(iItemName) : '';
+
+    if (itemCode && deptName) {
+      // 商品行（時間帯あり）: byProduct にのみ書き込む（byDepartment には加算しない）
+      if (!store.byProduct[itemCode]) {
+        store.byProduct[itemCode] = { itemCode, itemName, departmentCode: deptCode, departmentName: deptName, totalNetSales: 0, totalQuantitySold: 0 };
+      }
+      store.byProduct[itemCode].totalNetSales += netSales;
+      store.byProduct[itemCode].totalQuantitySold += quantitySold;
+    } else if (deptName && store.byDept[deptName]) {
+      store.byDept[deptName].hourly.push({
         timeKey,
         timeLabel,
         grossSales: grossSales != null ? grossSales : null,
@@ -386,41 +468,284 @@ function parseCsv(buffer) {
         quantitySold,
         receiptCount,
       });
-      if (!slotTotals.has(timeKey)) {
-        slotTotals.set(timeKey, { netSales: 0, quantitySold: 0, receiptCount, timeLabel });
+      if (!store.slotTotals.has(timeKey)) {
+        store.slotTotals.set(timeKey, { netSales: 0, quantitySold: 0, receiptCount, timeLabel });
       }
-      const agg = slotTotals.get(timeKey);
+      const agg = store.slotTotals.get(timeKey);
       agg.netSales += netSales;
       agg.quantitySold += quantitySold;
     }
   }
 
-  if (hourlyTotalRows.length > 0) {
-    total.hourly = hourlyTotalRows;
-  } else {
-    slotTotals.forEach((agg, timeKey) => {
-      total.hourly.push({
-        timeKey,
-        timeLabel: agg.timeLabel,
-        grossSales: null,
-        netSales: agg.netSales,
-        quantitySold: agg.quantitySold,
-        receiptCount: agg.receiptCount,
+  const results = [];
+  for (const store of storeMap.values()) {
+    const { total, byDept, byProduct, slotTotals, hourlyTotalRows } = store;
+    if (hourlyTotalRows.length > 0) {
+      total.hourly = hourlyTotalRows;
+    } else {
+      slotTotals.forEach((agg, timeKey) => {
+        total.hourly.push({
+          timeKey,
+          timeLabel: agg.timeLabel,
+          grossSales: null,
+          netSales: agg.netSales,
+          quantitySold: agg.quantitySold,
+          receiptCount: agg.receiptCount,
+        });
       });
+    }
+    total.hourly.sort(sortByTimeKey);
+    Object.keys(byDept).forEach((k) => { byDept[k].hourly.sort(sortByTimeKey); });
+    results.push({
+      businessDate: store.businessDate || '',
+      storeId: store.storeId || '1001',
+      storeName: store.storeId,
+      total,
+      byDepartment: byDept,
+      byProduct: Object.keys(byProduct).length > 0 ? byProduct : undefined,
     });
   }
 
-  total.hourly.sort(sortByTimeKey);
-  Object.keys(byDept).forEach((k) => {
-    byDept[k].hourly.sort(sortByTimeKey);
+  return results.length > 0 ? results : null;
+}
+
+/**
+ * Parse LS-Central product master Excel (Item list export).
+ * Returns a map of { [itemNo]: { barcodeNo, nameEng, nameTha, nameJpn, deptCode } }, or null.
+ *
+ * Expected header columns: Department Code, Barcode No., Item No.,
+ *   Description (ENG), Description (THA), Description (JPN)
+ *
+ * @param {Buffer} buffer Excel file buffer
+ * @returns {object|null}
+ */
+function parseProductMasterExcel(buffer) {
+  let workbook;
+  try {
+    workbook = XLSX.read(buffer, { type: 'buffer' });
+  } catch (e) {
+    return null;
+  }
+
+  const sheetName = workbook.SheetNames.includes('Item')
+    ? 'Item'
+    : workbook.SheetNames[0];
+  if (!sheetName) return null;
+
+  const ws = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: null });
+  if (!rows || rows.length < 2) return null;
+
+  const lc = (v) => (v == null ? '' : String(v).toLowerCase().trim());
+  let headerIdx = -1;
+  const colMap = {};
+
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const cells = row.map(lc);
+    const hasBarcode = cells.some((c) => c === 'barcode no.' || c === 'barcode no');
+    const hasItemNo = cells.some((c) => c === 'item no.' || c === 'item no');
+    if (hasBarcode && hasItemNo) {
+      headerIdx = i;
+      cells.forEach((c, idx) => {
+        if (c === 'department code') colMap.deptCode = idx;
+        else if (c === 'barcode no.' || c === 'barcode no') colMap.barcodeNo = idx;
+        else if (c === 'item no.' || c === 'item no') colMap.itemNo = idx;
+        else if (c === 'description (eng)') colMap.nameEng = idx;
+        else if (c === 'description (tha)') colMap.nameTha = idx;
+        else if (c === 'description (jpn)') colMap.nameJpn = idx;
+      });
+      break;
+    }
+  }
+
+  if (headerIdx < 0 || colMap.itemNo == null || colMap.barcodeNo == null) return null;
+
+  const master = {};
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const itemNo = row[colMap.itemNo] != null ? String(row[colMap.itemNo]).trim() : '';
+    if (!itemNo) continue;
+    master[itemNo] = {
+      barcodeNo: colMap.barcodeNo != null && row[colMap.barcodeNo] != null ? String(row[colMap.barcodeNo]).trim() : '',
+      nameEng: colMap.nameEng != null && row[colMap.nameEng] != null ? String(row[colMap.nameEng]).trim() : '',
+      nameTha: colMap.nameTha != null && row[colMap.nameTha] != null ? String(row[colMap.nameTha]).trim() : '',
+      nameJpn: colMap.nameJpn != null && row[colMap.nameJpn] != null ? String(row[colMap.nameJpn]).trim() : '',
+      deptCode: colMap.deptCode != null && row[colMap.deptCode] != null ? String(row[colMap.deptCode]).trim() : '',
+    };
+  }
+
+  return Object.keys(master).length > 0 ? master : null;
+}
+
+/**
+ * Parse LS-Central "Item Sales" Excel report.
+ * No date column in file — businessDate and storeId must be supplied by caller.
+ * Returns a partial report object (byProduct + byDepartment daily totals + total.totalRow).
+ * No hourly data is produced.
+ *
+ * Column layout (auto-detected via header row):
+ *   No., Description, Qty.Sold(POS), Gross Sales(POS), Sales Amount(POS), Disc.Amount(POS), Item Category Code
+ *
+ * Department mapping via first digit of Item Category Code:
+ *   1 → Grocery, 2 → Fruit & Vegetable, 3 → Fish & Seafood,
+ *   4 → Meat, 5 → Delicatessen, 6 → Store Management
+ *
+ * @param {Buffer} buffer        Excel file buffer
+ * @param {string} businessDate  YYYY-MM-DD
+ * @param {string} storeId       Store ID (e.g. '1001')
+ * @returns {object|null}
+ */
+function parseItemSalesExcel(buffer, businessDate, storeId) {
+  let workbook;
+  try {
+    workbook = XLSX.read(buffer, { type: 'buffer' });
+  } catch (e) {
+    return null;
+  }
+
+  const sheetName = workbook.SheetNames.includes('Item Sales')
+    ? 'Item Sales'
+    : workbook.SheetNames[0];
+  if (!sheetName) return null;
+
+  const ws = workbook.Sheets[sheetName];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+  if (!rows || rows.length < 2) return null;
+
+  // Locate header row (scan first 10 rows)
+  const lc = (v) => (v == null ? '' : String(v).toLowerCase().trim());
+  let headerIdx = -1;
+  const colMap = {};
+
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const row = rows[i];
+    if (!row) continue;
+    const cells = row.map(lc);
+    const hasNo = cells.some((c) => c === 'no.');
+    const hasDesc = cells.some((c) => c === 'description');
+    const hasCat = cells.some((c) => c.includes('category'));
+    if (hasNo && hasDesc && hasCat) {
+      headerIdx = i;
+      cells.forEach((c, idx) => {
+        if (c === 'no.') colMap.itemNo = idx;
+        else if (c === 'description') colMap.description = idx;
+        else if (c.includes('qty') && c.includes('pos') && !c.includes('not')) colMap.qtySold = idx;
+        else if (c.includes('gross') && c.includes('sales') && c.includes('pos')) colMap.grossSales = idx;
+        else if (c.includes('sales amount') && c.includes('pos')) colMap.netSales = idx;
+        else if (c.includes('disc') && c.includes('pos')) colMap.discAmount = idx;
+        else if (c.includes('item category') || c === 'item category code') colMap.categoryCode = idx;
+      });
+      break;
+    }
+  }
+
+  if (headerIdx < 0 || colMap.itemNo == null || colMap.categoryCode == null) return null;
+
+  const DEPT_MAP = {
+    '1': 'Grocery',
+    '2': 'Fruit & Vegetable',
+    '3': 'Fish & Seafood',
+    '4': 'Meat',
+    '5': 'Delicatessen',
+    '6': 'Store Management',
+  };
+
+  const byProduct = {};
+  const deptTotals = {};
+  let totalNet = 0, totalGross = 0, totalQty = 0;
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row) continue;
+
+    const catRaw = row[colMap.categoryCode];
+    const catCode = catRaw == null ? '' : String(catRaw).trim();
+    if (!catCode) continue;
+
+    const deptKey = catCode.charAt(0);
+    const deptName = DEPT_MAP[deptKey];
+    if (!deptName) continue;
+
+    const netSales = toNum(colMap.netSales != null ? row[colMap.netSales] : null) || 0;
+    const grossSales = toNum(colMap.grossSales != null ? row[colMap.grossSales] : null) || 0;
+    const qtySold = toNum(colMap.qtySold != null ? row[colMap.qtySold] : null) || 0;
+    const discAmount = toNum(colMap.discAmount != null ? row[colMap.discAmount] : null) || 0;
+
+    if (netSales === 0 && qtySold === 0) continue;
+
+    const itemNoRaw = row[colMap.itemNo];
+    const itemCode = itemNoRaw == null ? '' : String(itemNoRaw).trim();
+    if (!itemCode) continue;
+
+    const description = colMap.description != null && row[colMap.description] != null
+      ? String(row[colMap.description]).trim()
+      : '';
+
+    if (!byProduct[itemCode]) {
+      byProduct[itemCode] = {
+        itemCode,
+        itemName: description,
+        departmentCode: '',
+        departmentName: deptName,
+        totalNetSales: 0,
+        totalQuantitySold: 0,
+        totalGrossSales: 0,
+        totalDiscountAmount: 0,
+      };
+    }
+    byProduct[itemCode].totalNetSales += netSales;
+    byProduct[itemCode].totalQuantitySold += qtySold;
+    byProduct[itemCode].totalGrossSales += grossSales;
+    byProduct[itemCode].totalDiscountAmount += discAmount;
+
+    if (!deptTotals[deptName]) {
+      deptTotals[deptName] = { netSales: 0, grossSales: 0, quantitySold: 0, discountAmount: 0 };
+    }
+    deptTotals[deptName].netSales += netSales;
+    deptTotals[deptName].grossSales += grossSales;
+    deptTotals[deptName].quantitySold += qtySold;
+    deptTotals[deptName].discountAmount += discAmount;
+
+    totalNet += netSales;
+    totalGross += grossSales;
+    totalQty += qtySold;
+  }
+
+  if (Object.keys(byProduct).length === 0) return null;
+
+  const byDepartment = {};
+  DEPARTMENTS.forEach((d) => { byDepartment[d] = { hourly: [] }; });
+  Object.entries(deptTotals).forEach(([deptName, t]) => {
+    byDepartment[deptName] = {
+      hourly: [],
+      totalRow: {
+        netSales: t.netSales,
+        grossSales: t.grossSales,
+        quantitySold: t.quantitySold,
+        receiptCount: null,
+        discountAmount: t.discountAmount || undefined,
+      },
+    };
   });
 
   return {
-    businessDate: businessDate || '',
-    storeId: storeId || '1001',
-    storeName: storeId,
-    total,
-    byDepartment: byDept,
+    businessDate,
+    storeId: String(storeId || 'default').trim() || 'default',
+    storeName: String(storeId || 'default').trim() || 'default',
+    total: {
+      totalRow: {
+        netSales: totalNet,
+        grossSales: totalGross,
+        quantitySold: totalQty,
+        receiptCount: null,
+      },
+      hourly: [],
+    },
+    byDepartment,
+    byProduct,
   };
 }
 
@@ -457,4 +782,4 @@ function parseCsvLine(line) {
   return out;
 }
 
-module.exports = { parseSheet, parseCsv };
+module.exports = { parseSheet, parseCsv, parseItemSalesExcel, parseProductMasterExcel };

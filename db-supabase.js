@@ -23,6 +23,7 @@ const USERS_TABLE = 'users';
 const BUSINESS_HOURS_KEY = 'business_hours';
 const STORES_KEY = 'stores';
 const EXCHANGE_RATE_KEY = 'exchange_rate';
+const PRODUCT_MASTER_KEY = 'product_master';
 const DEFAULT_STORES = [{ id: 'default', name: 'Default' }];
 const DEFAULT_BUSINESS_HOURS = Object.fromEntries(
   [0, 1, 2, 3, 4, 5, 6].map((d) => [d, { start: '00:00', end: '24:00' }])
@@ -85,12 +86,13 @@ function saveExchangeRate(rate) {
     });
 }
 
-function saveReport(businessDate, data, storeId = 'default') {
+function saveReport(businessDate, data, storeId = 'default', isFinal = false) {
   const sid = normStoreId(storeId);
   const row = {
     store_id: sid,
     business_date: businessDate,
     data,
+    is_final: isFinal,
     created_at: new Date().toISOString(),
   };
   return supabase
@@ -105,14 +107,17 @@ function getReport(businessDate, storeId = 'default') {
   const sid = normStoreId(storeId);
   return supabase
     .from(TABLE)
-    .select('data')
+    .select('data, created_at, is_final')
     .eq('store_id', sid)
     .eq('business_date', businessDate)
     .maybeSingle()
     .then(({ data: row, error }) => {
       if (error) throw error;
       if (!row || row.data == null) return null;
-      return typeof row.data === 'object' ? row.data : JSON.parse(row.data);
+      const parsed = typeof row.data === 'object' ? row.data : JSON.parse(row.data);
+      if (parsed && row.created_at) parsed._updatedAt = row.created_at;
+      if (parsed) parsed._isFinal = !!row.is_final;
+      return parsed;
     });
 }
 
@@ -149,6 +154,30 @@ function getUploadLog(limit = 200) {
 function businessHoursKey(storeId) {
   const sid = normStoreId(storeId);
   return sid === 'default' ? BUSINESS_HOURS_KEY : 'bh:' + sid;
+}
+
+function getProductMaster() {
+  return supabase
+    .from(MASTERS_TABLE)
+    .select('value')
+    .eq('key', PRODUCT_MASTER_KEY)
+    .maybeSingle()
+    .then(({ data: row, error }) => {
+      if (error) throw error;
+      if (!row || row.value == null) return {};
+      const v = typeof row.value === 'object' ? row.value : JSON.parse(row.value);
+      return v && typeof v === 'object' ? v : {};
+    });
+}
+
+function saveProductMaster(master) {
+  return supabase
+    .from(MASTERS_TABLE)
+    .upsert({ key: PRODUCT_MASTER_KEY, value: master }, { onConflict: 'key' })
+    .then(({ error }) => {
+      if (error) throw error;
+      return master;
+    });
 }
 
 function getBusinessHours(storeId) {
@@ -328,6 +357,8 @@ module.exports = {
   saveStores,
   getExchangeRate,
   saveExchangeRate,
+  getProductMaster,
+  saveProductMaster,
   saveReport,
   getReport,
   getAvailableDates,
