@@ -652,7 +652,8 @@
     }
     setHourlyChartTab(hourlyChartView);
 
-    var thailandNow = getThailandTimeStr();
+    var isReferenceToday = (state.referenceDate === getThailandDateStr());
+    var thailandNow = isReferenceToday ? getThailandTimeStr() : null;
     var forecastSalesDataRaw = (optionalForecast && optionalForecast.forecastSalesData) ? optionalForecast.forecastSalesData : buildForecastChartDataActualOnly(todayNet, todayHourly, thailandNow);
     var forecastSalesData = {
       forecastLower: convertSeries(forecastSalesDataRaw.forecastLower),
@@ -1681,7 +1682,7 @@
       fetch('/api/ai/hourly-forecast?storeId=' + encodeURIComponent(storeIdForForecast) + '&referenceDate=' + encodeURIComponent(refDateForForecast) + '&currentTime=' + encodeURIComponent(currentTimeIso))
         .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('Fetch failed')); })
         .then(function (aiData) {
-          var thailandNow = getThailandTimeStr();
+          var thailandNow = (state.referenceDate === getThailandDateStr()) ? getThailandTimeStr() : null;
           var fd = buildForecastChartDataFromAI(aiData, todayNetForForecast, todayReceiptsForForecast, todayHourly, thailandNow);
           renderCharts(todayHourly, yesterdayHourly, lastWeekHourly, { forecastSalesData: fd.sales, forecastReceiptsData: fd.receipts }, true);
         })
