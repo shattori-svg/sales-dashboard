@@ -1,83 +1,66 @@
-# Supabase 接続設定
+# Supabase 接続設定（develop 環境）
 
-このアプリを Supabase（PostgreSQL）に接続する手順です。環境変数を設定すると、SQLite の代わりに Supabase が使われます。
+このドキュメントは、`develop` 実行環境で Supabase を使い続けるための設定手順です。  
+`production` を Cloud SQL にする手順は `docs/PRODUCTION_DEPLOY.md` を参照してください。
 
-## 1. Supabase プロジェクトの作成
+## 1. DB_PROVIDER を明示する
 
-1. [supabase.com](https://supabase.com) にサインインし、**New project** でプロジェクトを作成します。
-2. プロジェクトの **Settings** → **API** で次を控えます：
-   - **Project URL**（例: `https://xxxxx.supabase.co`）
-   - **service_role** キー（**Project API keys** の `service_role`。秘密鍵のためサーバー以外で公開しないでください）
+DB接続先は `DB_PROVIDER` で決まります。
 
-## 2. テーブルの作成（多店舗対応）
+| 環境 | DB_PROVIDER | 実際の接続先 |
+|------|-------------|--------------|
+| develop | `supabase` | Supabase |
+| production | `postgres` | Cloud SQL (PostgreSQL) |
 
-Supabase ダッシュボードの **SQL Editor** で、プロジェクト直下の `supabase-reports-table.sql` を実行してください。`reports`（store_id + business_date の複合主キー）と `masters` が作成されます。
+develop 環境では必ず `DB_PROVIDER=supabase` を設定してください。
 
-既存の `reports` テーブルがある場合は、同じファイル内の「Optional: migrate existing table」のコメントに従い、`store_id` 列の追加と主キー変更を実行してください。
+## 2. Supabase プロジェクト情報を確認
 
-## 3. 環境変数の設定
+1. [supabase.com](https://supabase.com) で対象プロジェクトを開く
+2. **Settings** → **API** から以下を取得
+   - `SUPABASE_URL`（Project URL）
+   - `SUPABASE_SERVICE_ROLE_KEY`（service_role、秘密情報）
 
-サーバーを起動する環境で、次の 2 つを設定します。
+## 3. テーブル作成
 
-| 変数名 | 説明 |
-|--------|------|
-| `SUPABASE_URL` | プロジェクトの Project URL（例: `https://xxxxx.supabase.co`） |
-| `SUPABASE_SERVICE_ROLE_KEY` | API の **service_role** キー（Secret key） |
+Supabase SQL Editor で以下を実行します。
 
-### ローカル（例: PowerShell）
+- `sql/supabase-reports-table.sql`
+- `sql/supabase-users-table.sql`
+
+## 4. 環境変数（develop）
+
+| 変数名 | 必須 | 説明 |
+|--------|------|------|
+| `DB_PROVIDER` | 必須 | `supabase` |
+| `SUPABASE_URL` | 必須 | Supabase Project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | 必須 | service_role key |
+
+### PowerShell 例
 
 ```powershell
+$env:DB_PROVIDER = "supabase"
 $env:SUPABASE_URL = "https://xxxxx.supabase.co"
-$env:SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+$env:SUPABASE_SERVICE_ROLE_KEY = "your_service_role_key"
 npm start
 ```
 
-### .env ファイル（推奨）
-
-プロジェクト直下に `.env` を作成し、**リポジトリにコミットしないでください**（`.gitignore` に含まれています）。
+### `.env` 例（ローカル）
 
 ```
+DB_PROVIDER=supabase
 SUPABASE_URL=https://xxxxx.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ```
 
-`.env` を読み込むには、起動前に [dotenv](https://www.npmjs.com/package/dotenv) を使います（本番では各ホスティングの「環境変数」で設定します）。
+## 5. 動作確認
 
-### 本番環境（Render / Railway など）
-
-**本番と Supabase がつながらない**場合は、デプロイ先のダッシュボードで次の 2 つを環境変数として追加してください。`.env` は本番サーバーには存在しないため、必ずホスティング側で設定します。
-
-| キー | 値 |
-|------|-----|
-| `SUPABASE_URL` | あなたの Project URL（例: `https://xkkntqzwkekcsimxszvc.supabase.co`） |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase の **Settings → API** でコピーした **service_role** キー |
-
-- **Render:** ダッシュボードで該当の **Web Service** を開く → **Environment** → **Add Environment Variable** で上記 2 つを追加 → **Save Changes** 後、必要なら **Manual Deploy** で再デプロイ。
-- **Railway:** プロジェクト → 該当サービス → **Variables** で上記 2 つを追加。保存すると自動で再デプロイされます。
-- **Vercel / その他:** 同様に「Environment Variables」や「設定 → 環境変数」で `SUPABASE_URL` と `SUPABASE_SERVICE_ROLE_KEY` を追加してください。
-
-設定後、本番 URL でアプリを開き、Excel をアップロードして動作を確認します。Supabase の **Table Editor → reports** にレコードが増えていれば接続できています。
-
-### dotenv を使う場合（ローカル）
-
-```bash
-npm install dotenv
-```
-
-`server.js` の先頭（先頭行の直後）に追加：
-
-```js
-require('dotenv').config();
-```
-
-## 4. 動作確認
-
-1. 環境変数を設定して `npm start` でサーバーを起動します。
-2. コンソールに `Database: Supabase` と出ていれば Supabase 接続です。
-3. ブラウザでアプリを開き、**Input** タブから Excel をアップロードして「Generate Report」を実行します。
-4. Supabase ダッシュボードの **Table Editor** → **reports** で、`business_date` と `data` にレコードが入っていることを確認します。
+1. `npm start` を実行
+2. 起動ログが `Database: Supabase` になることを確認
+3. 画面でログインし、レポート表示と設定保存が成功することを確認
+4. 必要なら Excel アップロードを実行し、Supabase `reports` にデータが増えることを確認
 
 ## 注意
 
-- **SUPABASE_URL** と **SUPABASE_SERVICE_ROLE_KEY** の両方が設定されているときだけ Supabase が使われます。どちらかが無い場合は従来どおり SQLite（`data/sales.db`）が使われます。
-- `service_role` キーは権限が強いため、サーバー側の環境変数だけで使い、フロントエンドや公開リポジトリには含めないでください。
+- `service_role` は強い権限を持つため、サーバー環境変数のみで管理してください。
+- `production` はこの設定を使わず、Cloud SQL 用の `DB_PROVIDER=postgres` を利用します。

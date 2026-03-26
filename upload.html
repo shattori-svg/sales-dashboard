@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Setup — LOPIA Thailand Sales Report</title>
+  <title>Setup — LOPIA Thailand Sales Dashboard</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
-    <h1>LOPIA Thailand Sales Report — Setup</h1>
+    <h1>LOPIA Thailand Sales Dashboard — Setup</h1>
   </header>
 
   <nav class="tabs" aria-label="Setup sections">
@@ -21,7 +21,7 @@
 
   <main>
     <section id="upload-panel" class="panel active" style="max-width: 560px;">
-      <p class="hint"><a href="/">← Back to Report</a></p>
+      <p class="hint"><a href="/">← Back to Dashboard</a></p>
       <h2>Data Upload</h2>
       <p class="hint">Upload Excel or CSV. CSV format: Business_Date, Store_Id, Department_Code, Start_Time, End_Time, Net_Sales, Gross_Sales, Quantity_Sold, Receipt_Count (00=total, 01–06=dept). Start_Time/End_Time: HH:MM or 4-digit e.g. 0000, 1000. See <a href="docs/CSV_FORMAT.md">docs/CSV_FORMAT.md</a>. Same format can be POSTed to <code>/api/upload</code> (multipart, field <code>files</code>).</p>
 
@@ -31,13 +31,55 @@
           <input type="file" id="file-files" name="files" accept=".xlsx,.xls,.csv" multiple>
           <span class="file-name" id="name-files"></span>
         </div>
+        <label class="upload-final-label">
+          <input type="checkbox" id="upload-is-final">
+          <span data-i18n="upload_is_final">レジ締確定値として登録</span>
+        </label>
       </div>
 
       <p id="upload-error" class="error" role="alert" hidden></p>
+
+      <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e5e7eb;">
+      <h2>商品マスターインポート <span style="font-size:0.75rem;font-weight:400;color:#6b7280;">LS-Central Item リスト</span></h2>
+      <p class="hint">LS-Central の商品マスター（Itemリストエクスポート）をインポートします。アイテムNo. ↔ バーコードNo. のマッピングと商品名を登録します。インポートすると既存の商品マスターが置き換えられます。</p>
+      <div class="upload-form">
+        <div class="upload-group">
+          <label for="product-master-file">Excel ファイル <span class="required">Required</span></label>
+          <input type="file" id="product-master-file" name="file" accept=".xlsx,.xls">
+          <span class="file-name" id="product-master-file-name"></span>
+        </div>
+        <button type="button" id="product-master-submit" class="btn-primary" style="margin-top:0.75rem;">インポート</button>
+      </div>
+      <p id="product-master-status" class="hint" aria-live="polite" style="margin-top:0.5rem;"></p>
+      <p id="product-master-error" class="error" role="alert" hidden></p>
+
+      <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e5e7eb;">
+      <h2>Item Sales インポート <span style="font-size:0.75rem;font-weight:400;color:#6b7280;">LS-Central Item Sales レポート</span></h2>
+      <p class="hint">LS-Central の「Item Sales」Excel レポートをインポートします。ファイルに日付が含まれないため、営業日と店舗を指定してください。インポートすると既存レポートの商品データが置き換えられます。</p>
+      <div class="upload-form">
+        <div class="upload-group">
+          <label for="item-sales-date">営業日 <span class="required">Required</span></label>
+          <input type="date" id="item-sales-date" name="businessDate" style="padding:0.375rem 0.5rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.875rem;">
+        </div>
+        <div class="upload-group" style="margin-top:0.5rem;">
+          <label for="item-sales-store">店舗 <span class="required">Required</span></label>
+          <select id="item-sales-store" name="storeId" style="padding:0.375rem 0.5rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.875rem;min-width:8rem;">
+            <option value="">読み込み中…</option>
+          </select>
+        </div>
+        <div class="upload-group" style="margin-top:0.5rem;">
+          <label for="item-sales-file">Excel ファイル <span class="required">Required</span></label>
+          <input type="file" id="item-sales-file" name="file" accept=".xlsx,.xls">
+          <span class="file-name" id="item-sales-file-name"></span>
+        </div>
+        <button type="button" id="item-sales-submit" class="btn-primary" style="margin-top:0.75rem;">インポート</button>
+      </div>
+      <p id="item-sales-status" class="hint" aria-live="polite" style="margin-top:0.5rem;"></p>
+      <p id="item-sales-error" class="error" role="alert" hidden></p>
     </section>
 
     <section id="log-panel" class="panel" style="max-width: 720px;">
-      <p class="hint"><a href="/">← Back to Report</a></p>
+      <p class="hint"><a href="/">← Back to Dashboard</a></p>
       <h2>データ受信ログ</h2>
       <p class="hint">アップロードされたデータの受信日時・店舗・取引日を一覧表示します。新しい順です。</p>
       <div class="table-wrapper">
@@ -57,7 +99,7 @@
     </section>
 
     <section id="users-panel" class="panel" style="max-width: 1240px;">
-      <p class="hint"><a href="/">← Back to Report</a></p>
+      <p class="hint"><a href="/">← Back to Dashboard</a></p>
       <h2>ユーザーマスタ</h2>
       <p class="hint">ユーザー一覧の参照・新規作成・変更・削除ができます。権限は「一般」と「管理者」の2種類です。管理者のみ Setup 画面にアクセスできます。外部認証利用時はパスワード管理は不要です。</p>
       <div class="table-wrapper">
@@ -148,7 +190,7 @@
     </section>
 
     <section id="stores-panel" class="panel" style="max-width: 640px;">
-      <p class="hint"><a href="/">← Back to Report</a></p>
+      <p class="hint"><a href="/">← Back to Dashboard</a></p>
       <h2>店舗マスター (Store Master)</h2>
       <div class="exchange-rate-block" style="margin-bottom: 1rem; padding: 0.75rem; background: #f5f5f5; border-radius: 6px;">
         <label for="exchange-rate-input" style="display: block; margin-bottom: 0.25rem; font-weight: 600;">為替レート (THB→JPY)</label>
@@ -156,7 +198,7 @@
         <input type="number" id="exchange-rate-input" step="any" min="0" placeholder="例: 4.5" style="width: 8em; margin-right: 0.5rem;">
         <span>最終登録日: </span><span id="exchange-rate-updated-at">—</span>
       </div>
-      <p class="hint">登録した店舗がレポート・アップロードの店舗選択に表示されます。ID は半角英数字で一意にしてください。</p>
+      <p class="hint">登録した店舗がダッシュボード・アップロードの店舗選択に表示されます。ID は半角英数字で一意にしてください。</p>
       <table class="report-table" aria-label="Store list">
         <thead>
           <tr>
@@ -174,9 +216,9 @@
     </section>
 
     <section id="settings-panel" class="panel" style="max-width: 560px;">
-      <p class="hint"><a href="/">← Back to Report</a></p>
+      <p class="hint"><a href="/">← Back to Dashboard</a></p>
       <h2>Settings — Business Hours (営業時間)</h2>
-      <p class="hint">Set business hours per weekday. Only time slots within these hours are shown on the report. Other times are hidden.</p>
+      <p class="hint">Set business hours per weekday. Only time slots within these hours are shown on the dashboard. Other times are hidden.</p>
       <div class="form-group" style="max-width: 320px; margin-bottom: 0.75rem;">
         <label for="bh-store-select">対象店舗</label>
         <select id="bh-store-select" aria-label="Store for business hours">
