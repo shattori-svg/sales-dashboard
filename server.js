@@ -15,21 +15,29 @@ let db;
 let activeDatabaseLabel;
 if (DB_PROVIDER === 'postgres') {
   if (!hasPostgresConfig) {
-    throw new Error('DB_PROVIDER=postgres requires DATABASE_URL.');
+    console.warn('DB_PROVIDER=postgres requires DATABASE_URL. Falling back to SQLite.');
+    db = require('./db');
+    activeDatabaseLabel = 'SQLite (data/sales.db) [fallback]';
+  } else {
+    db = require('./db-postgres');
+    activeDatabaseLabel = 'Cloud SQL (PostgreSQL)';
   }
-  db = require('./db-postgres');
-  activeDatabaseLabel = 'Cloud SQL (PostgreSQL)';
 } else if (DB_PROVIDER === 'supabase') {
   if (!hasSupabaseConfig) {
-    throw new Error('DB_PROVIDER=supabase requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+    console.warn('DB_PROVIDER=supabase requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. Falling back to SQLite.');
+    db = require('./db');
+    activeDatabaseLabel = 'SQLite (data/sales.db) [fallback]';
+  } else {
+    db = require('./db-supabase');
+    activeDatabaseLabel = 'Supabase';
   }
-  db = require('./db-supabase');
-  activeDatabaseLabel = 'Supabase';
 } else if (DB_PROVIDER === 'sqlite') {
   db = require('./db');
   activeDatabaseLabel = 'SQLite (data/sales.db)';
 } else {
-  throw new Error('Unsupported DB_PROVIDER. Use one of: postgres, supabase, sqlite.');
+  console.warn('Unsupported DB_PROVIDER: ' + DB_PROVIDER + '. Falling back to SQLite.');
+  db = require('./db');
+  activeDatabaseLabel = 'SQLite (data/sales.db) [fallback]';
 }
 const {
   getStores,
