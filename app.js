@@ -994,11 +994,6 @@
       if (!panel) return;
       panel.classList.toggle('is-collapsed-detail', !shouldShowDetails);
     });
-    var toggleBtn = document.getElementById('snapshot-details-toggle');
-    if (toggleBtn) {
-      toggleBtn.setAttribute('aria-expanded', shouldShowDetails ? 'true' : 'false');
-      toggleBtn.textContent = shouldShowDetails ? '詳細を閉じる' : '詳細を表示';
-    }
   }
 
   function renderSnapshotCard(storeName, dept, referenceDate, todayHourly, yesterdayHourly, lastWeekHourly, isTotal, todayData, startTime, endTime, sumToday, sumYesterday, sumLastWeek) {
@@ -3179,14 +3174,7 @@
       });
     });
 
-    var snapshotDetailsToggle = document.getElementById('snapshot-details-toggle');
-    if (snapshotDetailsToggle) {
-      snapshotDetailsToggle.addEventListener('click', function () {
-        showDetailedKpis = !showDetailedKpis;
-        applySnapshotDetailVisibility();
-      });
-      applySnapshotDetailVisibility();
-    }
+    applySnapshotDetailVisibility();
 
     var storeSelectEl = document.getElementById('store-select');
     if (storeSelectEl) storeSelectEl.addEventListener('change', onStoreChange);
