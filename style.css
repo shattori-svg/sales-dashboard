@@ -191,6 +191,51 @@ header h1 {
   padding: 0 var(--space-2);
 }
 
+.user-menu {
+  position: relative;
+}
+
+.user-menu-button {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  transition: background 0.15s;
+}
+
+.user-menu-button:hover {
+  background: var(--accent-light);
+}
+
+.user-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.10);
+  min-width: 140px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1) 0;
+}
+
+.user-menu-dropdown[hidden] {
+  display: none;
+}
+
+.user-menu-dropdown .settings-link,
+.user-menu-dropdown .logout-link {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  border-radius: 0;
+}
+
 .settings-link {
   font-size: var(--text-sm);
   color: var(--text-muted);
