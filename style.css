@@ -870,6 +870,114 @@ main {
   margin-bottom: var(--space-8);
 }
 
+/* ---------- Insights split (composition + product breakdown) ---------- */
+.insights-split {
+  display: flex;
+  gap: var(--space-6);
+  align-items: flex-start;
+  margin-bottom: var(--space-8);
+}
+
+.insights-split .composition-section {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+/* Product breakdown list */
+.product-breakdown-list {
+  overflow-y: auto;
+}
+
+.product-breakdown-row {
+  display: grid;
+  grid-template-columns: 2rem 1fr 4rem 6rem 3.5rem 5rem;
+  gap: var(--space-1);
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--text-sm);
+  border-bottom: 1px solid var(--border-light, #f3f4f6);
+}
+
+.product-breakdown-row.header {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: var(--space-2);
+}
+
+.product-breakdown-rank {
+  color: var(--text-muted);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  text-align: right;
+}
+
+.product-breakdown-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.product-breakdown-qty,
+.product-breakdown-value,
+.product-breakdown-pct {
+  text-align: right;
+  font-family: var(--font-mono, monospace);
+  white-space: nowrap;
+}
+
+.product-breakdown-value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.product-breakdown-pct {
+  color: var(--text-secondary);
+}
+
+.product-breakdown-bar {
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.product-breakdown-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.product-breakdown-more {
+  display: block;
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.product-breakdown-more:hover {
+  text-decoration: underline;
+}
+
+@media (max-width: 767px) {
+  .insights-split {
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+  .product-breakdown-row {
+    grid-template-columns: 1.5rem 1fr 3.5rem 5rem 3rem;
+  }
+  .product-breakdown-bar { display: none; }
+}
+
 .chart-section.hidden,
 .composition-section.hidden { display: none; }
 
