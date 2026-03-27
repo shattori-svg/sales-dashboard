@@ -2448,7 +2448,7 @@
         return productMasterCache;
       })
       .catch(function () {
-        productMasterCache = {};
+        productMasterCache = null; // allow retry on next call
         return {};
       });
   }
