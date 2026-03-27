@@ -910,6 +910,16 @@ async function handleUpload(req, res, isFinal) {
     const lastWeekStr = addDays(refDateStr, -7);
 
     for (const { businessDate, data, storeId } of parsed) {
+      // Preserve existing byProduct (from item sales upload) if new data has none
+      const hasNewByProduct = data.byProduct && Object.keys(data.byProduct).length > 0;
+      if (!hasNewByProduct) {
+        try {
+          const existing = await getReport(businessDate, storeId);
+          if (existing && existing.byProduct && Object.keys(existing.byProduct).length > 0) {
+            data.byProduct = existing.byProduct;
+          }
+        } catch (_) {}
+      }
       await saveReport(businessDate, data, storeId, isFinal);
       console.log('Saved to DB:', storeId, businessDate, isFinal ? '(final)' : '(provisional)');
     }
