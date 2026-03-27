@@ -41,6 +41,7 @@
   <nav class="tabs">
     <button type="button" class="tab active" data-tab="hourly" aria-selected="true" data-i18n="tab_hourly">店別速報</button>
     <button type="button" class="tab" data-tab="allstores" aria-selected="false" data-i18n="tab_allstores">全店速報</button>
+    <button type="button" class="tab" data-tab="products" aria-selected="false" data-i18n="tab_products">商品別</button>
     <button type="button" class="tab" data-tab="daily" aria-selected="false" data-i18n="tab_daily">日次集計</button>
     <button type="button" class="tab" data-tab="weekly" aria-selected="false" data-i18n="tab_weekly">週次集計</button>
     <button type="button" class="tab" data-tab="ai" aria-selected="false" data-i18n="tab_ai">AIレポート</button>
@@ -263,6 +264,77 @@
         </table>
       </div>
       <p id="allstores-empty" class="empty-message" data-i18n="allstores_empty" hidden>該当日の全店データがありません。</p>
+    </section>
+
+    <section id="products-panel" class="panel">
+      <h3 class="section-title" data-i18n="products_section_title">商品別売上ランキング</h3>
+      <div class="output-header">
+        <span class="output-header-item">
+          <label for="products-store-select" class="store-label" data-i18n="store">店舗</label>
+          <select id="products-store-select" aria-label="Select store for products ranking">
+            <option value="default">Default</option>
+          </select>
+        </span>
+        <span class="output-header-item">
+          <label for="products-date" class="output-header-sep" data-i18n="output_date">売上日</label>
+          <input type="date" id="products-date" aria-label="Select date for products ranking">
+        </span>
+        <span class="output-header-item">
+          <label for="products-dept-filter" class="output-header-sep" data-i18n="department">部門</label>
+          <select id="products-dept-filter" aria-label="Filter by department">
+            <option value="" data-i18n-option="products_all_depts">全部門</option>
+            <option value="Grocery">Grocery</option>
+            <option value="Fruit &amp; Vegetable">Fruit &amp; Vegetable</option>
+            <option value="Fish &amp; Seafood">Fish &amp; Seafood</option>
+            <option value="Meat">Meat</option>
+            <option value="Delicatessen">Delicatessen</option>
+            <option value="Store Management">Store Management</option>
+          </select>
+        </span>
+        <span class="output-header-item">
+          <label for="products-sort-key" class="output-header-sep" data-i18n="sort_by">並び順</label>
+          <select id="products-sort-key" aria-label="Sort products by">
+            <option value="net" data-i18n-option="sort_net">売上高</option>
+            <option value="qty" data-i18n-option="sort_qty">販売数量</option>
+          </select>
+        </span>
+      </div>
+      <div class="products-search-bar" style="margin: 0.5rem 0;">
+        <input type="search" id="products-search" placeholder="商品名・バーコード・アイテムNo.で検索" aria-label="Search products" style="width:100%;max-width:400px;padding:0.375rem 0.625rem;border:1px solid #d1d5db;border-radius:6px;font-size:0.875rem;">
+      </div>
+      <div class="table-wrapper" id="products-table-wrapper">
+        <table id="products-table" class="report-table">
+          <thead>
+            <tr>
+              <th data-i18n="rank">順位</th>
+              <th>バーコード</th>
+              <th data-i18n="products_item_name">商品名</th>
+              <th data-i18n="department">部門</th>
+              <th data-i18n="snapshot_net_sales">純売上高</th>
+              <th data-i18n="dod">DoD</th>
+              <th data-i18n="wow">WoW</th>
+              <th data-i18n="qty_sold_short">販売数量</th>
+              <th data-i18n="products_share_pct">構成比</th>
+            </tr>
+          </thead>
+          <tbody id="products-tbody"></tbody>
+        </table>
+      </div>
+      <div id="products-pagination" style="display:none;align-items:center;gap:0.5rem;margin-top:0.5rem;flex-wrap:wrap;">
+        <button type="button" id="products-prev" class="btn-secondary" style="padding:0.25rem 0.75rem;">&#8249;</button>
+        <span id="products-page-info" style="font-size:0.875rem;color:#6b7280;"></span>
+        <button type="button" id="products-next" class="btn-secondary" style="padding:0.25rem 0.75rem;">&#8250;</button>
+        <span style="margin-left:0.5rem;font-size:0.875rem;color:#6b7280;">
+          <label for="products-page-size">件/ページ</label>
+          <select id="products-page-size" style="margin-left:0.25rem;font-size:0.875rem;border:1px solid #d1d5db;border-radius:4px;padding:0.125rem 0.25rem;">
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </span>
+      </div>
+      <p id="products-empty" class="empty-message" data-i18n="products_empty" hidden>商品データがありません</p>
+      <p id="products-no-data" class="empty-message" data-i18n="products_no_data_hint" hidden>Item_Code列が含まれていません</p>
     </section>
 
     <section id="daily-panel" class="panel">
