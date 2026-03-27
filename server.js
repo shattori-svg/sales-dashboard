@@ -1160,7 +1160,7 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
         }
         merged[itemCode].totalNetSales += Number(p.totalNetSales) || 0;
         merged[itemCode].totalQuantitySold += Number(p.totalQuantitySold) || 0;
-        merged[itemCode].discountAmount += Number(p.discountAmount) || 0;
+        merged[itemCode].discountAmount += Number(p.totalDiscountAmount) || 0;
       });
     });
 

@@ -320,7 +320,7 @@
           '</div>';
       }
       if (!hasNonZero) {
-        html += '<div class="composition-time-row"><span class="composition-time-label">—</span><span class="composition-peak"></span><span class="composition-time-value">実績なし</span><span class="composition-time-bar"></span></div>';
+        html += '<div class="composition-time-row"><span class="composition-time-label">—</span><span class="composition-peak"></span><span class="composition-time-value">' + t('no_actual_data') + '</span><span class="composition-time-bar"></span></div>';
       }
       html += '</div></div>';
     }
@@ -584,7 +584,7 @@
     var chartAnomalyNote = document.getElementById('chart-anomaly-note');
     if (chartAnomalyNote) {
       chartAnomalyNote.hidden = !hasAnomalousScale;
-      chartAnomalyNote.textContent = hasAnomalousScale ? '前日/先週の異常値を検知したため対数スケールで表示しています。' : '';
+      chartAnomalyNote.textContent = hasAnomalousScale ? t('chart_anomaly_note') : '';
     }
 
     var CHART_OPTS = {
@@ -667,7 +667,7 @@
     var forecastStatusNote = document.getElementById('forecast-status-note');
     if (forecastStatusNote) {
       forecastStatusNote.hidden = hasForecastFuture;
-      forecastStatusNote.textContent = hasForecastFuture ? '' : '予測データ未設定';
+      forecastStatusNote.textContent = hasForecastFuture ? '' : t('forecast_no_data');
     }
     var forecastReceiptsData = (optionalForecast && optionalForecast.forecastReceiptsData) ? optionalForecast.forecastReceiptsData : buildForecastChartDataActualOnly(todayReceipts, todayHourly, thailandNow);
 
@@ -908,16 +908,11 @@
   }
 
   function getDepartmentMetricLabel(key, fallbackLabel) {
-    var lang = (window.i18n && typeof window.i18n.getCurrentLang === 'function')
-      ? (window.i18n.getCurrentLang() || 'ja')
-      : 'ja';
-    if (lang === 'ja') {
-      if (key === 'snapshot_net_sales') return '部門売上高';
-      if (key === 'qty_sold_short') return '部門販売数量';
-      if (key === 'sales_per_hour') return '部門時間当たり売上';
-      if (key === 'unit_per_txn') return '部門買い上げ点数';
-      if (key === 'avg_selling_price') return '部門商品単価';
-    }
+    if (key === 'snapshot_net_sales') return t('dept_metric_net_sales');
+    if (key === 'qty_sold_short') return t('dept_metric_qty');
+    if (key === 'sales_per_hour') return t('dept_metric_sales_per_hour');
+    if (key === 'unit_per_txn') return t('dept_metric_unit_per_txn');
+    if (key === 'avg_selling_price') return t('dept_metric_avg_price');
     return formatDepartmentPrefixedLabel(fallbackLabel);
   }
 
@@ -1383,16 +1378,16 @@
     var isPhone = typeof window !== 'undefined' && window.innerWidth <= 480;
     var lang = window.i18n && window.i18n.getCurrentLang ? window.i18n.getCurrentLang() : 'ja';
     var timeHeader = document.getElementById('hourly-th-time');
-    if (timeHeader) timeHeader.textContent = isPhone ? (lang === 'ja' ? '時間' : 'Time') : (t('time_range_col') || 'Time range');
-    if (netHeader) netHeader.textContent = isPhone ? (lang === 'ja' ? '純売' : 'Net') : ((t('snapshot_net_sales') || 'Net Sales') + ' (' + cur + ')');
+    if (timeHeader) timeHeader.textContent = isPhone ? t('time_range_col_phone') : t('time_range_col');
+    if (netHeader) netHeader.textContent = isPhone ? t('net_sales_phone') : (t('snapshot_net_sales') + ' (' + cur + ')');
     var dodHeader = document.getElementById('hourly-th-dod');
-    if (dodHeader) dodHeader.textContent = isPhone ? (lang === 'ja' ? 'D' : 'DoD') : (t('dod') || 'DoD');
+    if (dodHeader) dodHeader.textContent = isPhone ? 'D' : t('dod');
     var wowHeader = document.getElementById('hourly-th-wow');
-    if (wowHeader) wowHeader.textContent = isPhone ? (lang === 'ja' ? 'W' : 'WoW') : (t('wow') || 'WoW');
+    if (wowHeader) wowHeader.textContent = isPhone ? 'W' : t('wow');
     var qtyHeader = document.getElementById('hourly-th-qty');
-    if (qtyHeader) qtyHeader.textContent = isPhone ? (lang === 'ja' ? '点' : 'Qty') : (t('qty_sold') || 'Qty of Items Sold');
+    if (qtyHeader) qtyHeader.textContent = isPhone ? t('qty_sold_phone') : t('qty_sold');
     var receiptHeader = document.getElementById('hourly-th-receipt');
-    if (receiptHeader) receiptHeader.textContent = isPhone ? (lang === 'ja' ? '枚' : 'Rcpt') : (t('receipt_count') || 'Receipt Count');
+    if (receiptHeader) receiptHeader.textContent = isPhone ? t('receipt_count_phone') : t('receipt_count');
     var unitPerTxnHeader = document.getElementById('hourly-th-unitptx');
     if (unitPerTxnHeader) unitPerTxnHeader.textContent = t('unit_per_txn') || 'Unit Per Transaction';
     var avgTxnPriceHeader = document.getElementById('hourly-th-avgtxn');
@@ -1745,7 +1740,7 @@
       var totalSec = Math.floor(remainMs / 1000);
       var min = Math.floor(totalSec / 60);
       var sec = totalSec % 60;
-      text += ' / 次の更新まで ' + String(min) + ':' + String(sec).padStart(2, '0');
+      text += ' / ' + t('next_refresh_in') + ' ' + String(min) + ':' + String(sec).padStart(2, '0');
     }
     el.textContent = text;
   }
@@ -2309,7 +2304,7 @@
       var totalQty = days.reduce(function (acc, d) { return acc + (d.quantitySold || 0); }, 0);
 
       var dailyRate = getExchangeRate(getDailyStoreId());
-      var jpyTotalStr = dailyRate != null ? ' / ' + formatInt(Math.round(grandTotalSales * dailyRate)) + ' 円' : '';
+      var jpyTotalStr = dailyRate != null ? ' / ' + formatInt(Math.round(grandTotalSales * dailyRate)) + ' ' + t('jpy_unit') : '';
       var weeklyTotalHtml = '<section class="summary-section weekly-total-section"><h3>' + t('period_total_section') + '</h3><table class="report-table daily-table weekly-total-table"><tbody>';
       weeklyTotalHtml += '<tr><td>' + t('total_net_sales') + '</td><td>' + formatInt(grandTotalSales) + ' ' + t('currency_unit') + jpyTotalStr + '</td></tr>';
       weeklyTotalHtml += '<tr><td>' + t('total_receipts') + '</td><td>' + formatInt(totalReceipts) + '</td></tr>';
@@ -2497,7 +2492,7 @@
     if (paginationEl) {
       paginationEl.style.display = total > pageSize ? 'flex' : 'none';
     }
-    if (pageInfoEl) pageInfoEl.textContent = (start + 1) + '–' + Math.min(start + pageSize, total) + ' / ' + total + ' 件';
+    if (pageInfoEl) pageInfoEl.textContent = (start + 1) + '–' + Math.min(start + pageSize, total) + ' / ' + total + ' ' + t('pagination_items');
     if (prevBtn) prevBtn.disabled = page === 0;
     if (nextBtn) nextBtn.disabled = page >= totalPages - 1;
 
@@ -2700,7 +2695,7 @@
 
     var grandTotal = products.reduce(function (s, p) { return s + (p.totalNetSales || 0); }, 0);
     var html = '<div class="product-breakdown-row header">' +
-      '<span>順</span><span>商品名</span><span>' + (t('qty_sold') || '販売数量') + '</span><span>売上高</span><span>構成比</span>' +
+      '<span>' + t('product_breakdown_rank') + '</span><span>' + t('product_breakdown_name') + '</span><span>' + t('qty_sold') + '</span><span>' + t('product_breakdown_sales') + '</span><span>' + t('product_breakdown_share') + '</span>' +
       '</div>';
     products.forEach(function (p, i) {
       var sharePct = grandTotal > 0 ? (p.totalNetSales / grandTotal * 100) : 0;

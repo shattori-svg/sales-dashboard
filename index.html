@@ -50,7 +50,7 @@
   <main>
     <section id="hourly-panel" class="panel active">
       <button type="button" id="hourly-filters-toggle" class="hourly-filters-toggle" aria-expanded="false" hidden>
-        <span class="hourly-filters-toggle-label">表示条件</span>
+        <span class="hourly-filters-toggle-label" data-i18n="display_conditions">表示条件</span>
         <span id="hourly-filters-summary" class="hourly-filters-summary">—</span>
       </button>
       <div id="hourly-output-header" class="output-header">
@@ -87,7 +87,7 @@
         <span class="output-header-item csv-export-control">
           <button type="button" id="btn-hourly-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
         </span>
-        <span id="hourly-loading-indicator" class="output-header-loading" hidden>更新中...</span>
+        <span id="hourly-loading-indicator" class="output-header-loading" data-i18n="updating" hidden>更新中...</span>
       </div>
       <div id="snapshot-card" class="snapshot-panels-wrap" aria-live="polite" hidden>
         <div class="snapshot-panel snapshot-panel-primary snapshot-panel-kpi">
@@ -177,7 +177,7 @@
         <section class="composition-section" id="product-breakdown-section" hidden>
           <h3 data-i18n="products_breakdown_title">商品内訳 (Top 10)</h3>
           <div id="product-breakdown-list" class="product-breakdown-list"></div>
-          <a href="#" id="product-breakdown-more" class="product-breakdown-more">もっと見る → 商品別タブ</a>
+          <a href="#" id="product-breakdown-more" class="product-breakdown-more" data-i18n="product_breakdown_more">もっと見る → 商品別タブ</a>
         </section>
       </div>
 
@@ -300,10 +300,12 @@
             <option value="qty" data-i18n-option="sort_qty">販売数量</option>
           </select>
         </span>
+        <span class="output-header-item csv-export-control">
+          <button type="button" id="btn-products-export" class="btn-csv" data-i18n="products_export_excel">Excel出力</button>
+        </span>
       </div>
       <div class="products-search-bar" style="margin: 0.5rem 0; display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
         <input type="search" id="products-search" placeholder="商品名・バーコード・アイテムNo.で検索" data-i18n-placeholder="products_search_placeholder" aria-label="Search products" style="flex:1;min-width:200px;max-width:400px;padding:0.375rem 0.625rem;border:1px solid #d1d5db;border-radius:6px;font-size:0.875rem;">
-        <button type="button" id="btn-products-export" class="btn-secondary" style="padding:0.375rem 0.875rem;font-size:0.875rem;" data-i18n="products_export_excel">Excel出力</button>
       </div>
       <div class="table-wrapper" id="products-table-wrapper">
         <table id="products-table" class="report-table">
@@ -328,7 +330,7 @@
         <span id="products-page-info" style="font-size:0.875rem;color:#6b7280;"></span>
         <button type="button" id="products-next" class="btn-secondary" style="padding:0.25rem 0.75rem;">&#8250;</button>
         <span style="margin-left:0.5rem;font-size:0.875rem;color:#6b7280;">
-          <label for="products-page-size">件/ページ</label>
+          <label for="products-page-size" data-i18n="items_per_page">件/ページ</label>
           <select id="products-page-size" style="margin-left:0.25rem;font-size:0.875rem;border:1px solid #d1d5db;border-radius:4px;padding:0.125rem 0.25rem;">
             <option value="20">20</option>
             <option value="50">50</option>
