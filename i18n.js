@@ -49,6 +49,7 @@
       actual_cumulative: '実績（累積）',
       forecast_line: '予測',
       forecast_band: '予測の幅',
+      forecast_band_upper: '予測の幅（上限）',
       forecast_from_here: '※ここから予測',
       no_data_selected_date: '選択した日付のデータがありません。',
       no_data_for_store: 'この店舗にはまだデータがありません。Setup で Excel をアップロードしてください。',
@@ -209,7 +210,8 @@
       bootstrap_create_failed: '作成に失敗しました。',
       network_error: '通信エラーです。',
       no_actual_data: '実績なし',
-      product_breakdown_more: 'もっと見る → 商品別タブ'
+      product_breakdown_more: 'もっと見る → 商品別タブ',
+      changelog_close: '閉じる'
     },
     en: {
       app_title: 'LOPIA Thailand Sales Dashboard',
@@ -256,6 +258,7 @@
       actual_cumulative: 'Actual (cumulative)',
       forecast_line: 'Forecast',
       forecast_band: 'Forecast range',
+      forecast_band_upper: 'Forecast range (upper)',
       forecast_from_here: 'Forecast from here',
       no_data_selected_date: 'No data for the selected date.',
       no_data_for_store: 'No data for this store yet. Upload Excel in Setup.',
@@ -416,7 +419,8 @@
       bootstrap_create_failed: 'Failed to create account.',
       network_error: 'Network error. Please try again.',
       no_actual_data: 'No data',
-      product_breakdown_more: 'View more → Products tab'
+      product_breakdown_more: 'View more → Products tab',
+      changelog_close: 'Close'
     },
     th: {
       app_title: 'LOPIA Thailand Sales Dashboard',
@@ -463,6 +467,7 @@
       actual_cumulative: 'ผลจริง (สะสม)',
       forecast_line: 'พยากรณ์',
       forecast_band: 'ช่วงพยากรณ์',
+      forecast_band_upper: 'ช่วงพยากรณ์ (บน)',
       forecast_from_here: 'พยากรณ์จากจุดนี้',
       no_data_selected_date: 'ไม่มีข้อมูลสำหรับวันที่เลือก',
       no_data_for_store: 'ยังไม่มีข้อมูลสำหรับสาขานี้ กรุณาอัปโหลด Excel จาก Setup',
@@ -623,7 +628,8 @@
       bootstrap_create_failed: 'ไม่สามารถสร้างบัญชีได้',
       network_error: 'เกิดข้อผิดพลาดในการเชื่อมต่อ กรุณาลองใหม่',
       no_actual_data: 'ไม่มีข้อมูล',
-      product_breakdown_more: 'ดูเพิ่มเติม → แท็บสินค้า'
+      product_breakdown_more: 'ดูเพิ่มเติม → แท็บสินค้า',
+      changelog_close: 'ปิด'
     }
   };
 

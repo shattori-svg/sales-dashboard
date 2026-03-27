@@ -3,6 +3,7 @@
 require('dotenv').config();
 
 const path = require('path');
+const fs = require('fs');
 const XLSX = require('xlsx');
 const express = require('express');
 const session = require('express-session');
@@ -277,6 +278,15 @@ function requireAdmin(req, res, next) {
 
 app.get('/health', (req, res) => {
   res.status(200).json({ ok: true });
+});
+
+app.get('/api/changelog', (req, res) => {
+  try {
+    const data = fs.readFileSync(path.join(__dirname, 'changelog.json'), 'utf8');
+    res.json(JSON.parse(data));
+  } catch (e) {
+    res.json({ version: '1.0.0', releases: [] });
+  }
 });
 
 app.get('/login', (req, res) => {
@@ -1131,7 +1141,7 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
   const dates = [];
   let cur = new Date(dateFrom + 'T00:00:00');
   const end = new Date((dateTo || dateFrom) + 'T00:00:00');
-  while (cur <= end && dates.length <= 90) {
+  while (cur <= end && dates.length < 90) {
     dates.push(cur.toISOString().slice(0, 10));
     cur.setDate(cur.getDate() + 1);
   }
@@ -1153,14 +1163,20 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
             itemCode,
             itemName: p.itemName || '',
             departmentName: p.departmentName || '',
+            retailProductCode: p.retailProductCode || '',
+            itemFamilyCode: p.itemFamilyCode || '',
             totalNetSales: 0,
+            totalGrossSales: 0,
             totalQuantitySold: 0,
             discountAmount: 0,
+            vatAmount: 0,
           };
         }
         merged[itemCode].totalNetSales += Number(p.totalNetSales) || 0;
+        merged[itemCode].totalGrossSales += Number(p.totalGrossSales) || 0;
         merged[itemCode].totalQuantitySold += Number(p.totalQuantitySold) || 0;
         merged[itemCode].discountAmount += Number(p.totalDiscountAmount) || 0;
+        merged[itemCode].vatAmount += Number(p.totalVatAmount) || 0;
       });
     });
 
@@ -1170,20 +1186,32 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
 
     const grandTotal = products.reduce((s, p) => s + p.totalNetSales, 0);
 
-    const rows = [['Barcode', 'Item Name', 'Department', 'Net Sales (THB)', 'Discount (THB)', 'Qty Sold', 'Unit Price (THB)', 'Share %']];
+    const rows = [['Barcode', 'Retail Product Code', 'Item Family Code', 'Item Name', 'Department', 'Net Sales (THB, excl.VAT)', 'Gross Sales (THB, incl.VAT)', 'VAT Amount (THB)', 'Discount (THB)', 'Discount %', 'Qty Sold', 'Net Unit Price (THB)', 'Gross Unit Price (THB)', 'Share %']];
     products.forEach((p) => {
       const m = master[p.itemCode] || {};
       const barcode = m.barcodeNo || p.itemCode;
       const name = m.nameEng || p.itemName || p.itemCode;
-      const unitPrice = p.totalQuantitySold > 0 ? Math.round(p.totalNetSales / p.totalQuantitySold) : '';
-      const share = grandTotal > 0 ? parseFloat((p.totalNetSales / grandTotal * 100).toFixed(2)) : 0;
+      const qty = p.totalQuantitySold || 0;
+      const net = p.totalNetSales || 0;
+      const gross = p.totalGrossSales || (net + (p.discountAmount || 0));
       const discount = p.discountAmount || 0;
-      rows.push([barcode, name, p.departmentName, p.totalNetSales, discount, p.totalQuantitySold, unitPrice, share]);
+      const vat = p.vatAmount || 0;
+      // 割引率: 分母は定価合計（= Gross Sales − Discount）
+      const listPriceTotal = gross - discount;
+      const discountRate = listPriceTotal > 0 && discount !== 0
+        ? parseFloat((discount / listPriceTotal * 100).toFixed(2))
+        : 0;
+      const netUnitPrice = qty > 0 ? Math.round(net / qty) : '';
+      const grossUnitPrice = qty > 0 ? Math.round(gross / qty) : '';
+      const share = grandTotal > 0 ? parseFloat((net / grandTotal * 100).toFixed(2)) : 0;
+      const retailCode = p.retailProductCode || '';
+      const familyCode = p.itemFamilyCode || '';
+      rows.push([barcode, retailCode, familyCode, name, p.departmentName, net, gross, vat, discount, discountRate, qty, netUnitPrice, grossUnitPrice, share]);
     });
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{ wch: 16 }, { wch: 40 }, { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 10 }, { wch: 16 }, { wch: 10 }];
+    ws['!cols'] = [{ wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 40 }, { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 10 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Products');
 
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -1333,7 +1361,7 @@ app.put('/api/users/:id', requireAdmin, async (req, res) => {
 app.delete('/api/users/:id', requireAdmin, async (req, res) => {
   const id = req.params.id;
   if (!id) return res.status(400).json({ error: 'User id is required.' });
-  if (req.session.userId === id) return res.status(400).json({ error: 'Cannot delete your own account.' });
+  if (String(req.session.userId) === String(id)) return res.status(400).json({ error: 'Cannot delete your own account.' });
   const user = await getUserById(id);
   if (!user) return res.status(404).json({ error: 'User not found.' });
   if (user.role === 'admin') {

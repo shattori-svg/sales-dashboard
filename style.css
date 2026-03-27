@@ -2183,3 +2183,55 @@ body.login-body {
   }
 }
 
+
+
+/* ── Changelog modal ── */
+.changelog-modal-overlay[hidden] { display: none; }
+.changelog-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+}
+.changelog-modal {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 2rem;
+  max-width: 480px;
+  width: calc(100% - 2rem);
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.changelog-modal-header {
+  margin-bottom: 1rem;
+}
+.changelog-modal-title {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 0.25rem;
+}
+.changelog-modal-version {
+  font-size: 0.8125rem;
+  color: #6b7280;
+}
+.changelog-modal-list {
+  margin: 0 0 1.5rem;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.changelog-modal-list li {
+  font-size: 0.9375rem;
+  color: #374151;
+  line-height: 1.5;
+}
+.changelog-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+}
