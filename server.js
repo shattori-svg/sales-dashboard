@@ -1016,7 +1016,7 @@ app.post('/api/upload/item-sales', requireAdmin, upload.single('file'), async (r
   }
 });
 
-app.get('/api/product-master', requireAdmin, async (req, res) => {
+app.get('/api/product-master', async (req, res) => {
   try {
     const master = await getProductMaster();
     res.json({ master });
