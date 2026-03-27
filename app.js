@@ -1701,8 +1701,7 @@
   }
 
   function getTodayYYYYMMDD() {
-    var d = new Date();
-    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    return getThailandDateStr();
   }
 
   function formatLastUploadDisplay(isoString) {
@@ -2479,7 +2478,7 @@
     }
 
     var totalPages = Math.ceil(total / pageSize);
-    if (page >= totalPages) page = totalPages - 1;
+    if (page >= totalPages) page = Math.max(0, totalPages - 1);
     productsPagination.page = page;
 
     var start = page * pageSize;
@@ -2610,7 +2609,7 @@
           tbody.innerHTML = '';
           var hasAnyData = reports.some(function (b) { return b && b.today; });
           if (emptyEl) emptyEl.hidden = hasAnyData;
-          if (noDataEl) noDataEl.hidden = !hasAnyData || hasAnyData;
+          if (noDataEl) noDataEl.hidden = hasAnyData;
           if (tableWrapper) tableWrapper.style.display = 'none';
           if (paginationEl) paginationEl.style.display = 'none';
           return;
@@ -3542,11 +3541,56 @@
       updateHourlyFiltersLayout();
       updateHourlyFiltersSummaryBar();
       if (authState.loggedIn && authState.needsProfileSetup) openSettingsModal(true);
+      if (authState.loggedIn) checkChangelog();
       if (outputDateEl) {
         refreshOutputDateSelect();
         renderReport();
       }
     });
+  }
+
+  function checkChangelog() {
+    fetch('/api/changelog')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        var version = data && data.version;
+        if (!version) return;
+        var seenKey = 'changelog_seen_version';
+        var seen = '';
+        try { seen = localStorage.getItem(seenKey) || ''; } catch (e) {}
+        if (seen === version) return;
+
+        var releases = data.releases || [];
+        var latest = releases[0];
+        if (!latest) return;
+
+        var lang = (window.i18n && window.i18n.getCurrentLang) ? window.i18n.getCurrentLang() : 'en';
+        var locale = latest[lang] || latest['en'] || {};
+        var titleEl = document.getElementById('changelog-modal-title');
+        var verEl = document.getElementById('changelog-modal-version');
+        var listEl = document.getElementById('changelog-modal-list');
+        var modal = document.getElementById('changelog-modal');
+        if (!modal || !titleEl || !listEl) return;
+
+        titleEl.textContent = locale.title || '';
+        verEl.textContent = latest.version ? 'v' + latest.version + ' — ' + (latest.date || '') : '';
+        listEl.innerHTML = (locale.items || []).map(function (item) {
+          return '<li>' + escapeHtml(item) + '</li>';
+        }).join('');
+
+        modal.hidden = false;
+
+        var closeBtn = document.getElementById('changelog-modal-close');
+        function closeModal() {
+          modal.hidden = true;
+          try { localStorage.setItem(seenKey, version); } catch (e) {}
+        }
+        if (closeBtn) closeBtn.addEventListener('click', closeModal);
+        modal.addEventListener('click', function (e) {
+          if (e.target === modal) closeModal();
+        });
+      })
+      .catch(function () {});
   }
 
   if (document.readyState === 'loading') {

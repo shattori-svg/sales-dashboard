@@ -636,6 +636,9 @@ function parseItemSalesExcel(buffer, businessDate, storeId) {
         else if (c.includes('gross') && c.includes('sales') && c.includes('pos')) colMap.grossSales = idx;
         else if (c.includes('sales amount') && c.includes('pos')) colMap.netSales = idx;
         else if (c.includes('disc') && c.includes('pos')) colMap.discAmount = idx;
+        else if (c.includes('vat') && c.includes('pos')) colMap.vatAmount = idx;
+        else if (c.includes('retail product code')) colMap.retailProductCode = idx;
+        else if (c.includes('item family code')) colMap.itemFamilyCode = idx;
         else if (c.includes('item category') || c === 'item category code') colMap.categoryCode = idx;
       });
       break;
@@ -673,6 +676,11 @@ function parseItemSalesExcel(buffer, businessDate, storeId) {
     const grossSales = toNum(colMap.grossSales != null ? row[colMap.grossSales] : null) || 0;
     const qtySold = toNum(colMap.qtySold != null ? row[colMap.qtySold] : null) || 0;
     const discAmount = toNum(colMap.discAmount != null ? row[colMap.discAmount] : null) || 0;
+    const vatAmount = toNum(colMap.vatAmount != null ? row[colMap.vatAmount] : null) || 0;
+    const retailProductCode = colMap.retailProductCode != null && row[colMap.retailProductCode] != null
+      ? String(row[colMap.retailProductCode]).trim() : '';
+    const itemFamilyCode = colMap.itemFamilyCode != null && row[colMap.itemFamilyCode] != null
+      ? String(row[colMap.itemFamilyCode]).trim() : '';
 
     if (netSales === 0 && qtySold === 0) continue;
 
@@ -690,16 +698,20 @@ function parseItemSalesExcel(buffer, businessDate, storeId) {
         itemName: description,
         departmentCode: '',
         departmentName: deptName,
+        retailProductCode,
+        itemFamilyCode,
         totalNetSales: 0,
         totalQuantitySold: 0,
         totalGrossSales: 0,
         totalDiscountAmount: 0,
+        totalVatAmount: 0,
       };
     }
     byProduct[itemCode].totalNetSales += netSales;
     byProduct[itemCode].totalQuantitySold += qtySold;
     byProduct[itemCode].totalGrossSales += grossSales;
     byProduct[itemCode].totalDiscountAmount += discAmount;
+    byProduct[itemCode].totalVatAmount += vatAmount;
 
     if (!deptTotals[deptName]) {
       deptTotals[deptName] = { netSales: 0, grossSales: 0, quantitySold: 0, discountAmount: 0 };

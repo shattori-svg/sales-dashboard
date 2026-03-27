@@ -1,0 +1,36 @@
+{
+  "version": "1.6.0",
+  "releases": [
+    {
+      "version": "1.6.0",
+      "date": "2026-03-27",
+      "ja": {
+        "title": "v1.6.0 アップデート内容",
+        "items": [
+          "商品別売上のExcel出力機能を追加しました",
+          "商品別売上に期間（From〜To）指定機能を追加しました",
+          "一品単価の列を追加しました",
+          "多言語対応を全画面に拡大しました（英語・タイ語）"
+        ]
+      },
+      "en": {
+        "title": "What's new in v1.6.0",
+        "items": [
+          "Added Excel export for the Products tab",
+          "Added date range (From–To) selector for product sales",
+          "Added unit price column to product ranking",
+          "Extended multilingual support to all user-facing screens (EN/TH)"
+        ]
+      },
+      "th": {
+        "title": "อัปเดตใหม่ใน v1.6.0",
+        "items": [
+          "เพิ่มฟีเจอร์ส่งออก Excel สำหรับแท็บสินค้า",
+          "เพิ่มตัวเลือกช่วงวันที่ (From–To) สำหรับยอดขายสินค้า",
+          "เพิ่มคอลัมน์ราคาต่อหน่วยในอันดับสินค้า",
+          "ขยายการรองรับหลายภาษาครอบคลุมทุกหน้า (EN/TH)"
+        ]
+      }
+    }
+  ]
+}
