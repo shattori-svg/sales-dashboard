@@ -2694,16 +2694,17 @@
     }
     var leftHeight = left.getBoundingClientRect().height;
     if (!(leftHeight > 0)) return;
-    right.style.height = Math.ceil(leftHeight) + 'px';
-    right.style.overflow = 'hidden';
+    right.style.height = '';
+    right.style.overflow = '';
     var title = right.querySelector('h3');
     var more = document.getElementById('product-breakdown-more');
     var titleH = title ? title.getBoundingClientRect().height : 0;
-    var moreH = (more && !more.hidden) ? more.getBoundingClientRect().height : 0;
+    var moreEl = more && !more.hidden ? more : null;
+    var moreH = moreEl ? (moreEl.getBoundingClientRect().height + 8) : 0;
     var style = window.getComputedStyle(right);
     var paddingTop = parseFloat(style.paddingTop) || 0;
     var paddingBottom = parseFloat(style.paddingBottom) || 0;
-    var gap = 12;
+    var gap = 16;
     var available = Math.max(160, Math.floor(leftHeight - titleH - moreH - paddingTop - paddingBottom - gap));
     list.style.maxHeight = available + 'px';
     list.style.height = available + 'px';
