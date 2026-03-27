@@ -3351,6 +3351,24 @@
       var totalPages = Math.ceil(productsPagination.filtered.length / productsPagination.pageSize);
       if (productsPagination.page < totalPages - 1) { productsPagination.page++; renderProductsPage(); }
     });
+    var productsExportBtn = document.getElementById('btn-products-export');
+    if (productsExportBtn) {
+      productsExportBtn.addEventListener('click', function () {
+        var storeEl = document.getElementById('products-store-select');
+        var dateFromEl = document.getElementById('products-date-from');
+        var dateToEl = document.getElementById('products-date-to');
+        var deptEl = document.getElementById('products-dept-filter');
+        var dateFrom = dateFromEl ? dateFromEl.value : '';
+        if (!dateFrom) return;
+        var params = new URLSearchParams({
+          storeId: storeEl ? storeEl.value : 'default',
+          dateFrom: dateFrom,
+          dateTo: dateToEl ? (dateToEl.value || dateFrom) : dateFrom,
+        });
+        if (deptEl && deptEl.value) params.set('dept', deptEl.value);
+        window.location.href = '/api/products/export?' + params.toString();
+      });
+    }
     var productBreakdownMore = document.getElementById('product-breakdown-more');
     if (productBreakdownMore) {
       productBreakdownMore.addEventListener('click', function (e) {

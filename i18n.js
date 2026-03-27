@@ -183,7 +183,8 @@
       products_unit_price: '一品単価',
       products_barcode: 'バーコード',
       products_date_range: '期間',
-      products_search_placeholder: '商品名・バーコード・アイテムNo.で検索'
+      products_search_placeholder: '商品名・バーコード・アイテムNo.で検索',
+      products_export_excel: 'Excel出力'
     },
     en: {
       app_title: 'LOPIA Thailand Sales Dashboard',
@@ -364,7 +365,8 @@
       products_unit_price: 'Unit Price',
       products_barcode: 'Barcode',
       products_date_range: 'Period',
-      products_search_placeholder: 'Search by name, barcode, or item no.'
+      products_search_placeholder: 'Search by name, barcode, or item no.',
+      products_export_excel: 'Export Excel'
     },
     th: {
       app_title: 'LOPIA Thailand Sales Dashboard',
@@ -545,7 +547,8 @@
       products_unit_price: 'ราคาต่อหน่วย',
       products_barcode: 'บาร์โค้ด',
       products_date_range: 'ช่วงเวลา',
-      products_search_placeholder: 'ค้นหาตามชื่อ บาร์โค้ด หรือรหัสสินค้า'
+      products_search_placeholder: 'ค้นหาตามชื่อ บาร์โค้ด หรือรหัสสินค้า',
+      products_export_excel: 'ส่งออก Excel'
     }
   };
 
