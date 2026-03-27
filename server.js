@@ -224,6 +224,11 @@ function checkBasicAuth(req) {
   return expectedUser && expectedPass && user === expectedUser && pass === expectedPass;
 }
 
+function checkApiKey(req) {
+  const key = req.headers['x-api-key'];
+  return !!(key && process.env.API_KEY && key === process.env.API_KEY);
+}
+
 function requireAuth(req, res, next) {
   const isStatic = /\.(css|js|ico|png|jpg|jpeg|gif|svg|woff2?|ttf|eot)$/i.test(req.path);
   if (isStatic) return next();
@@ -234,6 +239,9 @@ function requireAuth(req, res, next) {
 
   // Session check first — Entra users have no DB row, so countUsers() may be 0
   if (req.session && req.session.loggedIn) return next();
+
+  // API key authentication
+  if (checkApiKey(req)) return next();
 
   countUsers()
     .then((n) => {
@@ -260,6 +268,7 @@ function requireAdmin(req, res, next) {
   if (req.method === 'POST' && req.path === '/api/upload') return next();
   if (req.method === 'POST' && req.path === '/api/upload/final' && checkBasicAuth(req)) return next();
   if (req.session && req.session.role === 'admin') return next();
+  if (checkApiKey(req)) return next();
   const isApi = req.path.startsWith('/api/');
   if (isApi) return res.status(403).json({ error: 'Forbidden' });
   res.redirect('/');
