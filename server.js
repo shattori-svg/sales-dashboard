@@ -1155,10 +1155,12 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
             departmentName: p.departmentName || '',
             totalNetSales: 0,
             totalQuantitySold: 0,
+            discountAmount: 0,
           };
         }
         merged[itemCode].totalNetSales += Number(p.totalNetSales) || 0;
         merged[itemCode].totalQuantitySold += Number(p.totalQuantitySold) || 0;
+        merged[itemCode].discountAmount += Number(p.discountAmount) || 0;
       });
     });
 
@@ -1168,19 +1170,20 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
 
     const grandTotal = products.reduce((s, p) => s + p.totalNetSales, 0);
 
-    const rows = [['Barcode', 'Item Name', 'Department', 'Net Sales (THB)', 'Qty Sold', 'Unit Price (THB)', 'Share %']];
+    const rows = [['Barcode', 'Item Name', 'Department', 'Net Sales (THB)', 'Discount (THB)', 'Qty Sold', 'Unit Price (THB)', 'Share %']];
     products.forEach((p) => {
       const m = master[p.itemCode] || {};
       const barcode = m.barcodeNo || p.itemCode;
       const name = m.nameEng || p.itemName || p.itemCode;
       const unitPrice = p.totalQuantitySold > 0 ? Math.round(p.totalNetSales / p.totalQuantitySold) : '';
       const share = grandTotal > 0 ? parseFloat((p.totalNetSales / grandTotal * 100).toFixed(2)) : 0;
-      rows.push([barcode, name, p.departmentName, p.totalNetSales, p.totalQuantitySold, unitPrice, share]);
+      const discount = p.discountAmount || 0;
+      rows.push([barcode, name, p.departmentName, p.totalNetSales, discount, p.totalQuantitySold, unitPrice, share]);
     });
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{ wch: 16 }, { wch: 40 }, { wch: 18 }, { wch: 16 }, { wch: 10 }, { wch: 16 }, { wch: 10 }];
+    ws['!cols'] = [{ wch: 16 }, { wch: 40 }, { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 10 }, { wch: 16 }, { wch: 10 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Products');
 
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
