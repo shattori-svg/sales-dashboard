@@ -276,8 +276,10 @@
           </select>
         </span>
         <span class="output-header-item">
-          <label for="products-date" class="output-header-sep" data-i18n="output_date">売上日</label>
-          <input type="date" id="products-date" aria-label="Select date for products ranking">
+          <label for="products-date-from" class="output-header-sep">期間</label>
+          <input type="date" id="products-date-from" aria-label="From date for products ranking">
+          <span style="margin:0 0.25rem;color:#6b7280;">〜</span>
+          <input type="date" id="products-date-to" aria-label="To date for products ranking">
         </span>
         <span class="output-header-item">
           <label for="products-dept-filter" class="output-header-sep" data-i18n="department">部門</label>
@@ -306,7 +308,6 @@
         <table id="products-table" class="report-table">
           <thead>
             <tr>
-              <th data-i18n="rank">順位</th>
               <th>バーコード</th>
               <th data-i18n="products_item_name">商品名</th>
               <th data-i18n="department">部門</th>
@@ -314,6 +315,7 @@
               <th data-i18n="dod">DoD</th>
               <th data-i18n="wow">WoW</th>
               <th data-i18n="qty_sold_short">販売数量</th>
+              <th data-i18n="products_unit_price">一品単価</th>
               <th data-i18n="products_share_pct">構成比</th>
             </tr>
           </thead>

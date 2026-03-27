@@ -965,12 +965,12 @@ main {
 }
 
 /* バーコード・商品名・部門列を左寄せ */
+#products-table th:nth-child(1),
+#products-table td:nth-child(1),
 #products-table th:nth-child(2),
 #products-table td:nth-child(2),
 #products-table th:nth-child(3),
-#products-table td:nth-child(3),
-#products-table th:nth-child(4),
-#products-table td:nth-child(4) {
+#products-table td:nth-child(3) {
   text-align: left;
 }
 

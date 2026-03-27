@@ -1816,8 +1816,10 @@
       var chosen = el.value;
       var allstoresDateEl = document.getElementById('allstores-date');
       if (allstoresDateEl && chosen) allstoresDateEl.value = chosen;
-      var productsDateEl2 = document.getElementById('products-date');
-      if (productsDateEl2 && chosen) productsDateEl2.value = chosen;
+      var productsDateFromEl2 = document.getElementById('products-date-from');
+      var productsDateToEl2 = document.getElementById('products-date-to');
+      if (productsDateFromEl2 && chosen) productsDateFromEl2.value = chosen;
+      if (productsDateToEl2 && chosen) productsDateToEl2.value = chosen;
       if (chosen) {
         fetch('/api/report?referenceDate=' + encodeURIComponent(chosen) + '&storeId=' + encodeURIComponent(storeId)).then(function (r) {
           return parseJsonResponse(r).then(function (data) {
@@ -2513,8 +2515,8 @@
       var dod = (yNet != null && yNet > 0) ? ((p.totalNetSales - yNet) / yNet * 100) : null;
       var wow = (wNet != null && wNet > 0) ? ((p.totalNetSales - wNet) / wNet * 100) : null;
       var sharePct = grandTotal > 0 ? (p.totalNetSales / grandTotal * 100) : 0;
+      var unitPrice = (p.totalQuantitySold > 0) ? Math.round(p.totalNetSales / p.totalQuantitySold) : null;
       html += '<tr>';
-      html += '<td>' + rank + '</td>';
       html += '<td>' + escapeHtml(barcode) + '</td>';
       html += '<td>' + escapeHtml(displayName) + '</td>';
       html += '<td>' + escapeHtml(p.departmentName) + '</td>';
@@ -2522,6 +2524,7 @@
       html += '<td class="' + (dod == null ? 'na-value' : dod >= 0 ? 'positive' : 'negative') + '">' + (dod == null ? '<span title="' + escapeHtml(t('no_prev_data') || '前日データなし') + '">-</span>' : (dod >= 0 ? '+' : '') + dod.toFixed(1) + '%') + '</td>';
       html += '<td class="' + (wow == null ? 'na-value' : wow >= 0 ? 'positive' : 'negative') + '">' + (wow == null ? '<span title="' + escapeHtml(t('no_last_week_data') || '先週データなし') + '">-</span>' : (wow >= 0 ? '+' : '') + wow.toFixed(1) + '%') + '</td>';
       html += '<td>' + formatInt(p.totalQuantitySold) + '</td>';
+      html += '<td>' + (unitPrice != null ? formatCurrencyInteger(unitPrice) : '-') + '</td>';
       html += '<td>' + sharePct.toFixed(1) + '%</td>';
       html += '</tr>';
     });
@@ -2530,7 +2533,8 @@
 
   function renderProductsTab() {
     var storeEl = document.getElementById('products-store-select');
-    var dateEl = document.getElementById('products-date');
+    var dateFromEl = document.getElementById('products-date-from');
+    var dateToEl = document.getElementById('products-date-to');
     var deptFilterEl = document.getElementById('products-dept-filter');
     var sortKeyEl = document.getElementById('products-sort-key');
     var searchEl = document.getElementById('products-search');
@@ -2543,13 +2547,14 @@
     if (!tbody) return;
 
     var storeId = storeEl ? storeEl.value : 'default';
-    var date = dateEl ? dateEl.value : '';
+    var dateFrom = dateFromEl ? dateFromEl.value : '';
+    var dateTo = dateToEl ? dateToEl.value : '';
     var deptFilter = deptFilterEl ? deptFilterEl.value : '';
     var sortKey = sortKeyEl ? sortKeyEl.value : 'net';
     var searchQ = searchEl ? searchEl.value.trim().toLowerCase() : '';
     var pageSize = pageSizeEl ? parseInt(pageSizeEl.value, 10) : 20;
 
-    if (!date) {
+    if (!dateFrom) {
       tbody.innerHTML = '';
       if (emptyEl) emptyEl.hidden = false;
       if (noDataEl) noDataEl.hidden = true;
@@ -2558,29 +2563,65 @@
       return;
     }
 
+    if (!dateTo || dateTo < dateFrom) dateTo = dateFrom;
+
+    // Build list of dates in range
+    var dates = [];
+    var cur = new Date(dateFrom + 'T00:00:00');
+    var end = new Date(dateTo + 'T00:00:00');
+    while (cur <= end && dates.length <= 90) {
+      dates.push(cur.toISOString().slice(0, 10));
+      cur.setDate(cur.getDate() + 1);
+    }
+    var isSingleDay = dates.length === 1;
+
     showLoading();
     Promise.all([
-      fetch('/api/report?referenceDate=' + encodeURIComponent(date) + '&storeId=' + encodeURIComponent(storeId)).then(function (res) { return parseJsonResponse(res); }),
+      Promise.all(dates.map(function (d) {
+        return fetch('/api/report?referenceDate=' + encodeURIComponent(d) + '&storeId=' + encodeURIComponent(storeId))
+          .then(function (res) { return parseJsonResponse(res); })
+          .catch(function () { return null; });
+      })),
       loadProductMaster(),
     ])
       .then(function (results) {
         hideLoading();
-        var body = results[0];
-        var master = results[1];
-        var todayData = body.today;
-        var yesterdayData = body.yesterday || null;
-        var lastWeekData = body.lastWeek || null;
+        var reports = results[0];
 
-        if (!todayData || !todayData.byProduct) {
+        // Aggregate byProduct across all dates
+        var mergedByProduct = {};
+        reports.forEach(function (body) {
+          if (!body || !body.today || !body.today.byProduct) return;
+          Object.keys(body.today.byProduct).forEach(function (itemCode) {
+            var p = body.today.byProduct[itemCode];
+            if (!mergedByProduct[itemCode]) {
+              mergedByProduct[itemCode] = {
+                itemCode: p.itemCode,
+                itemName: p.itemName,
+                departmentName: p.departmentName,
+                totalNetSales: 0,
+                totalQuantitySold: 0,
+              };
+            }
+            mergedByProduct[itemCode].totalNetSales += p.totalNetSales || 0;
+            mergedByProduct[itemCode].totalQuantitySold += p.totalQuantitySold || 0;
+          });
+        });
+
+        var yesterdayData = (isSingleDay && reports[0]) ? (reports[0].yesterday || null) : null;
+        var lastWeekData = (isSingleDay && reports[0]) ? (reports[0].lastWeek || null) : null;
+
+        if (Object.keys(mergedByProduct).length === 0) {
           tbody.innerHTML = '';
-          if (emptyEl) emptyEl.hidden = !todayData;
-          if (noDataEl) noDataEl.hidden = !!todayData;
+          var hasAnyData = reports.some(function (b) { return b && b.today; });
+          if (emptyEl) emptyEl.hidden = hasAnyData;
+          if (noDataEl) noDataEl.hidden = !hasAnyData || hasAnyData;
           if (tableWrapper) tableWrapper.style.display = 'none';
           if (paginationEl) paginationEl.style.display = 'none';
           return;
         }
 
-        var products = Object.values(todayData.byProduct);
+        var products = Object.values(mergedByProduct);
         if (deptFilter) {
           products = products.filter(function (p) { return p.departmentName === deptFilter; });
         }
@@ -2589,8 +2630,8 @@
           return (b.totalNetSales || 0) - (a.totalNetSales || 0);
         });
 
-        // Apply search filter using product master data
         if (searchQ) {
+          var master = productMasterCache || {};
           products = products.filter(function (p) {
             var m = master[p.itemCode] || {};
             return (
@@ -3259,8 +3300,10 @@
         state.referenceDate = body.referenceDate;
         var allstoresSync = document.getElementById('allstores-date');
         if (allstoresSync) allstoresSync.value = date;
-        var productsSync = document.getElementById('products-date');
-        if (productsSync) productsSync.value = date;
+        var productsSyncFrom = document.getElementById('products-date-from');
+        var productsSyncTo = document.getElementById('products-date-to');
+        if (productsSyncFrom) productsSyncFrom.value = date;
+        if (productsSyncTo) productsSyncTo.value = date;
         renderReport();
         updateHourlyFiltersSummaryBar();
         updateAutoRefreshStatus();
@@ -3278,7 +3321,8 @@
     var productsDeptFilterEl = document.getElementById('products-dept-filter');
     var productsSortKeyEl = document.getElementById('products-sort-key');
     var productsStoreEl = document.getElementById('products-store-select');
-    var productsDateEl = document.getElementById('products-date');
+    var productsDateFromEl = document.getElementById('products-date-from');
+    var productsDateToEl = document.getElementById('products-date-to');
     var productsSearchEl = document.getElementById('products-search');
     var productsPageSizeEl = document.getElementById('products-page-size');
     var productsPrevBtn = document.getElementById('products-prev');
@@ -3286,7 +3330,8 @@
     if (productsDeptFilterEl) productsDeptFilterEl.addEventListener('change', function () { productsPagination.page = 0; renderProductsTab(); });
     if (productsSortKeyEl) productsSortKeyEl.addEventListener('change', function () { productsPagination.page = 0; renderProductsTab(); });
     if (productsStoreEl) productsStoreEl.addEventListener('change', function () { productsPagination.page = 0; renderProductsTab(); });
-    if (productsDateEl) productsDateEl.addEventListener('change', function () { productsPagination.page = 0; renderProductsTab(); });
+    if (productsDateFromEl) productsDateFromEl.addEventListener('change', function () { productsPagination.page = 0; renderProductsTab(); });
+    if (productsDateToEl) productsDateToEl.addEventListener('change', function () { productsPagination.page = 0; renderProductsTab(); });
     if (productsPageSizeEl) productsPageSizeEl.addEventListener('change', function () {
       productsPagination.pageSize = parseInt(this.value, 10);
       productsPagination.page = 0;
