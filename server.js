@@ -1351,4 +1351,3 @@ app.listen(PORT, () => {
   console.log('Database: ' + activeDatabaseLabel);
   startExchangeRateScheduler();
 });
-              
