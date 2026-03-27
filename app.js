@@ -2513,8 +2513,8 @@
       var dod = (yNet != null && yNet > 0) ? ((p.totalNetSales - yNet) / yNet * 100) : null;
       var wow = (wNet != null && wNet > 0) ? ((p.totalNetSales - wNet) / wNet * 100) : null;
       var sharePct = grandTotal > 0 ? (p.totalNetSales / grandTotal * 100) : 0;
+      var unitPrice = (p.totalQuantitySold > 0) ? Math.round(p.totalNetSales / p.totalQuantitySold) : null;
       html += '<tr>';
-      html += '<td>' + rank + '</td>';
       html += '<td>' + escapeHtml(barcode) + '</td>';
       html += '<td>' + escapeHtml(displayName) + '</td>';
       html += '<td>' + escapeHtml(p.departmentName) + '</td>';
@@ -2522,6 +2522,7 @@
       html += '<td class="' + (dod == null ? 'na-value' : dod >= 0 ? 'positive' : 'negative') + '">' + (dod == null ? '<span title="' + escapeHtml(t('no_prev_data') || '前日データなし') + '">-</span>' : (dod >= 0 ? '+' : '') + dod.toFixed(1) + '%') + '</td>';
       html += '<td class="' + (wow == null ? 'na-value' : wow >= 0 ? 'positive' : 'negative') + '">' + (wow == null ? '<span title="' + escapeHtml(t('no_last_week_data') || '先週データなし') + '">-</span>' : (wow >= 0 ? '+' : '') + wow.toFixed(1) + '%') + '</td>';
       html += '<td>' + formatInt(p.totalQuantitySold) + '</td>';
+      html += '<td>' + (unitPrice != null ? formatCurrencyInteger(unitPrice) : '-') + '</td>';
       html += '<td>' + sharePct.toFixed(1) + '%</td>';
       html += '</tr>';
     });
