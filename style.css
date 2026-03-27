@@ -964,6 +964,16 @@ main {
   text-decoration: none;
 }
 
+/* バーコード・商品名・部門列を左寄せ */
+#products-table th:nth-child(2),
+#products-table td:nth-child(2),
+#products-table th:nth-child(3),
+#products-table td:nth-child(3),
+#products-table th:nth-child(4),
+#products-table td:nth-child(4) {
+  text-align: left;
+}
+
 .product-breakdown-more:hover {
   text-decoration: underline;
 }
