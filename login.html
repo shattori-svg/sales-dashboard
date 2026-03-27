@@ -86,8 +86,9 @@
             var un = document.getElementById('bootstrap-username').value.trim();
             var pw = document.getElementById('bootstrap-password').value;
             var errEl = document.getElementById('bootstrap-error');
+            var _t = window.i18n && window.i18n.t ? window.i18n.t.bind(window.i18n) : function (k) { return k; };
             if (!un || pw.length < 6) {
-              errEl.textContent = 'ユーザー名とパスワード（6文字以上）を入力してください。';
+              errEl.textContent = _t('bootstrap_validation_error');
               errEl.hidden = false;
               return;
             }
@@ -100,12 +101,12 @@
                 if (_.res.ok && _.body.redirect) {
                   window.location.href = _.body.redirect;
                 } else {
-                  errEl.textContent = _.body && _.body.error ? _.body.error : '作成に失敗しました。';
+                  errEl.textContent = _.body && _.body.error ? _.body.error : _t('bootstrap_create_failed');
                   errEl.hidden = false;
                 }
               })
               .catch(function () {
-                errEl.textContent = '通信エラーです。';
+                errEl.textContent = _t('network_error');
                 errEl.hidden = false;
               });
           });

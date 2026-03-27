@@ -3,6 +3,7 @@
 require('dotenv').config();
 
 const path = require('path');
+const XLSX = require('xlsx');
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
@@ -909,6 +910,16 @@ async function handleUpload(req, res, isFinal) {
     const lastWeekStr = addDays(refDateStr, -7);
 
     for (const { businessDate, data, storeId } of parsed) {
+      // Preserve existing byProduct (from item sales upload) if new data has none
+      const hasNewByProduct = data.byProduct && Object.keys(data.byProduct).length > 0;
+      if (!hasNewByProduct) {
+        try {
+          const existing = await getReport(businessDate, storeId);
+          if (existing && existing.byProduct && Object.keys(existing.byProduct).length > 0) {
+            data.byProduct = existing.byProduct;
+          }
+        } catch (_) {}
+      }
       await saveReport(businessDate, data, storeId, isFinal);
       console.log('Saved to DB:', storeId, businessDate, isFinal ? '(final)' : '(provisional)');
     }
@@ -1016,11 +1027,173 @@ app.post('/api/upload/item-sales', requireAdmin, upload.single('file'), async (r
   }
 });
 
+// JSON-based Item Sales upload (bypasses xlsx parsing)
+// Accepts pre-parsed byProduct data as JSON — much faster for automated pipelines.
+// Body: { businessDate: "YYYY-MM-DD", storeId: "...", byProduct: { "itemCode": {...}, ... } }
+app.post('/api/upload/item-sales-json', requireAdmin, express.json({ limit: '5mb' }), async (req, res) => {
+  try {
+    const { businessDate, storeId: rawStoreId, byProduct } = req.body || {};
+    if (!businessDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(businessDate).trim())) {
+      return res.status(400).json({ error: 'businessDate (YYYY-MM-DD) is required.' });
+    }
+    if (!byProduct || typeof byProduct !== 'object' || Object.keys(byProduct).length === 0) {
+      return res.status(400).json({ error: 'byProduct object is required and must not be empty.' });
+    }
+    const storeId = (rawStoreId ? String(rawStoreId).trim() : '') || 'default';
+    const bDate = String(businessDate).trim();
+
+    // Build department totals from byProduct
+    const DEPT_MAP_REV = {
+      'Grocery': true, 'Fruit & Vegetable': true, 'Fish & Seafood': true,
+      'Meat': true, 'Delicatessen': true, 'Store Management': true,
+    };
+    const DEPARTMENTS = ['Grocery', 'Fruit & Vegetable', 'Fish & Seafood', 'Meat', 'Delicatessen', 'Store Management'];
+    const deptTotals = {};
+    let totalNet = 0, totalGross = 0, totalQty = 0;
+
+    for (const [code, p] of Object.entries(byProduct)) {
+      const dn = p.departmentName || '';
+      if (!DEPT_MAP_REV[dn]) continue;
+      const ns = Number(p.totalNetSales) || 0;
+      const gs = Number(p.totalGrossSales) || 0;
+      const qs = Number(p.totalQuantitySold) || 0;
+      const da = Number(p.totalDiscountAmount) || 0;
+      if (!deptTotals[dn]) deptTotals[dn] = { netSales: 0, grossSales: 0, quantitySold: 0, discountAmount: 0 };
+      deptTotals[dn].netSales += ns;
+      deptTotals[dn].grossSales += gs;
+      deptTotals[dn].quantitySold += qs;
+      deptTotals[dn].discountAmount += da;
+      totalNet += ns;
+      totalGross += gs;
+      totalQty += qs;
+    }
+
+    const byDepartment = {};
+    DEPARTMENTS.forEach(d => { byDepartment[d] = { hourly: [] }; });
+    Object.entries(deptTotals).forEach(([dn, t]) => {
+      byDepartment[dn] = {
+        hourly: [],
+        totalRow: { netSales: t.netSales, grossSales: t.grossSales, quantitySold: t.quantitySold, receiptCount: null, discountAmount: t.discountAmount || undefined },
+      };
+    });
+
+    const itemSalesData = {
+      businessDate: bDate,
+      storeId,
+      storeName: storeId,
+      total: { totalRow: { netSales: totalNet, grossSales: totalGross, quantitySold: totalQty, receiptCount: null }, hourly: [] },
+      byDepartment,
+      byProduct,
+    };
+
+    let existing = null;
+    try { existing = await getReport(bDate, storeId); } catch (_) {}
+
+    let merged;
+    if (existing) {
+      merged = Object.assign({}, existing, { byProduct: itemSalesData.byProduct, _updatedAt: undefined, _isFinal: undefined });
+    } else {
+      merged = itemSalesData;
+    }
+
+    await saveReport(bDate, merged, storeId, false);
+    console.log('Item Sales (JSON) imported:', storeId, bDate, Object.keys(byProduct).length, 'products');
+
+    const savedDates = await getAvailableDates(storeId);
+    res.json({ ok: true, storeId, businessDate: bDate, productCount: Object.keys(byProduct).length, savedDates });
+  } catch (err) {
+    const msg = err && (err.message || String(err));
+    console.error('Item Sales JSON upload error:', msg);
+    res.status(500).json({ error: 'Error processing Item Sales JSON: ' + (msg || 'Unknown error') });
+  }
+});
+
 app.get('/api/product-master', async (req, res) => {
   try {
     const master = await getProductMaster();
     res.json({ master });
   } catch (err) {
+    res.status(500).json({ error: err && err.message || 'Server error' });
+  }
+});
+
+app.get('/api/products/export', requireAuth, async (req, res) => {
+  const storeId = req.query.storeId || 'default';
+  const dateFrom = (req.query.dateFrom || '').trim();
+  const dateTo = (req.query.dateTo || dateFrom).trim();
+  const deptFilter = (req.query.dept || '').trim();
+
+  if (!dateFrom || !/^\d{4}-\d{2}-\d{2}$/.test(dateFrom)) {
+    return res.status(400).json({ error: 'dateFrom (YYYY-MM-DD) is required.' });
+  }
+
+  // Build date list (max 90 days)
+  const dates = [];
+  let cur = new Date(dateFrom + 'T00:00:00');
+  const end = new Date((dateTo || dateFrom) + 'T00:00:00');
+  while (cur <= end && dates.length <= 90) {
+    dates.push(cur.toISOString().slice(0, 10));
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  try {
+    const [reports, master] = await Promise.all([
+      Promise.all(dates.map((d) => db.getReport(d, storeId).catch(() => null))),
+      db.getProductMaster(),
+    ]);
+
+    // Aggregate byProduct across dates
+    const merged = {};
+    reports.forEach((report) => {
+      if (!report || !report.byProduct) return;
+      Object.keys(report.byProduct).forEach((itemCode) => {
+        const p = report.byProduct[itemCode];
+        if (!merged[itemCode]) {
+          merged[itemCode] = {
+            itemCode,
+            itemName: p.itemName || '',
+            departmentName: p.departmentName || '',
+            totalNetSales: 0,
+            totalQuantitySold: 0,
+            discountAmount: 0,
+          };
+        }
+        merged[itemCode].totalNetSales += Number(p.totalNetSales) || 0;
+        merged[itemCode].totalQuantitySold += Number(p.totalQuantitySold) || 0;
+        merged[itemCode].discountAmount += Number(p.totalDiscountAmount) || 0;
+      });
+    });
+
+    let products = Object.values(merged);
+    if (deptFilter) products = products.filter((p) => p.departmentName === deptFilter);
+    products.sort((a, b) => b.totalNetSales - a.totalNetSales);
+
+    const grandTotal = products.reduce((s, p) => s + p.totalNetSales, 0);
+
+    const rows = [['Barcode', 'Item Name', 'Department', 'Net Sales (THB)', 'Discount (THB)', 'Qty Sold', 'Unit Price (THB)', 'Share %']];
+    products.forEach((p) => {
+      const m = master[p.itemCode] || {};
+      const barcode = m.barcodeNo || p.itemCode;
+      const name = m.nameEng || p.itemName || p.itemCode;
+      const unitPrice = p.totalQuantitySold > 0 ? Math.round(p.totalNetSales / p.totalQuantitySold) : '';
+      const share = grandTotal > 0 ? parseFloat((p.totalNetSales / grandTotal * 100).toFixed(2)) : 0;
+      const discount = p.discountAmount || 0;
+      rows.push([barcode, name, p.departmentName, p.totalNetSales, discount, p.totalQuantitySold, unitPrice, share]);
+    });
+
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 16 }, { wch: 40 }, { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 10 }, { wch: 16 }, { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Products');
+
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const suffix = dateTo && dateTo !== dateFrom ? `_to_${dateTo}` : '';
+    const filename = `products_${dateFrom}${suffix}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buf);
+  } catch (err) {
+    console.error('products/export error:', err);
     res.status(500).json({ error: err && err.message || 'Server error' });
   }
 });
