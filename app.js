@@ -2154,7 +2154,7 @@
       DEPARTMENTS.forEach(function (d) { grandTotalAll += deptTotals[d] || 0; });
 
       var table2 = '<section class="summary-section"><h3>' + t('sales_by_dept') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
-      DEPARTMENTS.forEach(function (d) { table2 += '<th>' + d + '</th>'; });
+      DEPARTMENTS.forEach(function (d) { table2 += '<th>' + getDepartmentDisplayName(d) + '</th>'; });
       table2 += '<th>' + t('total') + '</th></tr></thead><tbody>';
       weeks.forEach(function (w) {
         table2 += '<tr><td>' + w.shortLabel + '</td>';
@@ -2167,7 +2167,7 @@
       table2 += '<td>' + formatInt(grandTotalAll) + '</td></tr></tbody></table></section>';
 
       var table3 = '<section class="summary-section"><h3>' + t('dept_composition_pct') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
-      DEPARTMENTS.forEach(function (d) { table3 += '<th>' + d + '</th>'; });
+      DEPARTMENTS.forEach(function (d) { table3 += '<th>' + getDepartmentDisplayName(d) + '</th>'; });
       table3 += '<th>' + t('total') + '</th></tr></thead><tbody>';
       weeks.forEach(function (w) {
         var weekTotal = w.totalNetSales || 1;
@@ -2246,7 +2246,7 @@
       table1 += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
       deptOrder.forEach(function (dept) {
         var rowTotal = 0;
-        table1 += '<tr><td>' + dept + '</td>';
+        table1 += '<tr><td>' + getDepartmentDisplayName(dept) + '</td>';
         days.forEach(function (d) {
           var v = (d.byDepartment && d.byDepartment[dept]) ? d.byDepartment[dept] : 0;
           rowTotal += v;
@@ -2262,7 +2262,7 @@
       dateLabels.forEach(function (l) { table1b += '<th>' + l + '</th>'; });
       table1b += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
       deptOrder.forEach(function (dept) {
-        table1b += '<tr><td>' + dept + '</td>';
+        table1b += '<tr><td>' + getDepartmentDisplayName(dept) + '</td>';
         days.forEach(function (d) {
           var dayTotal = d.totalNetSales || 0;
           var v = (d.byDepartment && d.byDepartment[dept]) ? d.byDepartment[dept] : 0;
@@ -3447,7 +3447,8 @@
       refreshDepartmentSelectLabels();
       refreshCurrencyTexts();
       renderReport();
-      renderAllStoresDigest();
+      var allstoresPanel = document.getElementById('allstores-panel');
+      if (allstoresPanel && allstoresPanel.classList.contains('active')) renderAllStoresDigest();
       var dailyEnd = document.getElementById('daily-end-date');
       if (dailyEnd && dailyEnd.value) renderDailySummary();
       var weeklyEnd = document.getElementById('weekly-end-date');
