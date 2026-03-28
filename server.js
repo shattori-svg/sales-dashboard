@@ -6,7 +6,8 @@ const path = require('path');
 const fs = require('fs');
 const XLSX = require('xlsx');
 const express = require('express');
-const session = require('express-session');
+const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const bcrypt = require('bcrypt');
 const { parseSheet, parseCsv, parseItemSalesExcel, parseProductMasterExcel } = require('./parser');
@@ -69,6 +70,28 @@ const entraAuth = require('./entra-auth');
 
 const app = express();
 const PORT = process.env.PORT || 3333;
+
+// JWT helpers — stateless auth, works across Cloud Run instances
+const JWT_SECRET = process.env.SESSION_SECRET || 'sales-report-secret-change-in-production';
+const JWT_COOKIE = 'sales_report_jwt';
+const JWT_MAX_AGE_SEC = 24 * 60 * 60; // 24 hours
+
+function signJwt(payload) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_MAX_AGE_SEC });
+}
+function verifyJwt(token) {
+  try { return jwt.verify(token, JWT_SECRET); } catch (e) { return null; }
+}
+function setJwtCookie(res, payload) {
+  res.cookie(JWT_COOKIE, signJwt(payload), {
+    httpOnly: true,
+    maxAge: JWT_MAX_AGE_SEC * 1000,
+    sameSite: 'lax',
+  });
+}
+function clearJwtCookie(res) {
+  res.clearCookie(JWT_COOKIE);
+}
 const EXTERNAL_AUTH_MODE = entraAuth.isEntraConfigured();
 const EXTERNAL_AUTH_PASSWORD_HASH = 'EXTERNAL_AUTH';
 const FX_FROM = 'THB';
@@ -189,16 +212,14 @@ function startExchangeRateScheduler() {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET || 'sales-report-secret-change-in-production',
-    resave: false,
-    saveUninitialized: false,
-    name: 'sales_report_sid',
-    cookie: { httpOnly: true, maxAge: 24 * 60 * 60 * 1000, sameSite: 'lax' },
-  })
-);
+// Attach JWT user to every request (stateless — no server-side store)
+app.use((req, _res, next) => {
+  const token = req.cookies && req.cookies[JWT_COOKIE];
+  req.jwtUser = token ? verifyJwt(token) : null;
+  next();
+});
 
 if (EXTERNAL_AUTH_MODE) {
   app.use((req, res, next) => {
@@ -239,8 +260,8 @@ function requireAuth(req, res, next) {
   if (req.method === 'POST' && req.path === '/api/upload/final' && checkBasicAuth(req)) return next();
   if (req.path === '/auth/callback') return next();
 
-  // Session check first — Entra users have no DB row, so countUsers() may be 0
-  if (req.session && req.session.loggedIn) return next();
+  // JWT check — stateless, works across all Cloud Run instances
+  if (req.jwtUser && req.jwtUser.loggedIn) return next();
 
   // API key authentication
   if (checkApiKey(req)) return next();
@@ -269,7 +290,7 @@ function requireAuth(req, res, next) {
 function requireAdmin(req, res, next) {
   if (req.method === 'POST' && req.path === '/api/upload') return next();
   if (req.method === 'POST' && req.path === '/api/upload/final' && checkBasicAuth(req)) return next();
-  if (req.session && req.session.role === 'admin') return next();
+  if (req.jwtUser && req.jwtUser.role === 'admin') return next();
   if (checkApiKey(req)) return next();
   const isApi = req.path.startsWith('/api/');
   if (isApi) return res.status(403).json({ error: 'Forbidden' });
@@ -290,7 +311,7 @@ app.get('/api/changelog', (req, res) => {
 });
 
 app.get('/login', (req, res) => {
-  if (req.session && req.session.loggedIn) return res.redirect('/');
+  if (req.jwtUser && req.jwtUser.loggedIn) return res.redirect('/');
   if (EXTERNAL_AUTH_MODE) {
     if (req.query && req.query.loggedout === '1') {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -353,7 +374,7 @@ app.get('/auth/callback', async (req, res) => {
           role: 'admin',
         });
         user = await getUserById(created.id);
-        req.session.needsProfileSetup = true;
+        user._needsProfileSetup = true;
       } else {
         const created = await createUser({
           username: email,
@@ -362,22 +383,19 @@ app.get('/auth/callback', async (req, res) => {
           role: 'user',
         });
         user = await getUserById(created.id);
-        req.session.needsProfileSetup = true;
+        user._needsProfileSetup = true;
       }
     }
     if (!user) return res.status(403).send('Access denied: user is not registered in User Master.');
-    req.session.loggedIn = true;
-    req.session.userId = user.id;
-    req.session.username = user.username;
-    req.session.displayName = user.display_name || null;
-    req.session.role = user.role === 'admin' ? 'admin' : 'user';
-    req.session.save((err) => {
-      if (err) {
-        console.error('Entra session save error:', err);
-        return res.redirect('/login?error=auth_failed');
-      }
-      res.redirect('/');
+    setJwtCookie(res, {
+      loggedIn: true,
+      userId: user.id,
+      username: user.username,
+      displayName: user.display_name || null,
+      role: user.role === 'admin' ? 'admin' : 'user',
+      needsProfileSetup: !!(user._needsProfileSetup),
     });
+    res.redirect('/');
   } catch (err) {
     console.error('Entra callback error:', err);
     return res.redirect('/login?error=auth_failed');
@@ -396,12 +414,14 @@ app.post('/login', (req, res) => {
       if (!user) return res.redirect('/login?error=1');
       return bcrypt.compare(password, user.password_hash).then((ok) => {
         if (!ok) return res.redirect('/login?error=1');
-        req.session.loggedIn = true;
-        req.session.userId = user.id;
-        req.session.username = user.username;
-        req.session.displayName = user.display_name || null;
-        req.session.role = user.role;
-        req.session.needsProfileSetup = false;
+        setJwtCookie(res, {
+          loggedIn: true,
+          userId: user.id,
+          username: user.username,
+          displayName: user.display_name || null,
+          role: user.role,
+          needsProfileSetup: false,
+        });
         res.redirect('/');
       });
     })
@@ -411,18 +431,14 @@ app.post('/login', (req, res) => {
     });
 });
 
-app.post('/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.clearCookie('sales_report_sid');
-    res.redirect('/login?loggedout=1');
-  });
+app.post('/logout', (_req, res) => {
+  clearJwtCookie(res);
+  res.redirect('/login?loggedout=1');
 });
 
-app.get('/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.clearCookie('sales_report_sid');
-    res.redirect('/login?loggedout=1');
-  });
+app.get('/logout', (_req, res) => {
+  clearJwtCookie(res);
+  res.redirect('/login?loggedout=1');
 });
 
 // Serve static assets (CSS, JS, images) before auth so login page can load styles
@@ -440,16 +456,16 @@ app.use((req, res, next) => {
 app.use(requireAuth);
 
 app.get('/api/auth/status', async (req, res) => {
-  const loggedIn = !!(req.session && req.session.loggedIn);
-  const role = req.session && req.session.role ? req.session.role : null;
-  const userId = req.session && req.session.userId ? req.session.userId : null;
-  let username = req.session && req.session.username ? req.session.username : null;
-  let displayName = req.session && req.session.displayName ? req.session.displayName : null;
+  const loggedIn = !!(req.jwtUser && req.jwtUser.loggedIn);
+  const role = req.jwtUser ? req.jwtUser.role : null;
+  const userId = req.jwtUser ? req.jwtUser.userId : null;
+  let username = req.jwtUser ? req.jwtUser.username : null;
+  let displayName = req.jwtUser ? req.jwtUser.displayName : null;
   let preferredStore = null;
   let preferredDepartment = null;
   let preferredCurrency = null;
   let preferredLanguage = null;
-  const needsProfileSetup = !!(req.session && req.session.needsProfileSetup);
+  const needsProfileSetup = !!(req.jwtUser && req.jwtUser.needsProfileSetup);
 
   if (loggedIn) {
     if (userId) {
@@ -505,7 +521,7 @@ app.get('/api/auth/status', async (req, res) => {
 });
 
 app.put('/api/me/preferences', async (req, res) => {
-  if (!req.session || !req.session.loggedIn || !req.session.userId) {
+  if (!req.jwtUser || !req.jwtUser.loggedIn || !req.jwtUser.userId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const storeId = req.body.storeId != null ? String(req.body.storeId).trim() : null;
@@ -513,13 +529,14 @@ app.put('/api/me/preferences', async (req, res) => {
   const currency = req.body.currency != null ? String(req.body.currency).trim().toUpperCase() : null;
   const language = req.body.language != null ? String(req.body.language).trim().toLowerCase() : null;
   try {
-    await updateUserPreferences(req.session.userId, {
+    await updateUserPreferences(req.jwtUser.userId, {
       preferredStore: storeId || null,
       preferredDepartment: department || null,
       preferredCurrency: (currency === 'THB' || currency === 'JPY') ? currency : null,
       preferredLanguage: (language === 'ja' || language === 'en' || language === 'th') ? language : null,
     });
-    req.session.needsProfileSetup = false;
+    // Re-issue JWT with needsProfileSetup cleared
+    setJwtCookie(res, Object.assign({}, req.jwtUser, { needsProfileSetup: false }));
     return res.json({ ok: true });
   } catch (err) {
     console.error('Update preferences error:', err);
@@ -539,12 +556,14 @@ app.post('/api/bootstrap-admin', async (req, res) => {
   try {
     const passwordHash = await bcrypt.hash(password, 10);
     const created = await createUser({ username, passwordHash, role: 'admin' });
-    req.session.loggedIn = true;
-    req.session.userId = created.id;
-    req.session.username = created.username;
-    req.session.displayName = created.display_name || null;
-    req.session.role = 'admin';
-    req.session.needsProfileSetup = false;
+    setJwtCookie(res, {
+      loggedIn: true,
+      userId: created.id,
+      username: created.username,
+      displayName: created.display_name || null,
+      role: 'admin',
+      needsProfileSetup: false,
+    });
     res.status(201).json({ ok: true, redirect: '/' });
   } catch (err) {
     if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || (err && err.message && err.message.includes('unique'))) {
@@ -1363,7 +1382,7 @@ app.put('/api/users/:id', requireAdmin, async (req, res) => {
 app.delete('/api/users/:id', requireAdmin, async (req, res) => {
   const id = req.params.id;
   if (!id) return res.status(400).json({ error: 'User id is required.' });
-  if (String(req.session.userId) === String(id)) return res.status(400).json({ error: 'Cannot delete your own account.' });
+  if (String(req.jwtUser && req.jwtUser.userId) === String(id)) return res.status(400).json({ error: 'Cannot delete your own account.' });
   const user = await getUserById(id);
   if (!user) return res.status(404).json({ error: 'User not found.' });
   if (user.role === 'admin') {
