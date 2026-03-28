@@ -2559,13 +2559,12 @@
 
     if (!dateTo || dateTo < dateFrom) dateTo = dateFrom;
 
-    // Build list of dates in range
+    // Build list of dates in range (string comparison avoids timezone issues)
     var dates = [];
-    var cur = new Date(dateFrom + 'T00:00:00');
-    var end = new Date(dateTo + 'T00:00:00');
-    while (cur <= end && dates.length <= 90) {
-      dates.push(cur.toISOString().slice(0, 10));
-      cur.setDate(cur.getDate() + 1);
+    var cur = dateFrom;
+    while (cur <= dateTo && dates.length < 90) {
+      dates.push(cur);
+      cur = addDays(cur, 1);
     }
     var isSingleDay = dates.length === 1;
 
