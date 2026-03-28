@@ -715,14 +715,10 @@
       }
     }).catch(function () {});
 
-    // Set default date to today
+    // Set default date to today in Thailand timezone (UTC+7)
     var dateInput = document.getElementById('item-sales-date');
     if (dateInput) {
-      var today = new Date();
-      var y = today.getFullYear();
-      var m = String(today.getMonth() + 1).padStart(2, '0');
-      var d = String(today.getDate()).padStart(2, '0');
-      dateInput.value = y + '-' + m + '-' + d;
+      dateInput.value = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
     }
 
     // File name display

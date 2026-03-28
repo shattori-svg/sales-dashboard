@@ -1137,13 +1137,15 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'dateFrom (YYYY-MM-DD) is required.' });
   }
 
-  // Build date list (max 90 days)
+  // Build date list (max 90 days, string comparison avoids timezone issues)
   const dates = [];
-  let cur = new Date(dateFrom + 'T00:00:00');
-  const end = new Date((dateTo || dateFrom) + 'T00:00:00');
-  while (cur <= end && dates.length < 90) {
-    dates.push(cur.toISOString().slice(0, 10));
-    cur.setDate(cur.getDate() + 1);
+  const endDate = dateTo || dateFrom;
+  let cur = dateFrom;
+  while (cur <= endDate && dates.length < 90) {
+    dates.push(cur);
+    const d = new Date(cur + 'T12:00:00');
+    d.setDate(d.getDate() + 1);
+    cur = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
 
   try {
