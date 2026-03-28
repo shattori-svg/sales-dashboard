@@ -3,9 +3,18 @@
 
   if (typeof window !== 'undefined' && window.fetch) {
     var origFetch = window.fetch;
+    var _authCheckPending = false;
     window.fetch = function (url, opts) {
       return origFetch.apply(this, arguments).then(function (res) {
-        if (res.status === 401) window.location.href = '/login';
+        if (res.status === 401 && !_authCheckPending) {
+          _authCheckPending = true;
+          origFetch('/api/auth/status').then(function (authRes) {
+            if (authRes.status === 401) window.location.href = '/login';
+            else _authCheckPending = false;
+          }).catch(function () {
+            window.location.href = '/login';
+          });
+        }
         return res;
       });
     };
