@@ -49,6 +49,8 @@ const {
   saveExchangeRate,
   getProductMaster,
   saveProductMaster,
+  getProductGroups,
+  saveProductGroups,
   saveReport,
   getReport,
   getAvailableDates,
@@ -575,6 +577,10 @@ app.post('/api/bootstrap-admin', async (req, res) => {
 });
 
 app.use(express.static(path.join(__dirname), { etag: false, lastModified: false, setHeaders: (res, filePath) => { if (/\.(js|css|html)$/.test(filePath)) res.setHeader('Cache-Control', 'no-store'); } }));
+
+app.get('/xlsx.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'node_modules', 'xlsx', 'dist', 'xlsx.full.min.js'));
+});
 
 app.get('/setup', requireAdmin, (req, res) => {
   res.sendFile(path.join(__dirname, 'upload.html'), (err) => {
@@ -1168,10 +1174,14 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
   }
 
   try {
-    const [reports, master] = await Promise.all([
+    const [reports, master, groupRows] = await Promise.all([
       Promise.all(dates.map((d) => db.getReport(d, storeId).catch(() => null))),
       db.getProductMaster(),
+      db.getProductGroups(),
     ]);
+    const lang = (req.query.lang || 'en').toLowerCase();
+    const groupMap = {};
+    groupRows.forEach((g) => { groupMap[g.code] = g; });
 
     // Aggregate byProduct across dates
     const merged = {};
@@ -1207,11 +1217,13 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
 
     const grandTotal = products.reduce((s, p) => s + p.totalNetSales, 0);
 
-    const rows = [['Barcode', 'Retail Product Code', 'Item Family Code', 'Item Name', 'Department', 'Net Sales (THB, excl.VAT)', 'Gross Sales (THB, incl.VAT)', 'VAT Amount (THB)', 'Discount (THB)', 'Discount %', 'Qty Sold', 'Net Unit Price (THB)', 'Gross Unit Price (THB)', 'Share %']];
+    const rows = [['Barcode', 'Retail Product Code', 'Item Family Code', 'Group', 'Item Name', 'Department', 'Net Sales (THB, excl.VAT)', 'Gross Sales (THB, incl.VAT)', 'VAT Amount (THB)', 'Discount (THB)', 'Discount %', 'Qty Sold', 'Net Unit Price (THB)', 'Gross Unit Price (THB)', 'Share %']];
     products.forEach((p) => {
       const m = master[p.itemCode] || {};
       const barcode = m.barcodeNo || p.itemCode;
       const name = m.nameEng || p.itemName || p.itemCode;
+      const grp = groupMap[p.retailProductCode] || null;
+      const groupName = grp ? (lang === 'ja' ? grp.description_jpn : lang === 'th' ? grp.description_tha : grp.description) || grp.description : '';
       const qty = p.totalQuantitySold || 0;
       const net = p.totalNetSales || 0;
       const gross = p.totalGrossSales || (net + (p.discountAmount || 0));
@@ -1227,12 +1239,12 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
       const share = grandTotal > 0 ? parseFloat((net / grandTotal * 100).toFixed(2)) : 0;
       const retailCode = p.retailProductCode || '';
       const familyCode = p.itemFamilyCode || '';
-      rows.push([barcode, retailCode, familyCode, name, p.departmentName, net, gross, vat, discount, discountRate, qty, netUnitPrice, grossUnitPrice, share]);
+      rows.push([barcode, retailCode, familyCode, groupName, name, p.departmentName, net, gross, vat, discount, discountRate, qty, netUnitPrice, grossUnitPrice, share]);
     });
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{ wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 40 }, { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 10 }];
+    ws['!cols'] = [{ wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 30 }, { wch: 40 }, { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 10 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Products');
 
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -1270,6 +1282,58 @@ app.post('/api/product-master/import', requireAdmin, upload.single('file'), asyn
     const msg = err && (err.message || String(err));
     console.error('Product master import error:', msg);
     res.status(500).json({ error: 'Error processing product master: ' + (msg || 'Unknown error') });
+  }
+});
+
+// Product groups (classification master)
+app.get('/api/product-groups', async (req, res) => {
+  try {
+    const rows = await getProductGroups();
+    res.json({ groups: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Failed to get product groups' });
+  }
+});
+
+app.post('/api/product-groups/import', requireAdmin, upload.single('file'), async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file || !file.buffer) return res.status(400).json({ error: 'CSV file is required (field name: file).' });
+
+    // Parse CSV — accept both file upload and raw text
+    const text = file.buffer.toString('utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = text.split('\n').filter((l) => l.trim());
+    if (lines.length < 2) return res.status(400).json({ error: 'CSV is empty or has no data rows.' });
+
+    // Detect header
+    const header = lines[0].split(',').map((h) => h.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_'));
+    const col = (name) => header.indexOf(name);
+    const iCode = col('product_group_code');
+    const iDesc = col('description');
+    const iTha  = col('description_tha');
+    const iJpn  = col('description_jpn');
+    if (iCode < 0) return res.status(400).json({ error: 'Column product_group_code not found in CSV.' });
+
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',');
+      const code = (cols[iCode] || '').trim();
+      if (!code) continue;
+      rows.push({
+        code,
+        description:     iDesc >= 0 ? (cols[iDesc] || '').trim() : '',
+        description_tha: iTha  >= 0 ? (cols[iTha]  || '').trim() : '',
+        description_jpn: iJpn  >= 0 ? (cols[iJpn]  || '').trim() : '',
+      });
+    }
+    if (rows.length === 0) return res.status(400).json({ error: 'No valid rows found in CSV.' });
+
+    await saveProductGroups(rows);
+    console.log('Product groups imported:', rows.length, 'rows');
+    res.json({ ok: true, count: rows.length });
+  } catch (err) {
+    console.error('Product groups import error:', err);
+    res.status(500).json({ error: err.message || 'Import failed' });
   }
 });
 

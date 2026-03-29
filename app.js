@@ -1201,50 +1201,42 @@
     if (hourlyLoadingEl) hourlyLoadingEl.hidden = true;
   }
 
-  function tableToCsv(tableEl) {
-    if (!tableEl || !tableEl.rows || !tableEl.rows.length) return '';
-    var rows = [];
-    for (var i = 0; i < tableEl.rows.length; i++) {
-      var row = tableEl.rows[i];
-      var cells = [];
-      for (var j = 0; j < row.cells.length; j++) {
-        var text = (row.cells[j].textContent || '').trim().replace(/"/g, '""');
-        if (/[",\n\r]/.test(text)) text = '"' + text + '"';
-        cells.push(text);
-      }
-      rows.push(cells.join(','));
-    }
-    return '\uFEFF' + rows.join('\r\n');
+  function downloadXlsx(filename, sheets) {
+    if (!window.XLSX) { alert('Excel library not loaded.'); return; }
+    var wb = window.XLSX.utils.book_new();
+    sheets.forEach(function (s) {
+      var ws = window.XLSX.utils.table_to_sheet(s.tableEl);
+      window.XLSX.utils.book_append_sheet(wb, ws, s.sheetName);
+    });
+    window.XLSX.writeFile(wb, filename);
   }
 
-  function downloadCsv(filename, csvString) {
-    if (!csvString) return;
-    var blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-
-  function exportPanelTablesCsv(containerId, baseName, selectedOption) {
+  function exportPanelTablesXlsx(containerId, filename, selectedOption) {
+    if (!window.XLSX) { alert('Excel library not loaded.'); return; }
     var container = document.getElementById(containerId);
     if (!container) return;
     var tables = container.querySelectorAll('table.report-table');
-    if (tables.length === 0) return;
+    if (!tables.length) return;
     var index = selectedOption !== undefined && selectedOption !== 'all' ? parseInt(selectedOption, 10) : -1;
+    var wb = window.XLSX.utils.book_new();
+    function getSheetName(tableEl, i) {
+      var prev = tableEl.previousElementSibling;
+      while (prev) {
+        if (/^H[2-4]$/i.test(prev.tagName)) {
+          return (prev.textContent || '').trim().slice(0, 31) || ('Sheet' + (i + 1));
+        }
+        prev = prev.previousElementSibling;
+      }
+      return 'Sheet' + (i + 1);
+    }
     if (index >= 0 && index < tables.length) {
-      downloadCsv(baseName + '_' + (index + 1) + '.csv', tableToCsv(tables[index]));
-      return;
+      window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.table_to_sheet(tables[index]), getSheetName(tables[index], index));
+    } else {
+      Array.prototype.forEach.call(tables, function (t, i) {
+        window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.table_to_sheet(t), getSheetName(t, i));
+      });
     }
-    if (tables.length === 1) {
-      downloadCsv(baseName + '.csv', tableToCsv(tables[0]));
-      return;
-    }
-    tables.forEach(function (t, i) {
-      var name = baseName + '_' + (i + 1) + '.csv';
-      downloadCsv(name, tableToCsv(t));
-    });
+    window.XLSX.writeFile(wb, filename);
   }
 
   function fetchBusinessHours() {
@@ -2443,6 +2435,31 @@
 
   // Product master cache: { [itemNo]: { barcodeNo, nameEng, nameTha, nameJpn, deptCode } }
   var productMasterCache = null;
+  var productGroupCache = null; // { code: { description, description_tha, description_jpn } }
+
+  function loadProductGroups() {
+    if (productGroupCache !== null) return Promise.resolve(productGroupCache);
+    return fetch('/api/product-groups')
+      .then(function (res) { return parseJsonResponse(res); })
+      .then(function (body) {
+        productGroupCache = {};
+        if (body && Array.isArray(body.groups)) {
+          body.groups.forEach(function (g) { productGroupCache[g.code] = g; });
+        }
+        return productGroupCache;
+      })
+      .catch(function () { productGroupCache = null; return {}; });
+  }
+
+  function getGroupName(retailProductCode) {
+    if (!productGroupCache || !retailProductCode) return '';
+    var g = productGroupCache[String(retailProductCode)];
+    if (!g) return '';
+    var lang = window.i18n && window.i18n.getCurrentLang ? window.i18n.getCurrentLang() : 'en';
+    if (lang === 'ja') return g.description_jpn || g.description || '';
+    if (lang === 'th') return g.description_tha || g.description || '';
+    return g.description || '';
+  }
 
   function loadProductMaster() {
     if (productMasterCache !== null) return Promise.resolve(productMasterCache);
@@ -2519,9 +2536,11 @@
       var wow = (wNet != null && wNet > 0) ? ((p.totalNetSales - wNet) / wNet * 100) : null;
       var sharePct = grandTotal > 0 ? (p.totalNetSales / grandTotal * 100) : 0;
       var unitPrice = (p.totalQuantitySold > 0) ? Math.round(p.totalNetSales / p.totalQuantitySold) : null;
+      var groupName = getGroupName(p.retailProductCode);
       html += '<tr>';
       html += '<td>' + escapeHtml(barcode) + '</td>';
       html += '<td>' + escapeHtml(displayName) + '</td>';
+      html += '<td>' + escapeHtml(groupName) + '</td>';
       html += '<td>' + escapeHtml(p.departmentName) + '</td>';
       html += '<td>' + formatCurrencyInteger(p.totalNetSales) + '</td>';
       html += '<td class="' + (dod == null ? 'na-value' : dod >= 0 ? 'positive' : 'negative') + '">' + (dod == null ? '<span title="' + escapeHtml(t('no_prev_data') || '前日データなし') + '">-</span>' : (dod >= 0 ? '+' : '') + dod.toFixed(1) + '%') + '</td>';
@@ -2585,6 +2604,7 @@
           .catch(function () { return null; });
       })),
       loadProductMaster(),
+      loadProductGroups(),
     ])
       .then(function (results) {
         hideLoading();
@@ -3051,10 +3071,6 @@
         var setupEl = document.getElementById('setup-link');
         if (setupEl) setupEl.style.display = (data.loggedIn && data.role === 'admin') ? '' : 'none';
 
-        var isAdmin = data.role === 'admin';
-        document.querySelectorAll('.csv-export-control').forEach(function (el) {
-          el.style.display = isAdmin ? '' : 'none';
-        });
       })
       .catch(function () {
         authState.loggedIn = false;
@@ -3074,9 +3090,6 @@
         if (logoutEl) logoutEl.style.display = 'none';
         var setupEl = document.getElementById('setup-link');
         if (setupEl) setupEl.style.display = 'none';
-        document.querySelectorAll('.csv-export-control').forEach(function (el) {
-          el.style.display = 'none';
-        });
       });
   }
 
@@ -3405,49 +3418,22 @@
     if (weeklyEndEl) weeklyEndEl.addEventListener('change', renderWeeklySummary);
     if (weeklyNumEl) weeklyNumEl.addEventListener('change', renderWeeklySummary);
 
-    var btnDailyCsv = document.getElementById('btn-daily-csv');
-    if (btnDailyCsv) {
-      btnDailyCsv.addEventListener('click', function () {
+    var btnDailyExcel = document.getElementById('btn-daily-excel');
+    if (btnDailyExcel) {
+      btnDailyExcel.addEventListener('click', function () {
         var sel = document.getElementById('daily-export-select');
-        var opt = sel ? sel.value : 'all';
-        exportPanelTablesCsv('daily-summary-tables', 'daily_summary', opt);
+        var dateStr = (document.getElementById('daily-start-date') || {}).value || '';
+        var dateEnd = (document.getElementById('daily-end-date') || {}).value || '';
+        var suffix = dateStr && dateEnd && dateStr !== dateEnd ? dateStr + '_' + dateEnd : (dateStr || dateEnd);
+        exportPanelTablesXlsx('daily-summary-tables', 'daily_summary' + (suffix ? '_' + suffix : '') + '.xlsx', sel ? sel.value : 'all');
       });
     }
-    var btnWeeklyCsv = document.getElementById('btn-weekly-csv');
-    if (btnWeeklyCsv) {
-      btnWeeklyCsv.addEventListener('click', function () {
+    var btnWeeklyExcel = document.getElementById('btn-weekly-excel');
+    if (btnWeeklyExcel) {
+      btnWeeklyExcel.addEventListener('click', function () {
         var sel = document.getElementById('weekly-export-select');
-        var opt = sel ? sel.value : 'all';
-        exportPanelTablesCsv('weekly-summary-tables', 'weekly_summary', opt);
-      });
-    }
-
-    var dailyStoreEl = document.getElementById('daily-store-select');
-    var dailyStartEl = document.getElementById('daily-start-date');
-    var dailyEndEl = document.getElementById('daily-end-date');
-    if (dailyStoreEl) dailyStoreEl.addEventListener('change', function () { refreshDailyDateSelect(); });
-    if (dailyStartEl) dailyStartEl.addEventListener('change', renderDailySummary);
-    if (dailyEndEl) dailyEndEl.addEventListener('change', renderDailySummary);
-
-    var weeklyStoreEl = document.getElementById('weekly-store-select');
-    var weeklyEndEl = document.getElementById('weekly-end-date');
-    var weeklyNumEl = document.getElementById('weekly-num-weeks');
-    if (weeklyStoreEl) weeklyStoreEl.addEventListener('change', function () { refreshWeeklyDateSelect(); });
-    if (weeklyEndEl) weeklyEndEl.addEventListener('change', renderWeeklySummary);
-    if (weeklyNumEl) weeklyNumEl.addEventListener('change', renderWeeklySummary);
-
-    var btnDailyCsv = document.getElementById('btn-daily-csv');
-    if (btnDailyCsv) {
-      btnDailyCsv.addEventListener('click', function () {
-        var sel = document.getElementById('daily-export-select');
-        exportPanelTablesCsv('daily-summary-tables', 'daily_summary', sel ? sel.value : 'all');
-      });
-    }
-    var btnWeeklyCsv = document.getElementById('btn-weekly-csv');
-    if (btnWeeklyCsv) {
-      btnWeeklyCsv.addEventListener('click', function () {
-        var sel = document.getElementById('weekly-export-select');
-        exportPanelTablesCsv('weekly-summary-tables', 'weekly_summary', sel ? sel.value : 'all');
+        var dateStr = (document.getElementById('weekly-end-date') || {}).value || '';
+        exportPanelTablesXlsx('weekly-summary-tables', 'weekly_summary' + (dateStr ? '_' + dateStr : '') + '.xlsx', sel ? sel.value : 'all');
       });
     }
 
@@ -3463,22 +3449,21 @@
       if (weeklyEnd && weeklyEnd.value) renderWeeklySummary();
     });
 
-    var btnHourlyCsv = document.getElementById('btn-hourly-csv');
-    if (btnHourlyCsv) {
-      btnHourlyCsv.addEventListener('click', function () {
-        var sel = document.getElementById('hourly-export-select');
-        var opt = sel ? sel.value : 'hourly';
+    var btnHourlyExcel = document.getElementById('btn-hourly-excel');
+    if (btnHourlyExcel) {
+      btnHourlyExcel.addEventListener('click', function () {
         var dateStr = state.referenceDate || '';
-        if (opt === 'summary') {
-          var hourlyTable = document.getElementById('hourly-table');
-          if (hourlyTable) downloadCsv('hourly_report_' + dateStr + '.csv', tableToCsv(hourlyTable));
-        } else if (opt === 'all') {
-          var hourlyTable = document.getElementById('hourly-table');
-          if (hourlyTable) downloadCsv('hourly_report_' + dateStr + '.csv', tableToCsv(hourlyTable));
-        } else {
-          var table = document.getElementById('hourly-table');
-          if (table) downloadCsv('hourly_report_' + dateStr + '.csv', tableToCsv(table));
-        }
+        var table = document.getElementById('hourly-table');
+        if (table) downloadXlsx('hourly_report_' + dateStr + '.xlsx', [{ sheetName: 'Hourly', tableEl: table }]);
+      });
+    }
+    var btnAllstoresExcel = document.getElementById('btn-allstores-excel');
+    if (btnAllstoresExcel) {
+      btnAllstoresExcel.addEventListener('click', function () {
+        var dateEl = document.getElementById('allstores-date');
+        var dateStr = dateEl ? dateEl.value : '';
+        var table = document.getElementById('allstores-table');
+        if (table) downloadXlsx('allstores_' + dateStr + '.xlsx', [{ sheetName: 'AllStores', tableEl: table }]);
       });
     }
     /* AI tab event handlers */

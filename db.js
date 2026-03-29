@@ -93,6 +93,15 @@ db.exec(`
   }
 })();
 
+db.exec(`
+  CREATE TABLE IF NOT EXISTS product_groups (
+    code TEXT PRIMARY KEY,
+    description TEXT,
+    description_tha TEXT,
+    description_jpn TEXT
+  )
+`);
+
 const STORES_KEY = 'stores';
 const EXCHANGE_RATE_KEY = 'exchange_rate';
 const PRODUCT_MASTER_KEY = 'product_master';
@@ -145,6 +154,20 @@ function getProductMaster() {
   const row = db.prepare('SELECT value FROM masters WHERE key = ?').get(PRODUCT_MASTER_KEY);
   if (!row || !row.value) return Promise.resolve({});
   try { return Promise.resolve(JSON.parse(row.value)); } catch (_) { return Promise.resolve({}); }
+}
+
+function getProductGroups() {
+  const rows = db.prepare('SELECT code, description, description_tha, description_jpn FROM product_groups ORDER BY code').all();
+  return Promise.resolve(rows);
+}
+
+function saveProductGroups(rows) {
+  const stmt = db.prepare(
+    'INSERT INTO product_groups (code, description, description_tha, description_jpn) VALUES (?, ?, ?, ?) ON CONFLICT(code) DO UPDATE SET description=excluded.description, description_tha=excluded.description_tha, description_jpn=excluded.description_jpn'
+  );
+  const insertMany = db.transaction((items) => { for (const r of items) stmt.run(r.code, r.description || '', r.description_tha || '', r.description_jpn || ''); });
+  insertMany(rows);
+  return Promise.resolve(rows.length);
 }
 
 function saveProductMaster(master) {
@@ -320,6 +343,8 @@ module.exports = {
   saveExchangeRate,
   getProductMaster,
   saveProductMaster,
+  getProductGroups,
+  saveProductGroups,
   updateUserPreferences,
   saveReport,
   getReport,

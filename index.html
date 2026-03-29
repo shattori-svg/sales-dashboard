@@ -90,16 +90,8 @@
           <label for="output-date" class="output-header-sep" data-i18n="output_date">売上日</label>
           <input type="date" id="output-date" aria-label="Select output date">
         </span>
-        <span class="output-header-item csv-export-control">
-          <label for="hourly-export-select" class="output-header-sep" data-i18n="output_data">出力データ</label>
-          <select id="hourly-export-select" aria-label="Select data to export">
-            <option value="hourly" data-i18n-option="export_option_hourly_table">時間別表</option>
-            <option value="summary" data-i18n-option="export_option_summary">サマリー</option>
-            <option value="all" data-i18n-option="output_all">すべて</option>
-          </select>
-        </span>
-        <span class="output-header-item csv-export-control">
-          <button type="button" id="btn-hourly-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
+        <span class="output-header-item">
+          <button type="button" id="btn-hourly-excel" class="btn-csv" data-i18n="export_excel">Excel出力</button>
         </span>
         <span id="hourly-loading-indicator" class="output-header-loading" data-i18n="updating" hidden>更新中...</span>
       </div>
@@ -114,7 +106,7 @@
           <span class="snapshot-panel-value" id="snapshot-qty">—</span>
           <span class="snapshot-panel-sub" id="snapshot-qty-dodwow" aria-hidden="true"></span>
         </div>
-        <div class="snapshot-panel snapshot-panel-kpi csv-export-control">
+        <div class="snapshot-panel snapshot-panel-kpi">
           <span class="snapshot-panel-label" data-i18n="receipt_count">レシート数</span>
           <span class="snapshot-panel-value" id="snapshot-receipts">—</span>
           <span class="snapshot-panel-sub" id="snapshot-receipts-dodwow" aria-hidden="true"></span>
@@ -260,6 +252,9 @@
             <option value="name" data-i18n-option="sort_store">店舗名</option>
           </select>
         </span>
+        <span class="output-header-item">
+          <button type="button" id="btn-allstores-excel" class="btn-csv" data-i18n="export_excel">Excel出力</button>
+        </span>
       </div>
       <div class="table-wrapper">
         <table id="allstores-table" class="report-table">
@@ -327,6 +322,7 @@
             <tr>
               <th data-i18n="products_barcode">バーコード</th>
               <th data-i18n="products_item_name">商品名</th>
+              <th data-i18n="product_group">グループ</th>
               <th data-i18n="department">部門</th>
               <th data-i18n="snapshot_net_sales">純売上高</th>
               <th data-i18n="dod">DoD</th>
@@ -378,7 +374,7 @@
           <option value="2" data-i18n-option="daily_composition_pct">部門構成%</option>
           <option value="3" data-i18n-option="key_metrics">主要指標</option>
         </select>
-        <button type="button" id="btn-daily-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
+        <button type="button" id="btn-daily-excel" class="btn-csv" data-i18n="export_excel">Excel出力</button>
       </div>
       <div id="daily-summary-tables"></div>
       <p id="daily-empty" class="empty-message" data-i18n="daily_empty" hidden>Select an end date to load the daily summary.</p>
@@ -409,7 +405,7 @@
           <option value="1" data-i18n-option="sales_by_dept">部門別売上</option>
           <option value="2" data-i18n-option="dept_composition_pct">部門構成%</option>
         </select>
-        <button type="button" id="btn-weekly-csv" class="btn-csv" data-i18n="export_csv">CSV出力</button>
+        <button type="button" id="btn-weekly-excel" class="btn-csv" data-i18n="export_excel">Excel出力</button>
       </div>
       <div id="weekly-summary-tables"></div>
       <p id="weekly-empty" class="empty-message" data-i18n="weekly_empty" hidden>週の終了日を選択してください。</p>
@@ -512,6 +508,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked@15.0.0/marked.min.js"></script>
+  <script src="/xlsx.js"></script>
   <script src="i18n.js"></script>
   <script src="app.js"></script>
 </body>
