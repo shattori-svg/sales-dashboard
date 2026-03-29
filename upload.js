@@ -785,4 +785,52 @@
       });
     }
   }());
+
+  // Product groups import
+  (function () {
+    var fileInput = document.getElementById('product-groups-file');
+    var fileNameEl = document.getElementById('product-groups-file-name');
+    var submitBtn = document.getElementById('product-groups-submit');
+    var statusEl = document.getElementById('product-groups-status');
+    var errEl = document.getElementById('product-groups-error');
+    if (!submitBtn) return;
+
+    if (fileInput && fileNameEl) {
+      fileInput.addEventListener('change', function () {
+        fileNameEl.textContent = this.files.length ? this.files[0].name : '';
+      });
+    }
+
+    submitBtn.addEventListener('click', function () {
+      if (errEl) { errEl.hidden = true; errEl.textContent = ''; }
+      if (statusEl) statusEl.textContent = '';
+      var file = fileInput && fileInput.files.length ? fileInput.files[0] : null;
+      if (!file) {
+        if (errEl) { errEl.textContent = 'CSV ファイルを選択してください。'; errEl.hidden = false; }
+        return;
+      }
+      submitBtn.disabled = true;
+      if (statusEl) statusEl.textContent = 'インポート中…';
+      var formData = new FormData();
+      formData.append('file', file);
+      fetch('/api/product-groups/import', { method: 'POST', body: formData })
+        .then(function (res) {
+          return parseJsonResponse(res).then(function (body) {
+            if (!res.ok) throw new Error(body.error || 'Import failed');
+            return body;
+          });
+        })
+        .then(function (body) {
+          submitBtn.disabled = false;
+          if (statusEl) statusEl.textContent = '完了: ' + (body.count || 0) + ' 件の商品グループをインポートしました。';
+          if (fileInput) fileInput.value = '';
+          if (fileNameEl) fileNameEl.textContent = '';
+        })
+        .catch(function (err) {
+          submitBtn.disabled = false;
+          if (statusEl) statusEl.textContent = '';
+          if (errEl) { errEl.textContent = err.message || 'Import failed.'; errEl.hidden = false; }
+        });
+    });
+  }());
 })();

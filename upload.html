@@ -76,6 +76,20 @@
       </div>
       <p id="item-sales-status" class="hint" aria-live="polite" style="margin-top:0.5rem;"></p>
       <p id="item-sales-error" class="error" role="alert" hidden></p>
+
+      <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e5e7eb;">
+      <h2>商品グループマスター インポート <span style="font-size:0.75rem;font-weight:400;color:#6b7280;">分類マスター CSV</span></h2>
+      <p class="hint">商品グループ（分類）マスターをCSVからインポートします。列: <code>product_group_code, description, description_tha, description_jpn</code>。インポートすると既存データがUPSERTされます（削除はされません）。</p>
+      <div class="upload-form">
+        <div class="upload-group">
+          <label for="product-groups-file">CSV ファイル <span class="required">Required</span></label>
+          <input type="file" id="product-groups-file" name="file" accept=".csv">
+          <span class="file-name" id="product-groups-file-name"></span>
+        </div>
+        <button type="button" id="product-groups-submit" class="btn-primary" style="margin-top:0.75rem;">インポート</button>
+      </div>
+      <p id="product-groups-status" class="hint" aria-live="polite" style="margin-top:0.5rem;"></p>
+      <p id="product-groups-error" class="error" role="alert" hidden></p>
     </section>
 
     <section id="log-panel" class="panel" style="max-width: 720px;">
