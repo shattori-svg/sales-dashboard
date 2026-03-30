@@ -2722,19 +2722,15 @@
       return;
     }
 
-    var grandTotal = products.reduce(function (s, p) { return s + (p.totalNetSales || 0); }, 0);
     var html = '<div class="product-breakdown-row header">' +
-      '<span>' + t('product_breakdown_rank') + '</span><span>' + t('product_breakdown_name') + '</span><span>' + t('qty_sold') + '</span><span>' + t('product_breakdown_sales') + '</span><span>' + t('product_breakdown_share') + '</span>' +
+      '<span>' + t('product_breakdown_rank') + '</span><span>' + t('product_breakdown_name') + '</span><span>' + t('qty_sold') + '</span><span>' + t('product_breakdown_sales') + '</span>' +
       '</div>';
     products.forEach(function (p, i) {
-      var sharePct = grandTotal > 0 ? (p.totalNetSales / grandTotal * 100) : 0;
       html += '<div class="product-breakdown-row">';
       html += '<span class="product-breakdown-rank">' + (i + 1) + '</span>';
       html += '<span class="product-breakdown-name">' + escapeHtml(p.itemName || p.itemCode) + '</span>';
       html += '<span class="product-breakdown-qty">' + formatInt(p.totalQuantitySold || 0) + '</span>';
       html += '<span class="product-breakdown-value">' + formatCurrencyInteger(p.totalNetSales) + '</span>';
-      html += '<span class="product-breakdown-pct">' + sharePct.toFixed(1) + '%</span>';
-      html += '<span class="product-breakdown-bar"><span class="product-breakdown-bar-fill" style="width:' + Math.max(4, Math.round(sharePct)) + '%"></span></span>';
       html += '</div>';
     });
     list.innerHTML = html;
