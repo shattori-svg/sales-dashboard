@@ -1220,12 +1220,16 @@
     var index = selectedOption !== undefined && selectedOption !== 'all' ? parseInt(selectedOption, 10) : -1;
     var wb = window.XLSX.utils.book_new();
     function getSheetName(tableEl, i) {
-      var prev = tableEl.previousElementSibling;
-      while (prev) {
-        if (/^H[2-4]$/i.test(prev.tagName)) {
-          return (prev.textContent || '').trim().slice(0, 31) || ('Sheet' + (i + 1));
+      var el = tableEl;
+      while (el && el !== document.body) {
+        var prev = el.previousElementSibling;
+        while (prev) {
+          if (/^H[2-4]$/i.test(prev.tagName)) {
+            return (prev.textContent || '').trim().replace(/[\\\/\?\*\[\]:]/g, '').slice(0, 31) || ('Sheet' + (i + 1));
+          }
+          prev = prev.previousElementSibling;
         }
-        prev = prev.previousElementSibling;
+        el = el.parentElement;
       }
       return 'Sheet' + (i + 1);
     }
@@ -2140,13 +2144,13 @@
 
       var sumNetSales = 0, sumReceipts = 0, sumQty = 0;
       weeks.forEach(function (w) { sumNetSales += w.totalNetSales || 0; sumReceipts += w.receiptCount || 0; sumQty += w.quantitySold || 0; });
-      var table1 = '<section class="summary-section"><h3>' + t('weekly_net_title') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th><th>' + t('net_sales_thb') + '</th><th>' + t('wow') + '</th><th>' + t('receipt_count') + '</th><th>' + t('qty_sold_short') + '</th></tr></thead><tbody>';
+      var table1 = '<section class="summary-section"><h3>' + t('weekly_net_title') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th><th>' + t('snapshot_net_sales') + ' (' + getCurrencyLabel() + ')</th><th>' + t('wow') + '</th><th>' + t('receipt_count') + '</th><th>' + t('qty_sold_short') + '</th></tr></thead><tbody>';
       weeks.forEach(function (w, i) {
         var prev = weeks[i - 1];
         var wow = prev && prev.totalNetSales ? Math.round((w.totalNetSales / prev.totalNetSales) * 100) : '—';
-        table1 += '<tr><td>' + w.label + '</td><td>' + formatInt(w.totalNetSales) + '</td><td>' + (wow === '—' ? wow : wow + '%') + '</td><td>' + formatInt(w.receiptCount) + '</td><td>' + formatInt(w.quantitySold) + '</td></tr>';
+        table1 += '<tr><td>' + w.label + '</td><td>' + formatMoneyNoUnit(w.totalNetSales) + '</td><td>' + (wow === '—' ? wow : wow + '%') + '</td><td>' + formatInt(w.receiptCount) + '</td><td>' + formatInt(w.quantitySold) + '</td></tr>';
       });
-      table1 += '<tr class="total-row"><td>' + t('total') + '</td><td>' + formatInt(sumNetSales) + '</td><td>—</td><td>' + formatInt(sumReceipts) + '</td><td>' + formatInt(sumQty) + '</td></tr></tbody></table></section>';
+      table1 += '<tr class="total-row"><td>' + t('total') + '</td><td>' + formatMoneyNoUnit(sumNetSales) + '</td><td>—</td><td>' + formatInt(sumReceipts) + '</td><td>' + formatInt(sumQty) + '</td></tr></tbody></table></section>';
 
       var deptTotals = {};
       DEPARTMENTS.forEach(function (d) { deptTotals[d] = 0; });
@@ -2154,18 +2158,18 @@
       var grandTotalAll = 0;
       DEPARTMENTS.forEach(function (d) { grandTotalAll += deptTotals[d] || 0; });
 
-      var table2 = '<section class="summary-section"><h3>' + t('sales_by_dept') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
+      var table2 = '<section class="summary-section"><h3>' + t('sales_by_dept') + ' (' + getCurrencyLabel() + ')</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
       DEPARTMENTS.forEach(function (d) { table2 += '<th>' + getDepartmentDisplayName(d) + '</th>'; });
       table2 += '<th>' + t('total') + '</th></tr></thead><tbody>';
       weeks.forEach(function (w) {
         table2 += '<tr><td>' + w.shortLabel + '</td>';
         var rowTotal = 0;
-        DEPARTMENTS.forEach(function (dept) { var v = w.byDepartment[dept] || 0; rowTotal += v; table2 += '<td>' + formatInt(v) + '</td>'; });
-        table2 += '<td>' + formatInt(rowTotal) + '</td></tr>';
+        DEPARTMENTS.forEach(function (dept) { var v = w.byDepartment[dept] || 0; rowTotal += v; table2 += '<td>' + formatMoneyNoUnit(v) + '</td>'; });
+        table2 += '<td>' + formatMoneyNoUnit(rowTotal) + '</td></tr>';
       });
       table2 += '<tr class="total-row"><td>' + t('total') + '</td>';
-      DEPARTMENTS.forEach(function (d) { table2 += '<td>' + formatInt(deptTotals[d]) + '</td>'; });
-      table2 += '<td>' + formatInt(grandTotalAll) + '</td></tr></tbody></table></section>';
+      DEPARTMENTS.forEach(function (d) { table2 += '<td>' + formatMoneyNoUnit(deptTotals[d]) + '</td>'; });
+      table2 += '<td>' + formatMoneyNoUnit(grandTotalAll) + '</td></tr></tbody></table></section>';
 
       var table3 = '<section class="summary-section"><h3>' + t('dept_composition_pct') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
       DEPARTMENTS.forEach(function (d) { table3 += '<th>' + getDepartmentDisplayName(d) + '</th>'; });
@@ -2242,7 +2246,7 @@
       });
       totalRow.push(grandTotalSales);
 
-      var table1 = '<section class="summary-section"><h3>' + t('daily_sales_by_dept') + '</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('department') + '</th>';
+      var table1 = '<section class="summary-section"><h3>' + t('daily_sales_by_dept') + ' (' + getCurrencyLabel() + ')</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('department') + '</th>';
       dateLabels.forEach(function (l) { table1 += '<th>' + l + '</th>'; });
       table1 += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
       deptOrder.forEach(function (dept) {
@@ -2251,12 +2255,12 @@
         days.forEach(function (d) {
           var v = (d.byDepartment && d.byDepartment[dept]) ? d.byDepartment[dept] : 0;
           rowTotal += v;
-          table1 += '<td>' + formatInt(v) + '</td>';
+          table1 += '<td>' + formatMoneyNoUnit(v) + '</td>';
         });
-        table1 += '<td>' + formatInt(rowTotal) + '</td></tr>';
+        table1 += '<td>' + formatMoneyNoUnit(rowTotal) + '</td></tr>';
       });
       table1 += '<tr class="total-row"><td>' + t('total_header') + '</td>';
-      totalRow.forEach(function (v) { table1 += '<td>' + formatInt(v) + '</td>'; });
+      totalRow.forEach(function (v) { table1 += '<td>' + formatMoneyNoUnit(v) + '</td>'; });
       table1 += '</tr></tbody></table></div></section>';
 
       var table1b = '<section class="summary-section"><h3>' + t('daily_composition_pct') + '</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('department') + '</th>';
@@ -2303,41 +2307,39 @@
       var totalReceipts = days.reduce(function (acc, d) { return acc + (d.receiptCount || 0); }, 0);
       var totalQty = days.reduce(function (acc, d) { return acc + (d.quantitySold || 0); }, 0);
 
-      var dailyRate = getExchangeRate(getDailyStoreId());
-      var jpyTotalStr = dailyRate != null ? ' / ' + formatInt(Math.round(grandTotalSales * dailyRate)) + ' ' + t('jpy_unit') : '';
       var weeklyTotalHtml = '<section class="summary-section weekly-total-section"><h3>' + t('period_total_section') + '</h3><table class="report-table daily-table weekly-total-table"><tbody>';
-      weeklyTotalHtml += '<tr><td>' + t('total_net_sales') + '</td><td>' + formatInt(grandTotalSales) + ' ' + t('currency_unit') + jpyTotalStr + '</td></tr>';
+      weeklyTotalHtml += '<tr><td>' + t('total_net_sales') + '</td><td>' + formatMoneyNoUnit(grandTotalSales) + ' ' + getCurrencyLabel() + '</td></tr>';
       weeklyTotalHtml += '<tr><td>' + t('total_receipts') + '</td><td>' + formatInt(totalReceipts) + '</td></tr>';
       weeklyTotalHtml += '<tr><td>' + t('total_qty_sold') + '</td><td>' + formatInt(totalQty) + '</td></tr>';
       weeklyTotalHtml += '<tr><td>' + t('total_hours') + '</td><td>' + formatInt(totalHours) + ' h</td></tr>';
-      weeklyTotalHtml += '<tr><td>' + t('sales_per_hour_label') + '</td><td>' + formatInt(totalHours ? Math.round(grandTotalSales / totalHours) : 0) + ' ' + t('currency_unit') + '</td></tr>';
-      weeklyTotalHtml += '<tr><td>' + t('avg_receipt_value') + '</td><td>' + (totalReceipts ? formatInt(Math.round(grandTotalSales / totalReceipts)) : '—') + ' ' + t('currency_unit') + '</td></tr>';
+      weeklyTotalHtml += '<tr><td>' + t('sales_per_hour_label') + '</td><td>' + formatMoneyNoUnit(totalHours ? Math.round(grandTotalSales / totalHours) : 0) + ' ' + getCurrencyLabel() + '</td></tr>';
+      weeklyTotalHtml += '<tr><td>' + t('avg_receipt_value') + '</td><td>' + (totalReceipts ? formatMoneyNoUnit(Math.round(grandTotalSales / totalReceipts)) : '—') + ' ' + getCurrencyLabel() + '</td></tr>';
       weeklyTotalHtml += '</tbody></table></section>';
 
       var table2 = '<section class="summary-section"><h3>' + t('key_metrics') + '</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('metric') + '</th>';
       dateLabels.forEach(function (l) { table2 += '<th>' + l + '</th>'; });
       table2 += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
-      table2 += '<tr><td>' + t('sales_per_hour') + ' (' + t('currency_unit') + ')</td>';
-      salesPerHour.forEach(function (v) { table2 += '<td>' + formatInt(v) + '</td>'; });
-      table2 += '<td>' + formatInt(totalHours ? Math.round(grandTotalSales / totalHours) : 0) + '</td></tr>';
+      table2 += '<tr><td>' + t('sales_per_hour') + ' (' + getCurrencyLabel() + ')</td>';
+      salesPerHour.forEach(function (v) { table2 += '<td>' + formatMoneyNoUnit(v) + '</td>'; });
+      table2 += '<td>' + formatMoneyNoUnit(totalHours ? Math.round(grandTotalSales / totalHours) : 0) + '</td></tr>';
       table2 += '<tr><td>' + t('receipts_per_hour') + '</td>';
       receiptsPerHour.forEach(function (v) { table2 += '<td>' + formatInt(v) + '</td>'; });
       table2 += '<td>' + formatInt(totalHours ? Math.round(totalReceipts / totalHours) : 0) + '</td></tr>';
       table2 += '<tr><td>' + t('receipt_count') + '</td>';
       receiptCounts.forEach(function (v) { table2 += '<td>' + formatInt(v) + '</td>'; });
       table2 += '<td>' + formatInt(totalReceipts) + '</td></tr>';
-      table2 += '<tr><td>' + t('avg_receipt_value') + ' (' + t('currency_unit') + ')</td>';
-      avgReceipt.forEach(function (v) { table2 += '<td>' + formatInt(v) + '</td>'; });
-      table2 += '<td>' + (totalReceipts ? formatInt(Math.round(grandTotalSales / totalReceipts)) : '—') + '</td></tr>';
+      table2 += '<tr><td>' + t('avg_receipt_value') + ' (' + getCurrencyLabel() + ')</td>';
+      avgReceipt.forEach(function (v) { table2 += '<td>' + formatMoneyNoUnit(v) + '</td>'; });
+      table2 += '<td>' + (totalReceipts ? formatMoneyNoUnit(Math.round(grandTotalSales / totalReceipts)) : '—') + '</td></tr>';
       table2 += '<tr><td>' + t('items_per_receipt') + '</td>';
       itemsPerReceipt.forEach(function (v) { table2 += '<td>' + v + '</td>'; });
       table2 += '<td>' + (totalReceipts ? (totalQty / totalReceipts).toFixed(1) : '—') + '</td></tr>';
       table2 += '<tr><td>' + t('quantity_sold') + '</td>';
       qtySold.forEach(function (v) { table2 += '<td>' + formatInt(v) + '</td>'; });
       table2 += '<td>' + formatInt(totalQty) + '</td></tr>';
-      table2 += '<tr><td>' + t('avg_item_price') + ' (' + t('currency_unit') + ')</td>';
-      avgItemPrice.forEach(function (v) { table2 += '<td>' + formatInt(v) + '</td>'; });
-      table2 += '<td>' + (totalQty ? formatInt(Math.round(grandTotalSales / totalQty)) : '—') + '</td></tr>';
+      table2 += '<tr><td>' + t('avg_item_price') + ' (' + getCurrencyLabel() + ')</td>';
+      avgItemPrice.forEach(function (v) { table2 += '<td>' + formatMoneyNoUnit(v) + '</td>'; });
+      table2 += '<td>' + (totalQty ? formatMoneyNoUnit(Math.round(grandTotalSales / totalQty)) : '—') + '</td></tr>';
       table2 += '</tbody></table></div></section>';
 
       var chartSectionHtml = '<section class="summary-section chart-section"><h3 class="chart-title">' + t('daily_sales_by_dept') + '</h3><div class="chart-wrapper"><canvas id="daily-chart-sales"></canvas></div><h3 class="chart-title">' + t('daily_composition_pct') + '</h3><div class="chart-wrapper"><canvas id="daily-chart-composition"></canvas></div><h3 class="chart-title">' + t('key_metrics_trend') + '</h3><div class="chart-wrapper"><canvas id="daily-chart-metrics"></canvas></div></section>';
