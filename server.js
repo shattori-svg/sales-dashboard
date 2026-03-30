@@ -1217,7 +1217,7 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
 
     const grandTotal = products.reduce((s, p) => s + p.totalNetSales, 0);
 
-    const rows = [['Barcode', 'Retail Product Code', 'Item Family Code', 'Group', 'Item Name', 'Department', 'Net Sales (THB, excl.VAT)', 'Gross Sales (THB, incl.VAT)', 'VAT Amount (THB)', 'Discount (THB)', 'Discount %', 'Qty Sold', 'Net Unit Price (THB)', 'Gross Unit Price (THB)', 'Share %']];
+    const rows = [['Barcode', 'Retail Product Code', 'Group Name', 'Item Name', 'Department', 'Net Sales (THB, excl.VAT)', 'Gross Sales (THB, incl.VAT)', 'VAT Amount (THB)', 'Discount (THB)', 'Discount %', 'Qty Sold', 'Net Unit Price (THB)', 'Gross Unit Price (THB)', 'Share %']];
     products.forEach((p) => {
       const m = master[p.itemCode] || {};
       const barcode = m.barcodeNo || p.itemCode;
@@ -1238,8 +1238,7 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
       const grossUnitPrice = qty > 0 ? Math.round(gross / qty) : '';
       const share = grandTotal > 0 ? parseFloat((net / grandTotal * 100).toFixed(2)) : 0;
       const retailCode = p.retailProductCode || '';
-      const familyCode = p.itemFamilyCode || '';
-      rows.push([barcode, retailCode, familyCode, groupName, name, p.departmentName, net, gross, vat, discount, discountRate, qty, netUnitPrice, grossUnitPrice, share]);
+      rows.push([barcode, retailCode, groupName, name, p.departmentName, net, gross, vat, discount, discountRate, qty, netUnitPrice, grossUnitPrice, share]);
     });
 
     const wb = XLSX.utils.book_new();
