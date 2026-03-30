@@ -400,6 +400,36 @@ async function countAdmins() {
   }
 }
 
+async function getProductGroups() {
+  try {
+    const result = await pool.query('SELECT code, description, description_tha, description_jpn FROM product_groups ORDER BY code');
+    return result.rows;
+  } catch (err) {
+    throw mapDbErr(err);
+  }
+}
+
+async function saveProductGroups(rows) {
+  if (!rows || rows.length === 0) return 0;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const r of rows) {
+      await client.query(
+        'INSERT INTO product_groups (code, description, description_tha, description_jpn) VALUES ($1,$2,$3,$4) ON CONFLICT (code) DO UPDATE SET description=EXCLUDED.description, description_tha=EXCLUDED.description_tha, description_jpn=EXCLUDED.description_jpn',
+        [r.code, r.description || '', r.description_tha || '', r.description_jpn || '']
+      );
+    }
+    await client.query('COMMIT');
+    return rows.length;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw mapDbErr(err);
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   getStores,
   saveStores,
@@ -422,4 +452,6 @@ module.exports = {
   deleteUser,
   countUsers,
   countAdmins,
+  getProductGroups,
+  saveProductGroups,
 };

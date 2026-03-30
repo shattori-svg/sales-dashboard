@@ -352,6 +352,36 @@ function countAdmins() {
     });
 }
 
+const PRODUCT_GROUPS_TABLE = 'product_groups';
+
+function getProductGroups() {
+  return supabase
+    .from(PRODUCT_GROUPS_TABLE)
+    .select('code, description, description_tha, description_jpn')
+    .order('code')
+    .then(({ data, error }) => {
+      if (error) throw error;
+      return data || [];
+    });
+}
+
+function saveProductGroups(rows) {
+  if (!rows || rows.length === 0) return Promise.resolve(0);
+  const records = rows.map((r) => ({
+    code: r.code,
+    description: r.description || '',
+    description_tha: r.description_tha || '',
+    description_jpn: r.description_jpn || '',
+  }));
+  return supabase
+    .from(PRODUCT_GROUPS_TABLE)
+    .upsert(records, { onConflict: 'code' })
+    .then(({ error }) => {
+      if (error) throw error;
+      return records.length;
+    });
+}
+
 module.exports = {
   getStores,
   saveStores,
@@ -374,4 +404,6 @@ module.exports = {
   deleteUser,
   countUsers,
   countAdmins,
+  getProductGroups,
+  saveProductGroups,
 };
