@@ -79,7 +79,13 @@
 
       <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e5e7eb;">
       <h2>商品グループマスター インポート <span style="font-size:0.75rem;font-weight:400;color:#6b7280;">分類マスター CSV</span></h2>
-      <p class="hint">商品グループ（分類）マスターをCSVからインポートします。列: <code>product_group_code, description, description_tha, description_jpn</code>。インポートすると既存データがUPSERTされます（削除はされません）。</p>
+      <p class="hint">商品グループ（分類）マスターをCSVからインポートします。</p>
+      <p class="hint">
+        必須列: <code>product_group_code, description</code><br>
+        任意列: <code>description_tha, description_jpn, parent_code, level</code><br>
+        階層構造: <code>level=1</code> 大分類 / <code>level=2</code> 中分類 / <code>level=3</code> 細分類。<code>parent_code</code> に親コードを指定します。<br>
+        インポートすると既存データがUPSERTされます（削除はされません）。
+      </p>
       <div class="upload-form">
         <div class="upload-group">
           <label for="product-groups-file">CSV ファイル <span class="required">Required</span></label>
