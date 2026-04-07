@@ -402,7 +402,7 @@ async function countAdmins() {
 
 async function getProductGroups() {
   try {
-    const result = await pool.query('SELECT code, description, description_tha, description_jpn FROM product_groups ORDER BY code');
+    const result = await pool.query('SELECT code, description, description_tha, description_jpn, parent_code, level FROM product_groups ORDER BY level, code');
     return result.rows;
   } catch (err) {
     throw mapDbErr(err);
@@ -416,8 +416,8 @@ async function saveProductGroups(rows) {
     await client.query('BEGIN');
     for (const r of rows) {
       await client.query(
-        'INSERT INTO product_groups (code, description, description_tha, description_jpn) VALUES ($1,$2,$3,$4) ON CONFLICT (code) DO UPDATE SET description=EXCLUDED.description, description_tha=EXCLUDED.description_tha, description_jpn=EXCLUDED.description_jpn',
-        [r.code, r.description || '', r.description_tha || '', r.description_jpn || '']
+        'INSERT INTO product_groups (code, description, description_tha, description_jpn, parent_code, level) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (code) DO UPDATE SET description=EXCLUDED.description, description_tha=EXCLUDED.description_tha, description_jpn=EXCLUDED.description_jpn, parent_code=EXCLUDED.parent_code, level=EXCLUDED.level',
+        [r.code, r.description || '', r.description_tha || '', r.description_jpn || '', r.parent_code || null, r.level != null ? Number(r.level) : 1]
       );
     }
     await client.query('COMMIT');

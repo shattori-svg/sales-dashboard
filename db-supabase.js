@@ -357,7 +357,8 @@ const PRODUCT_GROUPS_TABLE = 'product_groups';
 function getProductGroups() {
   return supabase
     .from(PRODUCT_GROUPS_TABLE)
-    .select('code, description, description_tha, description_jpn')
+    .select('code, description, description_tha, description_jpn, parent_code, level')
+    .order('level')
     .order('code')
     .then(({ data, error }) => {
       if (error) throw error;
@@ -372,6 +373,8 @@ function saveProductGroups(rows) {
     description: r.description || '',
     description_tha: r.description_tha || '',
     description_jpn: r.description_jpn || '',
+    parent_code: r.parent_code || null,
+    level: r.level != null ? Number(r.level) : 1,
   }));
   return supabase
     .from(PRODUCT_GROUPS_TABLE)

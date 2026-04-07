@@ -322,7 +322,6 @@
             <tr>
               <th data-i18n="products_barcode">バーコード</th>
               <th data-i18n="products_item_name">商品名</th>
-              <th data-i18n="product_group">グループ</th>
               <th data-i18n="department">部門</th>
               <th data-i18n="snapshot_net_sales">純売上高</th>
               <th data-i18n="dod">DoD</th>
@@ -360,6 +359,18 @@
           <label for="daily-store-select" class="store-label" data-i18n="store">店舗</label>
           <select id="daily-store-select" aria-label="Select store for daily view">
             <option value="default">Default</option>
+          </select>
+        </span>
+        <span class="output-header-item">
+          <label for="daily-dept-select" class="output-header-sep" data-i18n="department">部門</label>
+          <select id="daily-dept-select" aria-label="Select department for daily view">
+            <option value="">Total</option>
+            <option value="Grocery">Grocery</option>
+            <option value="Fruit &amp; Vegetable">Fruit &amp; Vegetable</option>
+            <option value="Fish &amp; Seafood">Fish &amp; Seafood</option>
+            <option value="Meat">Meat</option>
+            <option value="Delicatessen">Delicatessen</option>
+            <option value="Store Management">Store Management</option>
           </select>
         </span>
         <label for="daily-start-date" class="output-header-sep" data-i18n="daily_start_date">Start date</label>
@@ -502,6 +513,31 @@
       <div class="modal-actions">
         <button type="button" id="settings-save-btn" class="btn-primary" data-i18n="settings_save">保存</button>
         <button type="button" id="settings-cancel-btn" class="btn-secondary" data-i18n="settings_cancel">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Products Export Modal -->
+  <div id="products-export-modal" class="modal-overlay" hidden aria-modal="true" role="dialog">
+    <div class="modal-card" style="max-width:360px;">
+      <h2 class="modal-title" data-i18n="export_layout_title">エクスポート設定</h2>
+      <div class="modal-form" style="gap:0.75rem;">
+        <label style="display:flex;align-items:center;gap:0.5rem;font-weight:400;">
+          <input type="radio" name="products-export-type" value="summary" checked>
+          <span data-i18n="export_type_summary">サマリー</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:0.5rem;font-weight:400;">
+          <input type="radio" name="products-export-type" value="daily_net">
+          <span data-i18n="export_type_daily_net">日別売上金額推移</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:0.5rem;font-weight:400;">
+          <input type="radio" name="products-export-type" value="daily_qty">
+          <span data-i18n="export_type_daily_qty">日別売上数量推移</span>
+        </label>
+      </div>
+      <div class="modal-actions" style="margin-top:1.5rem;">
+        <button type="button" id="products-export-confirm" class="btn-primary" data-i18n="export_execute">出力実行</button>
+        <button type="button" id="products-export-cancel" class="btn-secondary" data-i18n="cancel">キャンセル</button>
       </div>
     </div>
   </div>
