@@ -606,7 +606,22 @@ function parseClassificationExcel(buffer) {
   if (!rawRows || rawRows.length < 2) return null;
 
   const lc = (v) => (v == null ? '' : String(v).toLowerCase().trim());
-  const headers = rawRows[0].map(lc);
+
+  // Find header row within first 10 rows (handles files with title rows above headers)
+  let headers = [];
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rawRows.length, 10); i++) {
+    const row = rawRows[i];
+    if (!row) continue;
+    const h = row.map(lc);
+    if (h.indexOf('code') >= 0 && h.indexOf('description') >= 0) {
+      headers = h;
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) return null;
+
   const col = (name) => headers.indexOf(name);
 
   const iCode    = col('code');
@@ -633,7 +648,7 @@ function parseClassificationExcel(buffer) {
   }
 
   const rows = [];
-  for (let i = 1; i < rawRows.length; i++) {
+  for (let i = headerIdx + 1; i < rawRows.length; i++) {
     const row = rawRows[i];
     if (!row) continue;
     const code = row[iCode] != null ? String(row[iCode]).trim() : '';

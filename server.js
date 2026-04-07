@@ -1373,6 +1373,7 @@ app.post('/api/product-groups/import', requireAdmin, upload.single('file'), asyn
       // Excel: auto-detect Retail Class / Divisions / Item Categories / Product Groups
       const parsed = parseClassificationExcel(file.buffer);
       if (!parsed) {
+        console.error('parseClassificationExcel returned null for file:', file.originalname, 'size:', file.buffer.length);
         return res.status(400).json({ error: 'Failed to parse Excel. Supported files: Retail Class List, Divisions, Retail Item Categories, Retail Product Groups (LS-Central exports).' });
       }
       rows = parsed.rows;
