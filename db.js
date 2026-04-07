@@ -102,6 +102,16 @@ db.exec(`
   )
 `);
 
+(function addProductGroupHierarchyIfNeeded() {
+  try {
+    const info = db.prepare('PRAGMA table_info(product_groups)').all();
+    const hasParentCode = info.some((c) => c.name === 'parent_code');
+    const hasLevel = info.some((c) => c.name === 'level');
+    if (!hasParentCode) db.exec('ALTER TABLE product_groups ADD COLUMN parent_code TEXT');
+    if (!hasLevel) db.exec('ALTER TABLE product_groups ADD COLUMN level INTEGER DEFAULT 1');
+  } catch (e) {}
+})();
+
 const STORES_KEY = 'stores';
 const EXCHANGE_RATE_KEY = 'exchange_rate';
 const PRODUCT_MASTER_KEY = 'product_master';
@@ -157,15 +167,19 @@ function getProductMaster() {
 }
 
 function getProductGroups() {
-  const rows = db.prepare('SELECT code, description, description_tha, description_jpn FROM product_groups ORDER BY code').all();
+  const rows = db.prepare('SELECT code, description, description_tha, description_jpn, parent_code, level FROM product_groups ORDER BY level, code').all();
   return Promise.resolve(rows);
 }
 
 function saveProductGroups(rows) {
   const stmt = db.prepare(
-    'INSERT INTO product_groups (code, description, description_tha, description_jpn) VALUES (?, ?, ?, ?) ON CONFLICT(code) DO UPDATE SET description=excluded.description, description_tha=excluded.description_tha, description_jpn=excluded.description_jpn'
+    'INSERT INTO product_groups (code, description, description_tha, description_jpn, parent_code, level) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(code) DO UPDATE SET description=excluded.description, description_tha=excluded.description_tha, description_jpn=excluded.description_jpn, parent_code=excluded.parent_code, level=excluded.level'
   );
-  const insertMany = db.transaction((items) => { for (const r of items) stmt.run(r.code, r.description || '', r.description_tha || '', r.description_jpn || ''); });
+  const insertMany = db.transaction((items) => {
+    for (const r of items) {
+      stmt.run(r.code, r.description || '', r.description_tha || '', r.description_jpn || '', r.parent_code || null, r.level != null ? Number(r.level) : 1);
+    }
+  });
   insertMany(rows);
   return Promise.resolve(rows.length);
 }

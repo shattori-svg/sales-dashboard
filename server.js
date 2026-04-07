@@ -687,7 +687,7 @@ app.get('/api/upload-log', requireAdmin, async (req, res) => {
   }
 });
 
-function buildDailySummaryForReport(dateStr, report) {
+function buildDailySummaryForReport(dateStr, report, dept) {
   if (!report || !report.total || !report.total.hourly) return null;
   const hourly = report.total.hourly;
   let totalNetSales = 0;
@@ -708,14 +708,25 @@ function buildDailySummaryForReport(dateStr, report) {
       });
     }
   });
-  return {
-    date: dateStr,
-    totalNetSales,
-    receiptCount,
-    quantitySold,
-    hoursCount: hourly.length || 1,
-    byDepartment,
-  };
+
+  const result = { date: dateStr, totalNetSales, receiptCount, quantitySold, hoursCount: hourly.length || 1, byDepartment };
+
+  // Include byProduct for classification aggregation when dept filter requested
+  if (dept && report.byProduct) {
+    const byProduct = {};
+    Object.values(report.byProduct).forEach((p) => {
+      if (!dept || p.departmentName === dept) {
+        byProduct[p.itemCode || p.retailProductCode] = {
+          retailProductCode: p.retailProductCode || '',
+          totalNetSales: Number(p.totalNetSales) || 0,
+          totalQuantitySold: Number(p.totalQuantitySold) || 0,
+        };
+      }
+    });
+    result.byProduct = byProduct;
+  }
+
+  return result;
 }
 
 function parseDateYMD(str) {
@@ -753,10 +764,11 @@ app.get('/api/daily-summary', async (req, res) => {
         daysList.push(addDays(endDate, -i));
       }
     }
+    const dept = (req.query.dept || '').trim();
     const summaries = [];
     for (const d of daysList) {
       const report = await getReport(d, storeId);
-      const sum = report ? buildDailySummaryForReport(d, report) : null;
+      const sum = report ? buildDailySummaryForReport(d, report, dept || undefined) : null;
       if (sum) summaries.push(sum);
     }
     res.json({ days: summaries });
@@ -1179,10 +1191,69 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
       db.getProductMaster(),
       db.getProductGroups(),
     ]);
+    const type = (req.query.type || 'summary').trim();
     const lang = (req.query.lang || 'en').toLowerCase();
     const groupMap = {};
     groupRows.forEach((g) => { groupMap[g.code] = g; });
 
+    function getGroupName(retailCode) {
+      const grp = groupMap[retailCode] || null;
+      if (!grp) return '';
+      return (lang === 'ja' ? grp.description_jpn : lang === 'th' ? grp.description_tha : grp.description) || grp.description || '';
+    }
+
+    const suffix = dateTo && dateTo !== dateFrom ? `_to_${dateTo}` : '';
+
+    if (type === 'daily_net' || type === 'daily_qty') {
+      // Build per-date per-product data
+      const productDates = {};
+      const productMeta = {};
+      dates.forEach((date, idx) => {
+        const report = reports[idx];
+        if (!report || !report.byProduct) return;
+        Object.values(report.byProduct).forEach((p) => {
+          const key = p.itemCode || p.retailProductCode;
+          if (!productDates[key]) {
+            productDates[key] = {};
+            productMeta[key] = { itemCode: key, itemName: p.itemName || '', departmentName: p.departmentName || '', retailProductCode: p.retailProductCode || '' };
+          }
+          const val = type === 'daily_net' ? (Number(p.totalNetSales) || 0) : (Number(p.totalQuantitySold) || 0);
+          productDates[key][date] = (productDates[key][date] || 0) + val;
+        });
+      });
+
+      let products = Object.values(productMeta);
+      if (deptFilter) products = products.filter((p) => p.departmentName === deptFilter);
+      products.sort((a, b) => {
+        const totA = dates.reduce((s, d) => s + (productDates[a.itemCode]?.[d] || 0), 0);
+        const totB = dates.reduce((s, d) => s + (productDates[b.itemCode]?.[d] || 0), 0);
+        return totB - totA;
+      });
+
+      const valueLabel = type === 'daily_net' ? 'Net Sales (THB)' : 'Qty Sold';
+      const headerRow = ['Barcode', 'Retail Product Code', 'Group Name', 'Item Name', 'Department', ...dates, 'Total'];
+      const rows = [headerRow];
+      products.forEach((p) => {
+        const m = master[p.itemCode] || {};
+        const barcode = m.barcodeNo || p.itemCode;
+        const name = m.nameEng || p.itemName || p.itemCode;
+        const dateValues = dates.map((d) => productDates[p.itemCode]?.[d] || 0);
+        const total = dateValues.reduce((s, v) => s + v, 0);
+        rows.push([barcode, p.retailProductCode, getGroupName(p.retailProductCode), name, p.departmentName, ...dateValues, total]);
+      });
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, valueLabel);
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+      const typeLabel = type === 'daily_net' ? '_daily_net' : '_daily_qty';
+      const filename = `products${typeLabel}_${dateFrom}${suffix}.xlsx`;
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.send(buf);
+    }
+
+    // type === 'summary' (default)
     // Aggregate byProduct across dates
     const merged = {};
     reports.forEach((report) => {
@@ -1222,32 +1293,24 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
       const m = master[p.itemCode] || {};
       const barcode = m.barcodeNo || p.itemCode;
       const name = m.nameEng || p.itemName || p.itemCode;
-      const grp = groupMap[p.retailProductCode] || null;
-      const groupName = grp ? (lang === 'ja' ? grp.description_jpn : lang === 'th' ? grp.description_tha : grp.description) || grp.description : '';
       const qty = p.totalQuantitySold || 0;
       const net = p.totalNetSales || 0;
       const gross = p.totalGrossSales || (net + (p.discountAmount || 0));
       const discount = p.discountAmount || 0;
       const vat = p.vatAmount || 0;
-      // 割引率: 分母は定価合計（= Gross Sales − Discount）
       const listPriceTotal = gross - discount;
-      const discountRate = listPriceTotal > 0 && discount !== 0
-        ? parseFloat((discount / listPriceTotal * 100).toFixed(2))
-        : 0;
+      const discountRate = listPriceTotal > 0 && discount !== 0 ? parseFloat((discount / listPriceTotal * 100).toFixed(2)) : 0;
       const netUnitPrice = qty > 0 ? Math.round(net / qty) : '';
       const grossUnitPrice = qty > 0 ? Math.round(gross / qty) : '';
       const share = grandTotal > 0 ? parseFloat((net / grandTotal * 100).toFixed(2)) : 0;
-      const retailCode = p.retailProductCode || '';
-      rows.push([barcode, retailCode, groupName, name, p.departmentName, net, gross, vat, discount, discountRate, qty, netUnitPrice, grossUnitPrice, share]);
+      rows.push([barcode, p.retailProductCode, getGroupName(p.retailProductCode), name, p.departmentName, net, gross, vat, discount, discountRate, qty, netUnitPrice, grossUnitPrice, share]);
     });
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!cols'] = [{ wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 30 }, { wch: 40 }, { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 10 }];
     XLSX.utils.book_append_sheet(wb, ws, 'Products');
-
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-    const suffix = dateTo && dateTo !== dateFrom ? `_to_${dateTo}` : '';
     const filename = `products_${dateFrom}${suffix}.xlsx`;
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -1311,6 +1374,8 @@ app.post('/api/product-groups/import', requireAdmin, upload.single('file'), asyn
     const iDesc = col('description');
     const iTha  = col('description_tha');
     const iJpn  = col('description_jpn');
+    const iParent = col('parent_code');
+    const iLevel  = col('level');
     if (iCode < 0) return res.status(400).json({ error: 'Column product_group_code not found in CSV.' });
 
     const rows = [];
@@ -1320,9 +1385,11 @@ app.post('/api/product-groups/import', requireAdmin, upload.single('file'), asyn
       if (!code) continue;
       rows.push({
         code,
-        description:     iDesc >= 0 ? (cols[iDesc] || '').trim() : '',
-        description_tha: iTha  >= 0 ? (cols[iTha]  || '').trim() : '',
-        description_jpn: iJpn  >= 0 ? (cols[iJpn]  || '').trim() : '',
+        description:     iDesc   >= 0 ? (cols[iDesc]   || '').trim() : '',
+        description_tha: iTha    >= 0 ? (cols[iTha]    || '').trim() : '',
+        description_jpn: iJpn    >= 0 ? (cols[iJpn]    || '').trim() : '',
+        parent_code:     iParent >= 0 ? (cols[iParent] || '').trim() || null : null,
+        level:           iLevel  >= 0 ? (parseInt(cols[iLevel], 10) || 1) : 1,
       });
     }
     if (rows.length === 0) return res.status(400).json({ error: 'No valid rows found in CSV.' });
