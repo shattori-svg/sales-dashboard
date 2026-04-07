@@ -34,7 +34,11 @@
     stores: [],
     currency: 'THB',
     exchangeRate: null,
-    exchangeRateUpdatedAt: null
+    exchangeRateUpdatedAt: null,
+    dailyClsTree: null,
+    dailyClsAgg: null,
+    dailyClsDays: null,
+    dailyClsDept: null,
   };
 
   var AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -2383,6 +2387,12 @@
       var clsAgg = aggregateByClassification(days, dept, clsTree);
       var hasClsData = Object.keys(clsAgg).length > 0;
 
+      // Store for export
+      state.dailyClsTree = clsTree;
+      state.dailyClsAgg = clsAgg;
+      state.dailyClsDays = days;
+      state.dailyClsDept = dept;
+
       // Period total section
       var periodHtml = '<section class="summary-section weekly-total-section"><h3>' + t('period_total_section') + ' \u2014 ' + escapeHtml(dept) + '</h3><table class="report-table daily-table weekly-total-table"><tbody>';
       periodHtml += '<tr><td>' + t('total_net_sales') + '</td><td>' + formatMoneyNoUnit(totalNet) + ' ' + getCurrencyLabel() + '</td></tr>';
@@ -2434,6 +2444,61 @@
     });
   }
 
+  function exportClassificationByLevel(level) {
+    if (!window.XLSX) { alert('Excel library not loaded.'); return; }
+    var clsTree = state.dailyClsTree;
+    var clsAgg = state.dailyClsAgg;
+    var days = state.dailyClsDays;
+    var dept = state.dailyClsDept;
+    if (!clsTree || !clsAgg || !days) { alert('No data to export.'); return; }
+
+    var dates = days.map(function(d) { return d.date; });
+    var lang = window.i18n ? window.i18n.getCurrentLang() : 'ja';
+
+    function getClsName(g) {
+      if (lang === 'ja') return g.description_jpn || g.description || g.code;
+      if (lang === 'th') return g.description_tha || g.description || g.code;
+      return g.description || g.code;
+    }
+
+    // Build rows for specified level
+    var groups = Object.values(clsTree.map).filter(function(g) { return (g.level || 1) === level; });
+    groups.sort(function(a, b) { return (a.code || '').localeCompare(b.code || ''); });
+
+    var wb = window.XLSX.utils.book_new();
+    var currLabel = getCurrencyLabel();
+
+    // Net sales sheet
+    var netHeaders = ['Code', 'Name (' + (dept || 'Total') + ')'].concat(dates.map(function(d) { return d.slice(5); })).concat(['Total (' + currLabel + ')']);
+    var netRows = [netHeaders];
+    groups.forEach(function(g) {
+      var rowTotal = dates.reduce(function(s, d) { return s + (clsAgg[g.code] && clsAgg[g.code][d] ? clsAgg[g.code][d].net : 0); }, 0);
+      if (rowTotal === 0) return;
+      var row = [g.code, getClsName(g)];
+      dates.forEach(function(d) { row.push(clsAgg[g.code] && clsAgg[g.code][d] ? Math.round(toSelectedCurrency(clsAgg[g.code][d].net)) : 0); });
+      row.push(Math.round(toSelectedCurrency(rowTotal)));
+      netRows.push(row);
+    });
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(netRows), 'Net Sales');
+
+    // Qty sheet
+    var qtyHeaders = ['Code', 'Name'].concat(dates.map(function(d) { return d.slice(5); })).concat(['Total']);
+    var qtyRows = [qtyHeaders];
+    groups.forEach(function(g) {
+      var rowTotal = dates.reduce(function(s, d) { return s + (clsAgg[g.code] && clsAgg[g.code][d] ? clsAgg[g.code][d].qty : 0); }, 0);
+      if (rowTotal === 0) return;
+      var row = [g.code, getClsName(g)];
+      dates.forEach(function(d) { row.push(clsAgg[g.code] && clsAgg[g.code][d] ? clsAgg[g.code][d].qty : 0); });
+      row.push(rowTotal);
+      qtyRows.push(row);
+    });
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(qtyRows), 'Qty Sold');
+
+    var suffix = dates[0] === dates[dates.length - 1] ? dates[0] : dates[0] + '_' + dates[dates.length - 1];
+    var deptSuffix = dept ? '_' + dept.replace(/[^a-zA-Z0-9]/g, '') : '';
+    window.XLSX.writeFile(wb, 'classification_level' + level + deptSuffix + '_' + suffix + '.xlsx');
+  }
+
   function renderDailySummary() {
     var startDateEl = document.getElementById('daily-start-date');
     var endDateEl = document.getElementById('daily-end-date');
@@ -2474,6 +2539,8 @@
         renderDailySummaryDeptMode(days, dept, container, emptyEl);
         return;
       }
+      // Clear classification state when in Total mode
+      state.dailyClsTree = null; state.dailyClsAgg = null; state.dailyClsDays = null; state.dailyClsDept = null;
       var deptOrder = DEPARTMENTS.slice();
       var dailyChartColors = DEPARTMENT_COLORS.slice();
       var dateLabels = days.map(function (d) {
@@ -3712,12 +3779,20 @@
       btnDailyExcel.addEventListener('click', function () {
         var sel = document.getElementById('daily-export-select');
         var opt = sel ? sel.value : 'all';
+        var dept = getDailyDept();
+
+        // Classification level exports for non-Total dept mode
+        if (dept && opt === '1') { exportClassificationByLevel(1); return; }
+        if (dept && opt === '2') { exportClassificationByLevel(2); return; }
+        if (dept && opt === '3') { exportClassificationByLevel(3); return; }
+
         var dateStr = (document.getElementById('daily-start-date') || {}).value || '';
         var dateEnd = (document.getElementById('daily-end-date') || {}).value || '';
         var suffix = dateStr && dateEnd && dateStr !== dateEnd ? dateStr + '_' + dateEnd : (dateStr || dateEnd);
-        var dept = getDailyDept();
+        // In dept mode, opt '4' (key_metrics) has no separate table → export all
+        var tableOpt = (dept && opt === '4') ? 'all' : opt;
         var filename = 'daily_summary' + (dept ? '_' + dept.replace(/[^a-zA-Z0-9]/g, '') : '') + (suffix ? '_' + suffix : '') + '.xlsx';
-        exportPanelTablesXlsx('daily-summary-tables', filename, opt);
+        exportPanelTablesXlsx('daily-summary-tables', filename, tableOpt);
       });
     }
     var btnWeeklyExcel = document.getElementById('btn-weekly-excel');
