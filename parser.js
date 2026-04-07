@@ -555,6 +555,7 @@ function parseProductMasterExcel(buffer) {
         else if (c === 'description (eng)') colMap.nameEng = idx;
         else if (c === 'description (tha)') colMap.nameTha = idx;
         else if (c === 'description (jpn)') colMap.nameJpn = idx;
+        else if (c === 'retail product group code' || c === 'product group code' || c === 'item group code') colMap.groupCode = idx;
       });
       break;
     }
@@ -574,10 +575,83 @@ function parseProductMasterExcel(buffer) {
       nameTha: colMap.nameTha != null && row[colMap.nameTha] != null ? String(row[colMap.nameTha]).trim() : '',
       nameJpn: colMap.nameJpn != null && row[colMap.nameJpn] != null ? String(row[colMap.nameJpn]).trim() : '',
       deptCode: colMap.deptCode != null && row[colMap.deptCode] != null ? String(row[colMap.deptCode]).trim() : '',
+      groupCode: colMap.groupCode != null && row[colMap.groupCode] != null ? String(row[colMap.groupCode]).trim() : '',
     };
   }
 
   return Object.keys(master).length > 0 ? master : null;
+}
+
+/**
+ * Parse LS-Central classification master Excel files.
+ * Auto-detects file type (Retail Class / Divisions / Item Categories / Product Groups)
+ * based on column headers and assigns the correct level and parent_code.
+ *
+ * Level hierarchy:
+ *   1 = Retail Class List     (no parent column)
+ *   2 = Divisions             (Retail Class Code → parent)
+ *   3 = Retail Item Categories (Division Code → parent)
+ *   4 = Retail Product Groups  (Item Category Code → parent)
+ *
+ * @param {Buffer} buffer Excel file buffer
+ * @returns {{ rows: object[], level: number }|null}
+ */
+function parseClassificationExcel(buffer) {
+  let wb;
+  try { wb = XLSX.read(buffer, { type: 'buffer' }); } catch (e) { return null; }
+  const sheetName = wb.SheetNames[0];
+  if (!sheetName) return null;
+  const ws = wb.Sheets[sheetName];
+  const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  if (!rawRows || rawRows.length < 2) return null;
+
+  const lc = (v) => (v == null ? '' : String(v).toLowerCase().trim());
+  const headers = rawRows[0].map(lc);
+  const col = (name) => headers.indexOf(name);
+
+  const iCode    = col('code');
+  const iDesc    = col('description');
+  const iDescTha = col('description (tha)');
+  const iDescJpn = col('description (jpn)');
+  if (iCode < 0 || iDesc < 0) return null;
+
+  // Detect level by unique parent-reference column
+  const iItemCategoryCode = col('item category code'); // Product Groups → level 4
+  const iDivisionCode     = col('division code');      // Item Categories → level 3
+  const iRetailClassCode  = col('retail class code');  // Divisions → level 2
+  // Retail Class List has none of the above → level 1
+
+  let level, parentColIdx;
+  if (iItemCategoryCode >= 0) {
+    level = 4; parentColIdx = iItemCategoryCode;
+  } else if (iDivisionCode >= 0) {
+    level = 3; parentColIdx = iDivisionCode;
+  } else if (iRetailClassCode >= 0) {
+    level = 2; parentColIdx = iRetailClassCode;
+  } else {
+    level = 1; parentColIdx = -1;
+  }
+
+  const rows = [];
+  for (let i = 1; i < rawRows.length; i++) {
+    const row = rawRows[i];
+    if (!row) continue;
+    const code = row[iCode] != null ? String(row[iCode]).trim() : '';
+    if (!code) continue;
+    const parentCode = parentColIdx >= 0 && row[parentColIdx] != null
+      ? String(row[parentColIdx]).trim() || null
+      : null;
+    rows.push({
+      code,
+      description:     iDesc    >= 0 && row[iDesc]    != null ? String(row[iDesc]).trim()    : '',
+      description_tha: iDescTha >= 0 && row[iDescTha] != null ? String(row[iDescTha]).trim() : '',
+      description_jpn: iDescJpn >= 0 && row[iDescJpn] != null ? String(row[iDescJpn]).trim() : '',
+      parent_code: parentCode,
+      level,
+    });
+  }
+
+  return rows.length > 0 ? { rows, level } : null;
 }
 
 /**
@@ -794,4 +868,4 @@ function parseCsvLine(line) {
   return out;
 }
 
-module.exports = { parseSheet, parseCsv, parseItemSalesExcel, parseProductMasterExcel };
+module.exports = { parseSheet, parseCsv, parseItemSalesExcel, parseProductMasterExcel, parseClassificationExcel };

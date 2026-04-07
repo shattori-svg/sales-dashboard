@@ -78,18 +78,20 @@
       <p id="item-sales-error" class="error" role="alert" hidden></p>
 
       <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e5e7eb;">
-      <h2>商品グループマスター インポート <span style="font-size:0.75rem;font-weight:400;color:#6b7280;">分類マスター CSV</span></h2>
-      <p class="hint">商品グループ（分類）マスターをCSVからインポートします。</p>
+      <h2>商品グループマスター インポート <span style="font-size:0.75rem;font-weight:400;color:#6b7280;">分類マスター</span></h2>
+      <p class="hint">LS-Central の分類マスターExcelをそのままインポートできます。ファイルの種類を自動判別し、正しいレベルと親コードを設定します。</p>
       <p class="hint">
-        必須列: <code>product_group_code, description</code><br>
-        任意列: <code>description_tha, description_jpn, parent_code, level</code><br>
-        階層構造: <code>level=1</code> 大分類 / <code>level=2</code> 中分類 / <code>level=3</code> 細分類。<code>parent_code</code> に親コードを指定します。<br>
+        対応ファイル（各ファイルを個別にインポート）：<br>
+        　<strong>Retail Class List.xlsx</strong> → 大分類 (level 1)<br>
+        　<strong>Divisions.xlsx</strong> → 中分類 (level 2、Retail Class Code を親として自動設定)<br>
+        　<strong>Retail Item Categories.xlsx</strong> → 小分類 (level 3、Division Code を親として自動設定)<br>
+        　<strong>Retail Product Groups.xlsx</strong> → 細分類 (level 4、Item Category Code を親として自動設定)<br>
         インポートすると既存データがUPSERTされます（削除はされません）。
       </p>
       <div class="upload-form">
         <div class="upload-group">
-          <label for="product-groups-file">CSV ファイル <span class="required">Required</span></label>
-          <input type="file" id="product-groups-file" name="file" accept=".csv">
+          <label for="product-groups-file">Excel / CSV ファイル <span class="required">Required</span></label>
+          <input type="file" id="product-groups-file" name="file" accept=".xlsx,.xls,.csv">
           <span class="file-name" id="product-groups-file-name"></span>
         </div>
         <button type="button" id="product-groups-submit" class="btn-primary" style="margin-top:0.75rem;">インポート</button>

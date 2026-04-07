@@ -10,7 +10,7 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const bcrypt = require('bcrypt');
-const { parseSheet, parseCsv, parseItemSalesExcel, parseProductMasterExcel } = require('./parser');
+const { parseSheet, parseCsv, parseItemSalesExcel, parseProductMasterExcel, parseClassificationExcel } = require('./parser');
 const DB_PROVIDER = String(process.env.DB_PROVIDER || 'supabase').trim().toLowerCase();
 const hasSupabaseConfig = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 const hasPostgresConfig = !!process.env.DATABASE_URL;
@@ -687,7 +687,7 @@ app.get('/api/upload-log', requireAdmin, async (req, res) => {
   }
 });
 
-function buildDailySummaryForReport(dateStr, report, dept) {
+function buildDailySummaryForReport(dateStr, report, dept, master) {
   if (!report || !report.total || !report.total.hourly) return null;
   const hourly = report.total.hourly;
   let totalNetSales = 0;
@@ -716,8 +716,11 @@ function buildDailySummaryForReport(dateStr, report, dept) {
     const byProduct = {};
     Object.values(report.byProduct).forEach((p) => {
       if (!dept || p.departmentName === dept) {
-        byProduct[p.itemCode || p.retailProductCode] = {
+        const key = p.itemCode || p.retailProductCode;
+        const m = master ? (master[key] || master[p.retailProductCode] || null) : null;
+        byProduct[key] = {
           retailProductCode: p.retailProductCode || '',
+          groupCode: m && m.groupCode ? m.groupCode : '',
           totalNetSales: Number(p.totalNetSales) || 0,
           totalQuantitySold: Number(p.totalQuantitySold) || 0,
         };
@@ -765,10 +768,11 @@ app.get('/api/daily-summary', async (req, res) => {
       }
     }
     const dept = (req.query.dept || '').trim();
+    const master = dept ? await getProductMaster() : null;
     const summaries = [];
     for (const d of daysList) {
       const report = await getReport(d, storeId);
-      const sum = report ? buildDailySummaryForReport(d, report, dept || undefined) : null;
+      const sum = report ? buildDailySummaryForReport(d, report, dept || undefined, master) : null;
       if (sum) summaries.push(sum);
     }
     res.json({ days: summaries });
@@ -1360,42 +1364,54 @@ app.get('/api/product-groups', async (req, res) => {
 app.post('/api/product-groups/import', requireAdmin, upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
-    if (!file || !file.buffer) return res.status(400).json({ error: 'CSV file is required (field name: file).' });
+    if (!file || !file.buffer) return res.status(400).json({ error: 'File is required (field name: file).' });
 
-    // Parse CSV — accept both file upload and raw text
-    const text = file.buffer.toString('utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-    const lines = text.split('\n').filter((l) => l.trim());
-    if (lines.length < 2) return res.status(400).json({ error: 'CSV is empty or has no data rows.' });
+    const ext = (file.originalname || '').toLowerCase();
+    let rows;
 
-    // Detect header
-    const header = lines[0].split(',').map((h) => h.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_'));
-    const col = (name) => header.indexOf(name);
-    const iCode = col('product_group_code');
-    const iDesc = col('description');
-    const iTha  = col('description_tha');
-    const iJpn  = col('description_jpn');
-    const iParent = col('parent_code');
-    const iLevel  = col('level');
-    if (iCode < 0) return res.status(400).json({ error: 'Column product_group_code not found in CSV.' });
+    if (ext.endsWith('.xlsx') || ext.endsWith('.xls')) {
+      // Excel: auto-detect Retail Class / Divisions / Item Categories / Product Groups
+      const parsed = parseClassificationExcel(file.buffer);
+      if (!parsed) {
+        return res.status(400).json({ error: 'Failed to parse Excel. Supported files: Retail Class List, Divisions, Retail Item Categories, Retail Product Groups (LS-Central exports).' });
+      }
+      rows = parsed.rows;
+      console.log(`Product groups imported from Excel (level ${parsed.level}):`, rows.length, 'rows');
+    } else {
+      // CSV with columns: product_group_code, description, description_tha, description_jpn, parent_code, level
+      const text = file.buffer.toString('utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      const lines = text.split('\n').filter((l) => l.trim());
+      if (lines.length < 2) return res.status(400).json({ error: 'CSV is empty or has no data rows.' });
 
-    const rows = [];
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(',');
-      const code = (cols[iCode] || '').trim();
-      if (!code) continue;
-      rows.push({
-        code,
-        description:     iDesc   >= 0 ? (cols[iDesc]   || '').trim() : '',
-        description_tha: iTha    >= 0 ? (cols[iTha]    || '').trim() : '',
-        description_jpn: iJpn    >= 0 ? (cols[iJpn]    || '').trim() : '',
-        parent_code:     iParent >= 0 ? (cols[iParent] || '').trim() || null : null,
-        level:           iLevel  >= 0 ? (parseInt(cols[iLevel], 10) || 1) : 1,
-      });
+      const header = lines[0].split(',').map((h) => h.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_'));
+      const col = (name) => header.indexOf(name);
+      const iCode   = col('product_group_code');
+      const iDesc   = col('description');
+      const iTha    = col('description_tha');
+      const iJpn    = col('description_jpn');
+      const iParent = col('parent_code');
+      const iLevel  = col('level');
+      if (iCode < 0) return res.status(400).json({ error: 'Column product_group_code not found in CSV.' });
+
+      rows = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',');
+        const code = (cols[iCode] || '').trim();
+        if (!code) continue;
+        rows.push({
+          code,
+          description:     iDesc   >= 0 ? (cols[iDesc]   || '').trim() : '',
+          description_tha: iTha    >= 0 ? (cols[iTha]    || '').trim() : '',
+          description_jpn: iJpn    >= 0 ? (cols[iJpn]    || '').trim() : '',
+          parent_code:     iParent >= 0 ? (cols[iParent] || '').trim() || null : null,
+          level:           iLevel  >= 0 ? (parseInt(cols[iLevel], 10) || 1) : 1,
+        });
+      }
+      if (rows.length === 0) return res.status(400).json({ error: 'No valid rows found in CSV.' });
+      console.log('Product groups imported from CSV:', rows.length, 'rows');
     }
-    if (rows.length === 0) return res.status(400).json({ error: 'No valid rows found in CSV.' });
 
     await saveProductGroups(rows);
-    console.log('Product groups imported:', rows.length, 'rows');
     res.json({ ok: true, count: rows.length });
   } catch (err) {
     console.error('Product groups import error:', err);

@@ -2263,7 +2263,7 @@
     days.forEach(function(day) {
       var byProduct = day.byProduct || {};
       Object.values(byProduct).forEach(function(p) {
-        var code = p.retailProductCode;
+        var code = p.groupCode || ''; // classification code from product master
         if (!code) return;
         var net = p.totalNetSales || 0;
         var qty = p.totalQuantitySold || 0;
