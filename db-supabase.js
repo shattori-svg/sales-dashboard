@@ -360,6 +360,7 @@ function getProductGroups() {
     .select('code, description, description_tha, description_jpn, parent_code, level')
     .order('level')
     .order('code')
+    .limit(10000)
     .then(({ data, error }) => {
       if (error) throw error;
       return data || [];
