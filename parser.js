@@ -383,7 +383,7 @@ function parseCsv(buffer) {
     const endRaw = get(iEnd);
     const deptCode = get(iDept);
     const rawStore = get(iStore);
-    const sid = rawStore || '1001';
+    const sid = rawStore || 'default';
     const store = getOrCreateStore(sid);
 
     if (!store.businessDate && get(iDate)) store.businessDate = parseBusinessDate(get(iDate)) || get(iDate);
@@ -555,6 +555,7 @@ function parseProductMasterExcel(buffer) {
         else if (c === 'description (eng)') colMap.nameEng = idx;
         else if (c === 'description (tha)') colMap.nameTha = idx;
         else if (c === 'description (jpn)') colMap.nameJpn = idx;
+        else if (c === 'retail product group code' || c === 'product group code' || c === 'item group code') colMap.groupCode = idx;
       });
       break;
     }
@@ -574,10 +575,100 @@ function parseProductMasterExcel(buffer) {
       nameTha: colMap.nameTha != null && row[colMap.nameTha] != null ? String(row[colMap.nameTha]).trim() : '',
       nameJpn: colMap.nameJpn != null && row[colMap.nameJpn] != null ? String(row[colMap.nameJpn]).trim() : '',
       deptCode: colMap.deptCode != null && row[colMap.deptCode] != null ? String(row[colMap.deptCode]).trim() : '',
+      groupCode: colMap.groupCode != null && row[colMap.groupCode] != null ? String(row[colMap.groupCode]).trim() : '',
     };
   }
 
   return Object.keys(master).length > 0 ? master : null;
+}
+
+/**
+ * Parse LS-Central classification master Excel files.
+ * Auto-detects file type (Retail Class / Divisions / Item Categories / Product Groups)
+ * based on column headers and assigns the correct level and parent_code.
+ *
+ * Level hierarchy:
+ *   1 = Retail Class List     (no parent column)
+ *   2 = Divisions             (Retail Class Code → parent)
+ *   3 = Retail Item Categories (Division Code → parent)
+ *   4 = Retail Product Groups  (Item Category Code → parent)
+ *
+ * @param {Buffer} buffer Excel file buffer
+ * @returns {{ rows: object[], level: number }|null}
+ */
+function parseClassificationExcel(buffer) {
+  let wb;
+  try { wb = XLSX.read(buffer, { type: 'buffer' }); } catch (e) { return null; }
+  const sheetName = wb.SheetNames[0];
+  if (!sheetName) return null;
+  const ws = wb.Sheets[sheetName];
+  const rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+  if (!rawRows || rawRows.length < 1) return null;
+  if (rawRows.length < 2) return { rows: [], level: 0, empty: true };
+
+  const lc = (v) => (v == null ? '' : String(v).toLowerCase().trim());
+
+  // Find header row within first 10 rows (handles files with title rows above headers)
+  let headers = [];
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rawRows.length, 10); i++) {
+    const row = rawRows[i];
+    if (!row) continue;
+    const h = row.map(lc);
+    if (h.indexOf('code') >= 0 && h.indexOf('description') >= 0) {
+      headers = h;
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx < 0) return null;
+
+  const col = (name) => headers.indexOf(name);
+
+  const iCode    = col('code');
+  const iDesc    = col('description');
+  // Accept several possible column name variants for localized descriptions
+  const iDescTha = ['description (tha)', 'description_tha', 'description tha', 'name (thai)', 'thai description'].reduce((found, n) => found >= 0 ? found : col(n), -1);
+  const iDescJpn = ['description (jpn)', 'description_jpn', 'description jpn', 'name (japanese)', 'japanese description', 'description (japanese)'].reduce((found, n) => found >= 0 ? found : col(n), -1);
+  if (iCode < 0 || iDesc < 0) return null;
+
+  // Detect level by unique parent-reference column
+  const iItemCategoryCode = col('item category code'); // Product Groups → level 4
+  const iDivisionCode     = col('division code');      // Item Categories → level 3
+  const iRetailClassCode  = col('retail class code');  // Divisions → level 2
+  // Retail Class List has none of the above → level 1
+
+  let level, parentColIdx;
+  if (iItemCategoryCode >= 0) {
+    level = 4; parentColIdx = iItemCategoryCode;
+  } else if (iDivisionCode >= 0) {
+    level = 3; parentColIdx = iDivisionCode;
+  } else if (iRetailClassCode >= 0) {
+    level = 2; parentColIdx = iRetailClassCode;
+  } else {
+    level = 1; parentColIdx = -1;
+  }
+
+  const rows = [];
+  for (let i = headerIdx + 1; i < rawRows.length; i++) {
+    const row = rawRows[i];
+    if (!row) continue;
+    const code = row[iCode] != null ? String(row[iCode]).trim() : '';
+    if (!code) continue;
+    const parentCode = parentColIdx >= 0 && row[parentColIdx] != null
+      ? String(row[parentColIdx]).trim() || null
+      : null;
+    rows.push({
+      code,
+      description:     iDesc    >= 0 && row[iDesc]    != null ? String(row[iDesc]).trim()    : '',
+      description_tha: iDescTha >= 0 && row[iDescTha] != null ? String(row[iDescTha]).trim() : '',
+      description_jpn: iDescJpn >= 0 && row[iDescJpn] != null ? String(row[iDescJpn]).trim() : '',
+      parent_code: parentCode,
+      level,
+    });
+  }
+
+  return rows.length > 0 ? { rows, level } : null;
 }
 
 /**
@@ -645,7 +736,31 @@ function parseItemSalesExcel(buffer, businessDate, storeId) {
     }
   }
 
-  if (headerIdx < 0 || colMap.itemNo == null || colMap.categoryCode == null) return null;
+  // Fallback: try LS-Central "Retail Item Sales" technical format (Data sheet, Item__No__ style headers)
+  if (headerIdx < 0 || colMap.itemNo == null || colMap.categoryCode == null) {
+    const dataSheetName = workbook.SheetNames.includes('Data') ? 'Data' : null;
+    if (!dataSheetName) return null;
+    const dataWs = workbook.Sheets[dataSheetName];
+    const dataRows = XLSX.utils.sheet_to_json(dataWs, { header: 1, raw: true, defval: null });
+    if (!dataRows || dataRows.length < 2) return null;
+    // Header is row 0; technical column names use double-underscore for spaces, e.g. Item__No__
+    const hdr = dataRows[0].map(lc);
+    if (!hdr.some((c) => c === 'item__no__')) return null;
+    hdr.forEach((c, idx) => {
+      if (c === 'item__no__') colMap.itemNo = idx;
+      else if (c === 'item_description') colMap.description = idx;
+      else if (c === 'item__sales__qty___') colMap.qtySold = idx;
+      else if (c === 'item__sales__lcy__') colMap.netSales = idx;
+      else if (c === 'item__disc__amount__pos__') colMap.discAmount = idx;
+      else if (c === 'item_item_category_code') colMap.categoryCode = idx;
+      else if (c === 'item_product_group_code') colMap.retailProductCode = idx;
+    });
+    if (colMap.itemNo == null || colMap.categoryCode == null) return null;
+    // Replace rows/headerIdx with the Data sheet content
+    rows.length = 0;
+    dataRows.forEach((r) => rows.push(r));
+    headerIdx = 0;
+  }
 
   const DEPT_MAP = {
     '1': 'Grocery',
@@ -726,7 +841,9 @@ function parseItemSalesExcel(buffer, businessDate, storeId) {
     totalQty += qtySold;
   }
 
-  if (Object.keys(byProduct).length === 0) return null;
+  if (Object.keys(byProduct).length === 0) {
+    throw new Error('FILE_RECOGNIZED_NO_SALES');
+  }
 
   const byDepartment = {};
   DEPARTMENTS.forEach((d) => { byDepartment[d] = { hourly: [] }; });
@@ -794,4 +911,4 @@ function parseCsvLine(line) {
   return out;
 }
 
-module.exports = { parseSheet, parseCsv, parseItemSalesExcel, parseProductMasterExcel };
+module.exports = { parseSheet, parseCsv, parseItemSalesExcel, parseProductMasterExcel, parseClassificationExcel };

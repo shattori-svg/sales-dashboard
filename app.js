@@ -34,7 +34,11 @@
     stores: [],
     currency: 'THB',
     exchangeRate: null,
-    exchangeRateUpdatedAt: null
+    exchangeRateUpdatedAt: null,
+    dailyClsTree: null,
+    dailyClsAgg: null,
+    dailyClsDays: null,
+    dailyClsDept: null,
   };
 
   var AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -110,13 +114,16 @@
   }
 
   function refreshDepartmentSelectLabels() {
-    var ids = ['department-select', 'ai-department-select', 'allstores-department-select', 'settings-department-select'];
+    var ids = ['department-select', 'ai-department-select', 'allstores-department-select', 'settings-department-select', 'daily-dept-select', 'products-dept-filter'];
     ids.forEach(function (id) {
       var el = document.getElementById(id);
       if (!el) return;
+      var isProductsFilter = (id === 'products-dept-filter');
       Array.prototype.forEach.call(el.options, function (opt) {
         var v = opt.value || '';
-        if (v === 'Total') {
+        if (v === '') {
+          opt.textContent = isProductsFilter ? (t('products_all_depts') || 'All') : (t('total') || 'Total');
+        } else if (v === 'Total') {
           opt.textContent = t('total') || 'Total';
         } else {
           opt.textContent = getDepartmentDisplayName(v);
@@ -630,7 +637,7 @@
         maintainAspectRatio: true,
         plugins: { legend: { position: 'top', labels: { color: CHART_OPTS.color } } },
         scales: {
-          x: Object.assign({ title: { display: true, text: 'Time Slot' } }, chartScaleDefaults),
+          x: Object.assign({ title: { display: true, text: t('time_slot') } }, chartScaleDefaults),
           y: Object.assign({ beginAtZero: true, type: hasAnomalousScale ? 'logarithmic' : 'linear', title: { display: true, text: 'Net Sales (' + getCurrencyLabel() + ')' } }, chartScaleDefaults)
         }
       }
@@ -1631,18 +1638,8 @@
     var fallbackReceiptToday = (state.today && state.today.total && state.today.total.totalRow && (state.today.total.totalRow.receiptCount != null)) ? state.today.total.totalRow.receiptCount : null;
     var fallbackReceiptYesterday = (state.yesterday && state.yesterday.total && state.yesterday.total.totalRow && (state.yesterday.total.totalRow.receiptCount != null)) ? state.yesterday.total.totalRow.receiptCount : null;
     var fallbackReceiptLastWeek = (state.lastWeek && state.lastWeek.total && state.lastWeek.total.totalRow && (state.lastWeek.total.totalRow.receiptCount != null)) ? state.lastWeek.total.totalRow.receiptCount : null;
-    if (!isTotal) {
-      // Use dept-specific totalRow receipt count if available, otherwise keep total-store fallback
-      if (state.today && state.today.byDepartment && state.today.byDepartment[dept] && state.today.byDepartment[dept].totalRow && (state.today.byDepartment[dept].totalRow.receiptCount != null)) {
-        fallbackReceiptToday = state.today.byDepartment[dept].totalRow.receiptCount;
-      }
-      if (state.yesterday && state.yesterday.byDepartment && state.yesterday.byDepartment[dept] && state.yesterday.byDepartment[dept].totalRow && (state.yesterday.byDepartment[dept].totalRow.receiptCount != null)) {
-        fallbackReceiptYesterday = state.yesterday.byDepartment[dept].totalRow.receiptCount;
-      }
-      if (state.lastWeek && state.lastWeek.byDepartment && state.lastWeek.byDepartment[dept] && state.lastWeek.byDepartment[dept].totalRow && (state.lastWeek.byDepartment[dept].totalRow.receiptCount != null)) {
-        fallbackReceiptLastWeek = state.lastWeek.byDepartment[dept].totalRow.receiptCount;
-      }
-    }
+    // fallbackReceipt* stays at whole-store level (total.totalRow.receiptCount) for all views,
+    // including department view, per CLAUDE.md rule on 部門別買い上げ点数.
 
     // Pass total-store per-slot receipt map for all views so computeSummary uses correct receipts
     var summaryReceiptToday = receiptToday;
@@ -1950,7 +1947,7 @@
       list.forEach(function (r, idx) {
         html += '<tr>' +
           '<td>' + (idx + 1) + '</td>' +
-          '<td>' + r.name + '</td>' +
+          '<td>' + escapeHtml(r.name) + '</td>' +
           '<td>' + formatMoneyNoUnit(r.net) + '</td>' +
           '<td>' + formatPct(r.dod) + '</td>' +
           '<td>' + formatPct(r.wow) + '</td>' +
@@ -2144,13 +2141,13 @@
 
       var sumNetSales = 0, sumReceipts = 0, sumQty = 0;
       weeks.forEach(function (w) { sumNetSales += w.totalNetSales || 0; sumReceipts += w.receiptCount || 0; sumQty += w.quantitySold || 0; });
-      var table1 = '<section class="summary-section"><h3>' + t('weekly_net_title') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th><th>' + t('snapshot_net_sales') + ' (' + getCurrencyLabel() + ')</th><th>' + t('wow') + '</th><th>' + t('receipt_count') + '</th><th>' + t('qty_sold_short') + '</th></tr></thead><tbody>';
+      var table1 = '<section class="summary-section"><h3>' + t('weekly_net_title') + '</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th><th>' + t('snapshot_net_sales') + ' (' + getCurrencyLabel() + ')</th><th>' + t('wow') + '</th><th>' + t('receipt_count') + '</th><th>' + t('qty_sold_short') + '</th></tr></thead><tbody>';
       weeks.forEach(function (w, i) {
         var prev = weeks[i - 1];
         var wow = prev && prev.totalNetSales ? Math.round((w.totalNetSales / prev.totalNetSales) * 100) : '—';
         table1 += '<tr><td>' + w.label + '</td><td>' + formatMoneyNoUnit(w.totalNetSales) + '</td><td>' + (wow === '—' ? wow : wow + '%') + '</td><td>' + formatInt(w.receiptCount) + '</td><td>' + formatInt(w.quantitySold) + '</td></tr>';
       });
-      table1 += '<tr class="total-row"><td>' + t('total') + '</td><td>' + formatMoneyNoUnit(sumNetSales) + '</td><td>—</td><td>' + formatInt(sumReceipts) + '</td><td>' + formatInt(sumQty) + '</td></tr></tbody></table></section>';
+      table1 += '<tr class="total-row"><td>' + t('total') + '</td><td>' + formatMoneyNoUnit(sumNetSales) + '</td><td>—</td><td>' + formatInt(sumReceipts) + '</td><td>' + formatInt(sumQty) + '</td></tr></tbody></table></div></section>';
 
       var deptTotals = {};
       DEPARTMENTS.forEach(function (d) { deptTotals[d] = 0; });
@@ -2158,7 +2155,7 @@
       var grandTotalAll = 0;
       DEPARTMENTS.forEach(function (d) { grandTotalAll += deptTotals[d] || 0; });
 
-      var table2 = '<section class="summary-section"><h3>' + t('sales_by_dept') + ' (' + getCurrencyLabel() + ')</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
+      var table2 = '<section class="summary-section"><h3>' + t('sales_by_dept') + ' (' + getCurrencyLabel() + ')</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
       DEPARTMENTS.forEach(function (d) { table2 += '<th>' + getDepartmentDisplayName(d) + '</th>'; });
       table2 += '<th>' + t('total') + '</th></tr></thead><tbody>';
       weeks.forEach(function (w) {
@@ -2169,9 +2166,9 @@
       });
       table2 += '<tr class="total-row"><td>' + t('total') + '</td>';
       DEPARTMENTS.forEach(function (d) { table2 += '<td>' + formatMoneyNoUnit(deptTotals[d]) + '</td>'; });
-      table2 += '<td>' + formatMoneyNoUnit(grandTotalAll) + '</td></tr></tbody></table></section>';
+      table2 += '<td>' + formatMoneyNoUnit(grandTotalAll) + '</td></tr></tbody></table></div></section>';
 
-      var table3 = '<section class="summary-section"><h3>' + t('dept_composition_pct') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
+      var table3 = '<section class="summary-section"><h3>' + t('dept_composition_pct') + '</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
       DEPARTMENTS.forEach(function (d) { table3 += '<th>' + getDepartmentDisplayName(d) + '</th>'; });
       table3 += '<th>' + t('total') + '</th></tr></thead><tbody>';
       weeks.forEach(function (w) {
@@ -2185,7 +2182,7 @@
       });
       table3 += '<tr class="total-row"><td>' + t('total') + '</td>';
       DEPARTMENTS.forEach(function (d) { table3 += '<td>' + (grandTotalAll ? ((deptTotals[d] || 0) / grandTotalAll * 100).toFixed(1) : '—') + '%</td>'; });
-      table3 += '<td>100%</td></tr></tbody></table></section>';
+      table3 += '<td>100%</td></tr></tbody></table></div></section>';
 
       container.innerHTML = table1 + table2 + table3;
     }).then(function () { hideLoading(); }).catch(function () {
@@ -2222,7 +2219,7 @@
         ['1',     t('classification_level1')],
         ['2',     t('classification_level2')],
         ['3',     t('classification_level3')],
-        ['4',     t('key_metrics')],
+        ['4',     t('classification_level4')],
       ];
     }
     opts.forEach(function(o) {
@@ -2259,7 +2256,7 @@
     days.forEach(function(day) {
       var byProduct = day.byProduct || {};
       Object.values(byProduct).forEach(function(p) {
-        var code = p.retailProductCode;
+        var code = p.groupCode || p.retailProductCode || ''; // groupCode preferred, fallback to retailProductCode
         if (!code) return;
         var net = p.totalNetSales || 0;
         var qty = p.totalQuantitySold || 0;
@@ -2279,7 +2276,7 @@
     return result;
   }
 
-  function renderClassificationAccordion(container, days, dept, clsTree, clsAgg, isNet) {
+  function renderClassificationAccordion(days, clsTree, clsAgg) {
     var dates = days.map(function(d) { return d.date; });
     var lang = window.i18n ? window.i18n.getCurrentLang() : 'ja';
 
@@ -2289,56 +2286,67 @@
       return g.description || g.code;
     }
 
-    function getVal(code, date) {
+    function getVal(code, date, isNet) {
       return clsAgg[code] && clsAgg[code][date] ? (isNet ? clsAgg[code][date].net : clsAgg[code][date].qty) : 0;
     }
 
-    function getRowTotal(code) {
-      return dates.reduce(function(s, d) { return s + getVal(code, d); }, 0);
+    function getRowTotal(code, isNet) {
+      return dates.reduce(function(s, d) { return s + getVal(code, d, isNet); }, 0);
+    }
+
+    function hasDataInSubtree(code) {
+      if (clsAgg[code]) return true;
+      return (clsTree.children[code] || []).some(function(c) { return hasDataInSubtree(c.code); });
+    }
+
+    function buildRows(isNet) {
+      var rows = '';
+      function renderNode(g) {
+        var code = g.code;
+        var childList = clsTree.children[code] || [];
+        var hasChildren = childList.length > 0;
+        if (!hasDataInSubtree(code)) return; // skip if no data anywhere in this subtree
+        rows += '<tr class="cls-row cls-level-' + (g.level || 1) + '"' +
+          ' data-code="' + escapeHtml(code) + '"' +
+          ' data-level="' + (g.level || 1) + '"' +
+          (g.parent_code ? ' data-parent="' + escapeHtml(g.parent_code) + '" hidden' : '') + '>';
+        rows += '<td>' +
+          (hasChildren ? '<span class="cls-toggle">▶</span>' : '<span style="display:inline-block;width:18px;"></span>') +
+          escapeHtml(getClsName(g)) + '</td>';
+        dates.forEach(function(d) {
+          var v = getVal(code, d, isNet);
+          rows += '<td>' + (isNet ? formatMoneyNoUnit(v) : formatInt(v)) + '</td>';
+        });
+        var rowTotal = getRowTotal(code, isNet);
+        rows += '<td>' + (isNet ? formatMoneyNoUnit(rowTotal) : formatInt(rowTotal)) + '</td></tr>';
+        childList.forEach(function(child) { renderNode(child); });
+      }
+      clsTree.roots.forEach(function(root) { renderNode(root); });
+      return rows;
     }
 
     var currLabel = getCurrencyLabel();
-    var title = isNet ? (t('classification_sales') + ' (' + currLabel + ')') : (t('classification_sales') + ' (' + t('qty_sold_short') + ')');
+    var clsLabel = lang === 'ja' ? '分類' : 'Classification';
 
-    var html = '<section class="summary-section"><h3>' + title + '</h3>';
+    var html = '<section class="summary-section">';
+    // Tab buttons
+    html += '<div class="cls-tab-bar">';
+    html += '<button class="cls-tab cls-tab-active" data-tab="net">' + t('classification_sales') + ' (' + currLabel + ')</button>';
+    html += '<button class="cls-tab" data-tab="qty">' + t('classification_sales') + ' (' + t('qty_sold_short') + ')</button>';
+    html += '</div>';
+
+    // Shared table wrapper with two tbody sets
     html += '<div class="cls-accordion daily-table-wrapper"><table class="report-table daily-table"><thead><tr>';
-    html += '<th style="min-width:200px;">' + (lang === 'ja' ? '分類' : 'Classification') + '</th>';
+    html += '<th style="min-width:200px;">' + clsLabel + '</th>';
     dates.forEach(function(d) {
       var dt = new Date(d + 'T12:00:00');
       var w = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()];
       html += '<th>' + d.slice(5) + ' (' + w.slice(0,1) + ')</th>';
     });
-    html += '<th>' + t('total_header') + '</th></tr></thead><tbody id="cls-tbody-' + (isNet ? 'net' : 'qty') + '">';
-
-    function renderNode(g, depth) {
-      var code = g.code;
-      var childList = clsTree.children[code] || [];
-      var hasChildren = childList.length > 0;
-      var indent = '\u3000'.repeat(depth); // Japanese full-width space for indent
-      var rowTotal = getRowTotal(code);
-      if (rowTotal === 0 && !hasChildren) return; // skip empty leaf nodes
-
-      html += '<tr class="cls-row cls-level-' + (g.level || 1) + '"' +
-        ' data-code="' + escapeHtml(code) + '"' +
-        ' data-level="' + (g.level || 1) + '"' +
-        (g.parent_code ? ' data-parent="' + escapeHtml(g.parent_code) + '" hidden' : '') + '>';
-      html += '<td style="white-space:nowrap;">' +
-        (hasChildren ? '<span class="cls-toggle" style="cursor:pointer;margin-right:4px;display:inline-block;width:16px;">▶</span>' : '<span style="display:inline-block;width:16px;"></span>') +
-        indent + escapeHtml(getClsName(g)) + '</td>';
-      dates.forEach(function(d) {
-        var v = getVal(code, d);
-        html += '<td>' + (isNet ? formatMoneyNoUnit(v) : formatInt(v)) + '</td>';
-      });
-      html += '<td>' + (isNet ? formatMoneyNoUnit(rowTotal) : formatInt(rowTotal)) + '</td></tr>';
-
-      // Render children (hidden by default unless depth === 0 forced open)
-      childList.forEach(function(child) { renderNode(child, depth + 1); });
-    }
-
-    // Only show groups that have data
-    clsTree.roots.forEach(function(root) { renderNode(root, 0); });
-
-    html += '</tbody></table></div></section>';
+    html += '<th>' + t('total_header') + '</th></tr></thead>';
+    html += '<tbody class="cls-body" id="cls-body-net">' + buildRows(true) + '</tbody>';
+    html += '<tbody class="cls-body" id="cls-body-qty" hidden>' + buildRows(false) + '</tbody>';
+    html += '</table></div></section>';
     return html;
   }
 
@@ -2383,6 +2391,12 @@
       var clsAgg = aggregateByClassification(days, dept, clsTree);
       var hasClsData = Object.keys(clsAgg).length > 0;
 
+      // Store for export
+      state.dailyClsTree = clsTree;
+      state.dailyClsAgg = clsAgg;
+      state.dailyClsDays = days;
+      state.dailyClsDept = dept;
+
       // Period total section
       var periodHtml = '<section class="summary-section weekly-total-section"><h3>' + t('period_total_section') + ' \u2014 ' + escapeHtml(dept) + '</h3><table class="report-table daily-table weekly-total-table"><tbody>';
       periodHtml += '<tr><td>' + t('total_net_sales') + '</td><td>' + formatMoneyNoUnit(totalNet) + ' ' + getCurrencyLabel() + '</td></tr>';
@@ -2392,46 +2406,108 @@
       if (totalHours > 0) periodHtml += '<tr><td>' + t('sales_per_hour_label') + '</td><td>' + formatMoneyNoUnit(Math.round(totalNet / totalHours)) + ' ' + getCurrencyLabel() + '</td></tr>';
       periodHtml += '</tbody></table></section>';
 
-      // Classification table (net sales)
-      var clsNetHtml = hasClsData ? renderClassificationAccordion(container, days, dept, clsTree, clsAgg, true) : '';
-      // Classification table (qty sold)
-      var clsQtyHtml = hasClsData ? renderClassificationAccordion(container, days, dept, clsTree, clsAgg, false) : '';
+      // Classification table (tabbed: net / qty)
+      var clsHtml = hasClsData ? renderClassificationAccordion(days, clsTree, clsAgg) : '';
 
-      container.innerHTML = periodHtml + clsNetHtml + clsQtyHtml;
+      container.innerHTML = periodHtml + clsHtml;
 
-      // Add accordion toggle behavior
+      // Tab switching
+      container.querySelectorAll('.cls-tab').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          container.querySelectorAll('.cls-tab').forEach(function(b) { b.classList.remove('cls-tab-active'); });
+          btn.classList.add('cls-tab-active');
+          var tab = btn.dataset.tab;
+          container.querySelectorAll('.cls-body').forEach(function(b) { b.hidden = true; });
+          var body = container.querySelector('#cls-body-' + tab);
+          if (body) body.hidden = false;
+        });
+      });
+
+      // Accordion: click anywhere on cls-row to expand/collapse
       container.querySelectorAll('.cls-accordion').forEach(function(accordion) {
+        function collapseChildren(parentCode) {
+          accordion.querySelectorAll('[data-parent="' + parentCode + '"]').forEach(function(r) {
+            r.hidden = true;
+            r.classList.remove('cls-expanded');
+            var t = r.querySelector('.cls-toggle');
+            if (t) t.textContent = '\u25b6';
+            collapseChildren(r.dataset.code);
+          });
+        }
         accordion.addEventListener('click', function(e) {
-          var toggle = e.target.closest('.cls-toggle');
-          if (!toggle) return;
-          var row = toggle.closest('tr.cls-row');
+          var row = e.target.closest('tr.cls-row');
           if (!row) return;
+          var toggle = row.querySelector('.cls-toggle');
+          if (!toggle) return; // leaf node — no children
           var code = row.dataset.code;
           var isExpanded = row.classList.contains('cls-expanded');
           if (isExpanded) {
-            // Collapse: hide all descendants
-            accordion.querySelectorAll('[data-parent]').forEach(function(r) {
-              var parent = r.dataset.parent;
-              var ancestor = parent;
-              while (ancestor) {
-                if (ancestor === code) { r.hidden = true; r.classList.remove('cls-expanded'); break; }
-                var parentRow = accordion.querySelector('[data-code="' + ancestor + '"]');
-                ancestor = parentRow ? parentRow.dataset.parent : null;
-              }
-            });
+            collapseChildren(code);
             row.classList.remove('cls-expanded');
             toggle.textContent = '\u25b6';
           } else {
-            // Expand: show direct children only
-            accordion.querySelectorAll('[data-parent="' + code + '"]').forEach(function(r) {
-              r.hidden = false;
-            });
+            accordion.querySelectorAll('[data-parent="' + code + '"]').forEach(function(r) { r.hidden = false; });
             row.classList.add('cls-expanded');
             toggle.textContent = '\u25bc';
           }
         });
       });
     });
+  }
+
+  function exportClassificationByLevel(level) {
+    if (!window.XLSX) { alert('Excel library not loaded.'); return; }
+    var clsTree = state.dailyClsTree;
+    var clsAgg = state.dailyClsAgg;
+    var days = state.dailyClsDays;
+    var dept = state.dailyClsDept;
+    if (!clsTree || !clsAgg || !days) { alert('No data to export.'); return; }
+
+    var dates = days.map(function(d) { return d.date; });
+    var lang = window.i18n ? window.i18n.getCurrentLang() : 'ja';
+
+    function getClsName(g) {
+      if (lang === 'ja') return g.description_jpn || g.description || g.code;
+      if (lang === 'th') return g.description_tha || g.description || g.code;
+      return g.description || g.code;
+    }
+
+    // Build rows for specified level
+    var groups = Object.values(clsTree.map).filter(function(g) { return (g.level || 1) === level; });
+    groups.sort(function(a, b) { return (a.code || '').localeCompare(b.code || ''); });
+
+    var wb = window.XLSX.utils.book_new();
+    var currLabel = getCurrencyLabel();
+
+    // Net sales sheet
+    var netHeaders = ['Code', 'Name (' + (dept || 'Total') + ')'].concat(dates.map(function(d) { return d.slice(5); })).concat(['Total (' + currLabel + ')']);
+    var netRows = [netHeaders];
+    groups.forEach(function(g) {
+      var rowTotal = dates.reduce(function(s, d) { return s + (clsAgg[g.code] && clsAgg[g.code][d] ? clsAgg[g.code][d].net : 0); }, 0);
+      if (rowTotal === 0) return;
+      var row = [g.code, getClsName(g)];
+      dates.forEach(function(d) { row.push(clsAgg[g.code] && clsAgg[g.code][d] ? Math.round(toSelectedCurrency(clsAgg[g.code][d].net)) : 0); });
+      row.push(Math.round(toSelectedCurrency(rowTotal)));
+      netRows.push(row);
+    });
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(netRows), 'Net Sales');
+
+    // Qty sheet
+    var qtyHeaders = ['Code', 'Name'].concat(dates.map(function(d) { return d.slice(5); })).concat(['Total']);
+    var qtyRows = [qtyHeaders];
+    groups.forEach(function(g) {
+      var rowTotal = dates.reduce(function(s, d) { return s + (clsAgg[g.code] && clsAgg[g.code][d] ? clsAgg[g.code][d].qty : 0); }, 0);
+      if (rowTotal === 0) return;
+      var row = [g.code, getClsName(g)];
+      dates.forEach(function(d) { row.push(clsAgg[g.code] && clsAgg[g.code][d] ? clsAgg[g.code][d].qty : 0); });
+      row.push(rowTotal);
+      qtyRows.push(row);
+    });
+    window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(qtyRows), 'Qty Sold');
+
+    var suffix = dates[0] === dates[dates.length - 1] ? dates[0] : dates[0] + '_' + dates[dates.length - 1];
+    var deptSuffix = dept ? '_' + dept.replace(/[^a-zA-Z0-9]/g, '') : '';
+    window.XLSX.writeFile(wb, 'classification_level' + level + deptSuffix + '_' + suffix + '.xlsx');
   }
 
   function renderDailySummary() {
@@ -2474,6 +2550,8 @@
         renderDailySummaryDeptMode(days, dept, container, emptyEl);
         return;
       }
+      // Clear classification state when in Total mode
+      state.dailyClsTree = null; state.dailyClsAgg = null; state.dailyClsDays = null; state.dailyClsDept = null;
       var deptOrder = DEPARTMENTS.slice();
       var dailyChartColors = DEPARTMENT_COLORS.slice();
       var dateLabels = days.map(function (d) {
@@ -3155,11 +3233,25 @@
     return String(err).slice(0, 400);
   }
 
+  function sanitizeHtml(html) {
+    var tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    tmp.querySelectorAll('script,iframe,object,embed,form').forEach(function(el) { el.remove(); });
+    tmp.querySelectorAll('*').forEach(function(el) {
+      Array.from(el.attributes).forEach(function(attr) {
+        if (attr.name.startsWith('on') || (attr.name === 'href' && attr.value.trim().toLowerCase().startsWith('javascript:'))) {
+          el.removeAttribute(attr.name);
+        }
+      });
+    });
+    return tmp.innerHTML;
+  }
+
   function renderMarkdown(text) {
     if (typeof marked !== 'undefined' && marked.parse) {
-      return marked.parse(text || '');
+      return sanitizeHtml(marked.parse(text || ''));
     }
-    return '<p>' + (text || '').replace(/\n/g, '<br>') + '</p>';
+    return sanitizeHtml('<p>' + (text || '').replace(/\n/g, '<br>') + '</p>');
   }
 
   function getTodayStr() {
@@ -3345,13 +3437,21 @@
         el.value = storeId;
       }
     });
-    var deptSelects = ['department-select', 'ai-department-select'];
+    var deptSelects = ['department-select', 'ai-department-select', 'allstores-department-select', 'settings-department-select'];
     deptSelects.forEach(function (id) {
       var el = document.getElementById(id);
       if (el && department && Array.prototype.some.call(el.options, function (o) { return o.value === department; })) {
         el.value = department;
       }
     });
+    // daily-dept-select: Total option has value="" (not "Total")
+    var dailyDeptEl = document.getElementById('daily-dept-select');
+    if (dailyDeptEl) {
+      var dailyDeptVal = (department === 'Total') ? '' : department;
+      if (Array.prototype.some.call(dailyDeptEl.options, function (o) { return o.value === dailyDeptVal; })) {
+        dailyDeptEl.value = dailyDeptVal;
+      }
+    }
     // Products tab dept filter: 'Total' maps to '' (all depts)
     var productsDeptEl = document.getElementById('products-dept-filter');
     if (productsDeptEl) {
@@ -3368,6 +3468,7 @@
       if (currentLang !== preferredLanguage) window.i18n.setLanguage(preferredLanguage);
     }
     if (storeId) state.storeId = storeId;
+    updateDailyExportOptions();
   }
 
   function openSettingsModal(forceInitialSetup) {
@@ -3683,7 +3784,15 @@
     var setupLink = document.getElementById('setup-link');
     var settingsLinkForMenu = document.getElementById('settings-link');
     if (langSelect) langSelect.addEventListener('change', closeMobileMenu);
-    if (logoutLink) logoutLink.addEventListener('click', function () { closeMobileMenu(); closeUserMenu(); });
+    if (logoutLink) logoutLink.addEventListener('click', function (e) {
+      e.preventDefault();
+      closeMobileMenu(); closeUserMenu();
+      fetch('/logout', { method: 'POST', credentials: 'same-origin' }).then(function () {
+        window.location.href = '/login?loggedout=1';
+      }).catch(function () {
+        window.location.href = '/login?loggedout=1';
+      });
+    });
     if (setupLink) setupLink.addEventListener('click', closeMobileMenu);
     if (settingsLinkForMenu) settingsLinkForMenu.addEventListener('click', closeUserMenu);
 
@@ -3712,12 +3821,21 @@
       btnDailyExcel.addEventListener('click', function () {
         var sel = document.getElementById('daily-export-select');
         var opt = sel ? sel.value : 'all';
+        var dept = getDailyDept();
+
+        // Classification level exports for non-Total dept mode
+        if (dept && opt === '1') { exportClassificationByLevel(1); return; }
+        if (dept && opt === '2') { exportClassificationByLevel(2); return; }
+        if (dept && opt === '3') { exportClassificationByLevel(3); return; }
+        if (dept && opt === '4') { exportClassificationByLevel(4); return; }
+
         var dateStr = (document.getElementById('daily-start-date') || {}).value || '';
         var dateEnd = (document.getElementById('daily-end-date') || {}).value || '';
         var suffix = dateStr && dateEnd && dateStr !== dateEnd ? dateStr + '_' + dateEnd : (dateStr || dateEnd);
-        var dept = getDailyDept();
+        // In dept mode, opt '4' (key_metrics) has no separate table → export all
+        var tableOpt = (dept && opt === '4') ? 'all' : opt;
         var filename = 'daily_summary' + (dept ? '_' + dept.replace(/[^a-zA-Z0-9]/g, '') : '') + (suffix ? '_' + suffix : '') + '.xlsx';
-        exportPanelTablesXlsx('daily-summary-tables', filename, opt);
+        exportPanelTablesXlsx('daily-summary-tables', filename, tableOpt);
       });
     }
     var btnWeeklyExcel = document.getElementById('btn-weekly-excel');

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,89 +13,130 @@
 
   <nav class="tabs" aria-label="Setup sections">
     <button type="button" class="tab active" data-tab="upload" aria-selected="true">アップロード</button>
-    <button type="button" class="tab" data-tab="log" aria-selected="false">データ受信ログ</button>
+    <button type="button" class="tab" data-tab="log" aria-selected="false">受信ログ</button>
     <button type="button" class="tab" data-tab="stores" aria-selected="false">店舗マスター</button>
-    <button type="button" class="tab" data-tab="users" aria-selected="false">ユーザーマスタ</button>
-    <button type="button" class="tab" data-tab="settings" aria-selected="false">各種設定</button>
+    <button type="button" class="tab" data-tab="users" aria-selected="false">ユーザー</button>
+    <button type="button" class="tab" data-tab="product-master" aria-selected="false">商品マスター</button>
+    <button type="button" class="tab" data-tab="classification" aria-selected="false">分類マスター</button>
+    <button type="button" class="tab" data-tab="settings" aria-selected="false">設定</button>
   </nav>
 
   <main>
-    <section id="upload-panel" class="panel active" style="max-width: 560px;">
-      <p class="hint"><a href="/">← Back to Dashboard</a></p>
-      <h2>Data Upload</h2>
-      <p class="hint">Upload Excel or CSV. CSV format: Business_Date, Store_Id, Department_Code, Start_Time, End_Time, Net_Sales, Gross_Sales, Quantity_Sold, Receipt_Count (00=total, 01–06=dept). Start_Time/End_Time: HH:MM or 4-digit e.g. 0000, 1000. See <a href="docs/CSV_FORMAT.md">docs/CSV_FORMAT.md</a>. Same format can be POSTed to <code>/api/upload</code> (multipart, field <code>files</code>).</p>
 
-      <div class="upload-form">
-        <div class="upload-group">
-          <label for="file-files">Excel / CSV files <span class="required">Required</span></label>
-          <input type="file" id="file-files" name="files" accept=".xlsx,.xls,.csv" multiple>
-          <span class="file-name" id="name-files"></span>
-        </div>
-        <label class="upload-final-label">
-          <input type="checkbox" id="upload-is-final">
-          <span data-i18n="upload_is_final">レジ締確定値として登録</span>
-        </label>
-      </div>
+    <!-- ====== アップロード ====== -->
+    <section id="upload-panel" class="panel active">
+      <p class="hint setup-back-link"><a href="/">← ダッシュボードへ戻る</a></p>
 
-      <p id="upload-error" class="error" role="alert" hidden></p>
+      <div class="import-grid">
 
-      <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e5e7eb;">
-      <h2>商品マスターインポート <span style="font-size:0.75rem;font-weight:400;color:#6b7280;">LS-Central Item リスト</span></h2>
-      <p class="hint">LS-Central の商品マスター（Itemリストエクスポート）をインポートします。アイテムNo. ↔ バーコードNo. のマッピングと商品名を登録します。インポートすると既存の商品マスターが置き換えられます。</p>
-      <div class="upload-form">
-        <div class="upload-group">
-          <label for="product-master-file">Excel ファイル <span class="required">Required</span></label>
-          <input type="file" id="product-master-file" name="file" accept=".xlsx,.xls">
-          <span class="file-name" id="product-master-file-name"></span>
+        <!-- 売上データ -->
+        <div class="import-card import-card--blue">
+          <div class="import-card-header">
+            <div class="import-card-title">売上データ</div>
+            <div class="import-card-subtitle">日次売上 CSV / Excel（自動送信）</div>
+          </div>
+          <div class="import-card-body">
+            <p class="hint">ファイルを選択すると自動的にアップロードされます。複数ファイルを一括選択できます。</p>
+            <div class="import-field">
+              <label for="file-files">ファイル <span class="required">必須</span></label>
+              <input type="file" id="file-files" name="files" accept=".xlsx,.xls,.csv" multiple>
+              <span class="file-name" id="name-files"></span>
+            </div>
+            <label class="import-checkbox-label">
+              <input type="checkbox" id="upload-is-final">
+              <span>レジ締確定値として登録</span>
+            </label>
+            <p id="upload-error" class="error" role="alert" hidden></p>
+          </div>
         </div>
-        <button type="button" id="product-master-submit" class="btn-primary" style="margin-top:0.75rem;">インポート</button>
-      </div>
-      <p id="product-master-status" class="hint" aria-live="polite" style="margin-top:0.5rem;"></p>
-      <p id="product-master-error" class="error" role="alert" hidden></p>
 
-      <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e5e7eb;">
-      <h2>Item Sales インポート <span style="font-size:0.75rem;font-weight:400;color:#6b7280;">LS-Central Item Sales レポート</span></h2>
-      <p class="hint">LS-Central の「Item Sales」Excel レポートをインポートします。ファイルに日付が含まれないため、営業日と店舗を指定してください。インポートすると既存レポートの商品データが置き換えられます。</p>
-      <div class="upload-form">
-        <div class="upload-group">
-          <label for="item-sales-date">営業日 <span class="required">Required</span></label>
-          <input type="date" id="item-sales-date" name="businessDate" style="padding:0.375rem 0.5rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.875rem;">
+        <!-- Item Sales -->
+        <div class="import-card import-card--indigo">
+          <div class="import-card-header">
+            <div class="import-card-title">Item Sales インポート</div>
+            <div class="import-card-subtitle">LS-Central Item Sales レポート</div>
+          </div>
+          <div class="import-card-body">
+            <p class="hint">ファイルに日付が含まれないため、営業日と店舗を指定してください。</p>
+            <div class="import-field">
+              <label for="item-sales-date">営業日 <span class="required">必須</span></label>
+              <input type="date" id="item-sales-date" name="businessDate">
+            </div>
+            <div class="import-field">
+              <label for="item-sales-store">店舗 <span class="required">必須</span></label>
+              <select id="item-sales-store" name="storeId">
+                <option value="">読み込み中…</option>
+              </select>
+            </div>
+            <div class="import-field">
+              <label for="item-sales-file">Excel ファイル <span class="required">必須</span></label>
+              <input type="file" id="item-sales-file" name="file" accept=".xlsx,.xls">
+              <span class="file-name" id="item-sales-file-name"></span>
+            </div>
+            <div class="import-actions">
+              <button type="button" id="item-sales-submit" class="btn-primary">インポート</button>
+            </div>
+            <p id="item-sales-status" class="hint" aria-live="polite"></p>
+            <p id="item-sales-error" class="error" role="alert" hidden></p>
+          </div>
         </div>
-        <div class="upload-group" style="margin-top:0.5rem;">
-          <label for="item-sales-store">店舗 <span class="required">Required</span></label>
-          <select id="item-sales-store" name="storeId" style="padding:0.375rem 0.5rem;border:1px solid #d1d5db;border-radius:4px;font-size:0.875rem;min-width:8rem;">
-            <option value="">読み込み中…</option>
-          </select>
-        </div>
-        <div class="upload-group" style="margin-top:0.5rem;">
-          <label for="item-sales-file">Excel ファイル <span class="required">Required</span></label>
-          <input type="file" id="item-sales-file" name="file" accept=".xlsx,.xls">
-          <span class="file-name" id="item-sales-file-name"></span>
-        </div>
-        <button type="button" id="item-sales-submit" class="btn-primary" style="margin-top:0.75rem;">インポート</button>
-      </div>
-      <p id="item-sales-status" class="hint" aria-live="polite" style="margin-top:0.5rem;"></p>
-      <p id="item-sales-error" class="error" role="alert" hidden></p>
 
-      <hr style="margin: 1.5rem 0; border: none; border-top: 1px solid #e5e7eb;">
-      <h2>商品グループマスター インポート <span style="font-size:0.75rem;font-weight:400;color:#6b7280;">分類マスター CSV</span></h2>
-      <p class="hint">商品グループ（分類）マスターをCSVからインポートします。列: <code>product_group_code, description, description_tha, description_jpn</code>。インポートすると既存データがUPSERTされます（削除はされません）。</p>
-      <div class="upload-form">
-        <div class="upload-group">
-          <label for="product-groups-file">CSV ファイル <span class="required">Required</span></label>
-          <input type="file" id="product-groups-file" name="file" accept=".csv">
-          <span class="file-name" id="product-groups-file-name"></span>
+        <!-- 商品マスター -->
+        <div class="import-card import-card--green">
+          <div class="import-card-header">
+            <div class="import-card-title">商品マスター インポート</div>
+            <div class="import-card-subtitle">LS-Central Item リスト</div>
+          </div>
+          <div class="import-card-body">
+            <p class="hint">アイテムNo. ↔ バーコードNo. のマッピングと商品名を登録します。インポートすると既存データが置き換えられます。</p>
+            <div class="import-field">
+              <label for="product-master-file">Excel ファイル <span class="required">必須</span></label>
+              <input type="file" id="product-master-file" name="file" accept=".xlsx,.xls">
+              <span class="file-name" id="product-master-file-name"></span>
+            </div>
+            <div class="import-actions">
+              <button type="button" id="product-master-submit" class="btn-primary">インポート</button>
+            </div>
+            <p id="product-master-status" class="hint" aria-live="polite"></p>
+            <p id="product-master-error" class="error" role="alert" hidden></p>
+          </div>
         </div>
-        <button type="button" id="product-groups-submit" class="btn-primary" style="margin-top:0.75rem;">インポート</button>
-      </div>
-      <p id="product-groups-status" class="hint" aria-live="polite" style="margin-top:0.5rem;"></p>
-      <p id="product-groups-error" class="error" role="alert" hidden></p>
+
+        <!-- 分類マスター -->
+        <div class="import-card import-card--amber">
+          <div class="import-card-header">
+            <div class="import-card-title">分類マスター インポート</div>
+            <div class="import-card-subtitle">商品グループ分類（大・中・小・細）</div>
+          </div>
+          <div class="import-card-body">
+            <p class="hint">LS-Central の各分類ファイルを個別にインポートしてください。</p>
+            <ul class="import-file-list">
+              <li><code>Retail Class List.xlsx</code> — 大分類</li>
+              <li><code>Divisions.xlsx</code> — 中分類</li>
+              <li><code>Retail Item Categories.xlsx</code> — 小分類</li>
+              <li><code>Retail Product Groups.xlsx</code> — 細分類</li>
+            </ul>
+            <div class="import-field">
+              <label for="product-groups-file">Excel / CSV ファイル <span class="required">必須</span></label>
+              <input type="file" id="product-groups-file" name="file" accept=".xlsx,.xls,.csv">
+              <span class="file-name" id="product-groups-file-name"></span>
+            </div>
+            <div class="import-actions">
+              <button type="button" id="product-groups-submit" class="btn-primary">インポート</button>
+            </div>
+            <p id="product-groups-status" class="hint" aria-live="polite"></p>
+            <p id="product-groups-error" class="error" role="alert" hidden></p>
+          </div>
+        </div>
+
+      </div><!-- /.import-grid -->
     </section>
 
-    <section id="log-panel" class="panel" style="max-width: 720px;">
-      <p class="hint"><a href="/">← Back to Dashboard</a></p>
+    <!-- ====== 受信ログ ====== -->
+    <section id="log-panel" class="panel">
+      <p class="hint setup-back-link"><a href="/">← ダッシュボードへ戻る</a></p>
       <h2>データ受信ログ</h2>
-      <p class="hint">アップロードされたデータの受信日時・店舗・取引日を一覧表示します。新しい順です。</p>
+      <p class="hint">アップロードされたデータの受信日時・店舗・取引日を一覧表示します（新しい順）。</p>
       <div class="table-wrapper">
         <table class="report-table" aria-label="Data reception log">
           <thead>
@@ -105,17 +146,17 @@
               <th>取引日</th>
             </tr>
           </thead>
-          <tbody id="upload-log-tbody">
-          </tbody>
+          <tbody id="upload-log-tbody"></tbody>
         </table>
       </div>
       <p id="upload-log-empty" class="hint" aria-live="polite">読み込み中…</p>
     </section>
 
+    <!-- ====== ユーザー ====== -->
     <section id="users-panel" class="panel" style="max-width: 1240px;">
-      <p class="hint"><a href="/">← Back to Dashboard</a></p>
+      <p class="hint setup-back-link"><a href="/">← ダッシュボードへ戻る</a></p>
       <h2>ユーザーマスタ</h2>
-      <p class="hint">ユーザー一覧の参照・新規作成・変更・削除ができます。権限は「一般」と「管理者」の2種類です。管理者のみ Setup 画面にアクセスできます。外部認証利用時はパスワード管理は不要です。</p>
+      <p class="hint">ユーザー一覧の参照・新規作成・変更・削除ができます。権限は「一般」と「管理者」の2種類です。管理者のみ Setup 画面にアクセスできます。</p>
       <div class="table-wrapper">
         <table class="report-table users-master-table" aria-label="User list">
           <thead>
@@ -131,12 +172,11 @@
               <th>操作</th>
             </tr>
           </thead>
-          <tbody id="users-tbody">
-          </tbody>
+          <tbody id="users-tbody"></tbody>
         </table>
       </div>
       <p id="users-empty" class="hint" aria-live="polite">読み込み中…</p>
-      <div id="users-form-area" style="margin-top: 1rem;">
+      <div id="users-form-area" class="users-form-area">
         <h3 id="users-form-title">新規作成</h3>
         <form id="users-form">
           <input type="hidden" id="user-edit-id" name="id" value="">
@@ -149,7 +189,7 @@
             <input type="text" id="user-display-name" name="displayName" placeholder="画面表示用の名前（任意）">
           </div>
           <div class="form-group user-password-group">
-            <label for="user-password">パスワード <span id="user-password-optional" style="display:none;">（空欄の場合は変更しない）</span></label>
+            <label for="user-password">パスワード <span id="user-password-optional" style="display:none; font-weight:400; color:var(--text-secondary);">（空欄の場合は変更しない）</span></label>
             <input type="password" id="user-password" name="password" placeholder="6文字以上" minlength="6" autocomplete="new-password">
           </div>
           <div class="form-group user-password-group">
@@ -174,8 +214,8 @@
             <select id="user-preferred-department" name="preferredDepartment">
               <option value="Total">Total</option>
               <option value="Grocery">Grocery</option>
-              <option value="Fruit & Vegetable">Fruit & Vegetable</option>
-              <option value="Fish & Seafood">Fish & Seafood</option>
+              <option value="Fruit & Vegetable">Fruit &amp; Vegetable</option>
+              <option value="Fish & Seafood">Fish &amp; Seafood</option>
               <option value="Meat">Meat</option>
               <option value="Delicatessen">Delicatessen</option>
               <option value="Store Management">Store Management</option>
@@ -196,44 +236,106 @@
               <option value="th">ไทย</option>
             </select>
           </div>
-          <button type="submit" id="users-form-submit" class="btn-primary">作成</button>
-          <button type="button" id="users-form-cancel" class="btn-secondary" style="display:none;">キャンセル</button>
+          <div class="form-actions">
+            <button type="submit" id="users-form-submit" class="btn-primary">作成</button>
+            <button type="button" id="users-form-cancel" class="btn-secondary" style="display:none;">キャンセル</button>
+          </div>
         </form>
         <p id="users-form-error" class="error" role="alert" hidden></p>
       </div>
     </section>
 
+    <!-- ====== 店舗マスター ====== -->
     <section id="stores-panel" class="panel" style="max-width: 640px;">
-      <p class="hint"><a href="/">← Back to Dashboard</a></p>
-      <h2>店舗マスター (Store Master)</h2>
-      <div class="exchange-rate-block" style="margin-bottom: 1rem; padding: 0.75rem; background: #f5f5f5; border-radius: 6px;">
-        <label for="exchange-rate-input" style="display: block; margin-bottom: 0.25rem; font-weight: 600;">為替レート (THB→JPY)</label>
-        <p class="hint" style="margin-bottom: 0.5rem;">全店舗共通（タイ店舗は一律）。1 バーツ = 何円か入力してください。</p>
-        <input type="number" id="exchange-rate-input" step="any" min="0" placeholder="例: 4.5" style="width: 8em; margin-right: 0.5rem;">
-        <span>最終登録日: </span><span id="exchange-rate-updated-at">—</span>
+      <p class="hint setup-back-link"><a href="/">← ダッシュボードへ戻る</a></p>
+      <h2>店舗マスター</h2>
+
+      <div class="setup-card">
+        <div class="setup-card-title">為替レート (THB → JPY)</div>
+        <p class="hint">全店舗共通。1 バーツ = 何円か入力してください。</p>
+        <div class="exchange-rate-row">
+          <input type="number" id="exchange-rate-input" step="any" min="0" placeholder="例: 4.5" class="exchange-rate-input">
+          <span class="exchange-rate-updated">最終登録日: <span id="exchange-rate-updated-at">—</span></span>
+        </div>
       </div>
+
       <p class="hint">登録した店舗がダッシュボード・アップロードの店舗選択に表示されます。ID は半角英数字で一意にしてください。</p>
-      <table class="report-table" aria-label="Store list">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>店舗名 (Name)</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="stores-tbody">
-        </tbody>
-      </table>
-      <button type="button" id="btn-add-store" class="btn-primary" style="margin-top: 0.5rem;">行を追加</button>
-      <button type="button" id="btn-save-stores" class="btn-primary" style="margin-top: 0.5rem; margin-left: 0.5rem;">保存</button>
-      <p id="stores-save-status" class="hint" style="margin-top: 0.25rem;" aria-live="polite"></p>
+      <div class="table-wrapper">
+        <table class="report-table" aria-label="Store list">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>店舗名</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="stores-tbody"></tbody>
+        </table>
+      </div>
+      <div class="form-actions" style="margin-top: var(--space-3);">
+        <button type="button" id="btn-add-store" class="btn-secondary">行を追加</button>
+        <button type="button" id="btn-save-stores" class="btn-primary">保存</button>
+      </div>
+      <p id="stores-save-status" class="hint" aria-live="polite"></p>
     </section>
 
+    <!-- ====== 商品マスター ====== -->
+    <section id="product-master-panel" class="panel">
+      <p class="hint setup-back-link"><a href="/">← ダッシュボードへ戻る</a></p>
+      <h2>商品マスター</h2>
+      <p class="hint">LS-Central の商品マスター一覧です。インポートは「アップロード」タブから行えます。</p>
+      <div class="setup-search-bar">
+        <input type="search" id="product-master-search" placeholder="アイテムNo.・商品名で絞り込み…" class="setup-search-input">
+        <span id="product-master-list-count" class="hint"></span>
+      </div>
+      <div class="table-wrapper">
+        <table class="report-table" aria-label="Product master list">
+          <thead>
+            <tr>
+              <th>アイテムNo.</th>
+              <th>バーコード</th>
+              <th>商品名 (ENG)</th>
+              <th>商品名 (JPN)</th>
+              <th>商品名 (THA)</th>
+              <th>部門CD</th>
+              <th>グループCD</th>
+            </tr>
+          </thead>
+          <tbody id="product-master-list-tbody"></tbody>
+        </table>
+      </div>
+      <p id="product-master-list-empty" class="hint" aria-live="polite">読み込み中…</p>
+    </section>
+
+    <!-- ====== 分類マスター ====== -->
+    <section id="classification-panel" class="panel">
+      <p class="hint setup-back-link"><a href="/">← ダッシュボードへ戻る</a></p>
+      <h2>分類マスター</h2>
+      <p class="hint">商品グループ分類の一覧（大分類・中分類・小分類・細分類）です。インポートは「アップロード」タブから行えます。</p>
+      <div class="table-wrapper">
+        <table class="report-table" aria-label="Classification master list">
+          <thead>
+            <tr>
+              <th>レベル</th>
+              <th>コード</th>
+              <th>分類名 (ENG)</th>
+              <th>分類名 (JPN)</th>
+              <th>分類名 (THA)</th>
+              <th>親コード</th>
+            </tr>
+          </thead>
+          <tbody id="classification-tbody"></tbody>
+        </table>
+      </div>
+      <p id="classification-empty" class="hint" aria-live="polite">読み込み中…</p>
+    </section>
+
+    <!-- ====== 設定 ====== -->
     <section id="settings-panel" class="panel" style="max-width: 560px;">
-      <p class="hint"><a href="/">← Back to Dashboard</a></p>
-      <h2>Settings — Business Hours (営業時間)</h2>
-      <p class="hint">Set business hours per weekday. Only time slots within these hours are shown on the dashboard. Other times are hidden.</p>
-      <div class="form-group" style="max-width: 320px; margin-bottom: 0.75rem;">
+      <p class="hint setup-back-link"><a href="/">← ダッシュボードへ戻る</a></p>
+      <h2>営業時間設定</h2>
+      <p class="hint">曜日ごとに営業時間を設定します。この時間帯以外のスロットはダッシュボードに表示されません。</p>
+      <div class="form-group" style="max-width: 320px; margin-bottom: var(--space-4);">
         <label for="bh-store-select">対象店舗</label>
         <select id="bh-store-select" aria-label="Store for business hours">
           <option value="default">Default</option>
@@ -242,9 +344,9 @@
       <table class="business-hours-table" aria-label="Business hours by weekday">
         <thead>
           <tr>
-            <th>Weekday</th>
-            <th>Start</th>
-            <th>End</th>
+            <th>曜日</th>
+            <th>開始</th>
+            <th>終了</th>
           </tr>
         </thead>
         <tbody id="business-hours-tbody">
@@ -257,9 +359,12 @@
           <tr><td>日 (Sun)</td><td><select id="bh-start-0" class="bh-time"></select></td><td><select id="bh-end-0" class="bh-time"></select></td></tr>
         </tbody>
       </table>
-      <button type="button" id="btn-save-business-hours" class="btn-primary" style="margin-top: 0.5rem;">Save to database</button>
-      <p id="bh-save-status" class="hint" style="margin-top: 0.25rem;" aria-live="polite"></p>
+      <div class="form-actions" style="margin-top: var(--space-3);">
+        <button type="button" id="btn-save-business-hours" class="btn-primary">保存</button>
+      </div>
+      <p id="bh-save-status" class="hint" aria-live="polite"></p>
     </section>
+
   </main>
 
   <script src="upload.js"></script>

@@ -233,6 +233,8 @@
       if (tab === 'stores') loadStoresMaster();
       if (tab === 'log') loadUploadLog();
       if (tab === 'users') loadUsers();
+      if (tab === 'product-master') loadProductMasterList();
+      if (tab === 'classification') loadClassificationList();
     });
   });
 
@@ -571,6 +573,91 @@
         storesSaveStatus.textContent = err.message || '保存に失敗しました。';
       });
     });
+  }
+
+  // --- 商品マスター一覧 ---
+  var productMasterAll = [];
+
+  function renderProductMasterTable(items) {
+    var tbody = document.getElementById('product-master-list-tbody');
+    var countEl = document.getElementById('product-master-list-count');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    items.forEach(function (item) {
+      var tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td>' + escapeHtml(item.itemNo) + '</td>' +
+        '<td>' + escapeHtml(item.barcodeNo || '') + '</td>' +
+        '<td>' + escapeHtml(item.nameEng || '') + '</td>' +
+        '<td>' + escapeHtml(item.nameJpn || '') + '</td>' +
+        '<td>' + escapeHtml(item.nameTha || '') + '</td>' +
+        '<td>' + escapeHtml(item.deptCode || '') + '</td>' +
+        '<td>' + escapeHtml(item.groupCode || '') + '</td>';
+      tbody.appendChild(tr);
+    });
+    if (countEl) countEl.textContent = items.length + ' 件';
+  }
+
+  function loadProductMasterList() {
+    var emptyEl = document.getElementById('product-master-list-empty');
+    if (emptyEl) emptyEl.textContent = '読み込み中…';
+    fetch('/api/product-master')
+      .then(function (res) { return parseJsonResponse(res); })
+      .then(function (body) {
+        var master = body.master || {};
+        productMasterAll = Object.keys(master).map(function (k) {
+          return Object.assign({ itemNo: k }, master[k]);
+        });
+        renderProductMasterTable(productMasterAll);
+        if (emptyEl) emptyEl.textContent = productMasterAll.length === 0 ? 'データがありません。' : '';
+      })
+      .catch(function () {
+        if (emptyEl) emptyEl.textContent = '読み込みに失敗しました。';
+      });
+  }
+
+  var productMasterSearchEl = document.getElementById('product-master-search');
+  if (productMasterSearchEl) {
+    productMasterSearchEl.addEventListener('input', function () {
+      var q = this.value.toLowerCase().trim();
+      var filtered = q ? productMasterAll.filter(function (item) {
+        return (item.itemNo || '').toLowerCase().indexOf(q) !== -1 ||
+          (item.nameEng || '').toLowerCase().indexOf(q) !== -1 ||
+          (item.nameJpn || '').toLowerCase().indexOf(q) !== -1 ||
+          (item.nameTha || '').toLowerCase().indexOf(q) !== -1;
+      }) : productMasterAll;
+      renderProductMasterTable(filtered);
+    });
+  }
+
+  // --- 分類マスター一覧 ---
+  function loadClassificationList() {
+    var tbody = document.getElementById('classification-tbody');
+    var emptyEl = document.getElementById('classification-empty');
+    if (!tbody) return;
+    if (emptyEl) emptyEl.textContent = '読み込み中…';
+    fetch('/api/product-groups')
+      .then(function (res) { return parseJsonResponse(res); })
+      .then(function (body) {
+        var groups = body.groups || [];
+        var levelLabels = { 1: '大分類', 2: '中分類', 3: '小分類', 4: '細分類' };
+        tbody.innerHTML = '';
+        groups.forEach(function (g) {
+          var tr = document.createElement('tr');
+          tr.innerHTML =
+            '<td>' + escapeHtml(levelLabels[g.level] || ('L' + g.level)) + '</td>' +
+            '<td>' + escapeHtml(g.code || '') + '</td>' +
+            '<td>' + escapeHtml(g.description || '') + '</td>' +
+            '<td>' + escapeHtml(g.description_jpn || '') + '</td>' +
+            '<td>' + escapeHtml(g.description_tha || '') + '</td>' +
+            '<td>' + escapeHtml(g.parent_code || '—') + '</td>';
+          tbody.appendChild(tr);
+        });
+        if (emptyEl) emptyEl.textContent = groups.length === 0 ? 'データがありません。' : '';
+      })
+      .catch(function () {
+        if (emptyEl) emptyEl.textContent = '読み込みに失敗しました。';
+      });
   }
 
   initBusinessHoursUI();
