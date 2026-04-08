@@ -88,10 +88,14 @@ function saveExchangeRate(rate) {
 
 function saveReport(businessDate, data, storeId = 'default', isFinal = false) {
   const sid = normStoreId(storeId);
+  // Strip internal metadata fields before persisting to jsonb
+  const cleanData = Object.assign({}, data);
+  delete cleanData._isFinal;
+  delete cleanData._updatedAt;
   const row = {
     store_id: sid,
     business_date: businessDate,
-    data,
+    data: cleanData,
     is_final: isFinal,
     created_at: new Date().toISOString(),
   };

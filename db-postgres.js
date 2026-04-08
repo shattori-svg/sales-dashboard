@@ -114,13 +114,17 @@ async function saveExchangeRate(rate) {
 
 async function saveReport(businessDate, data, storeId = 'default', isFinal = false) {
   const sid = normStoreId(storeId);
+  // Strip internal metadata fields before persisting to jsonb
+  const cleanData = Object.assign({}, data);
+  delete cleanData._isFinal;
+  delete cleanData._updatedAt;
   try {
     await pool.query(
       `INSERT INTO ${TABLE} (store_id, business_date, data, created_at, is_final)
        VALUES ($1, $2, $3::jsonb, NOW(), $4)
        ON CONFLICT (store_id, business_date)
        DO UPDATE SET data = EXCLUDED.data, created_at = NOW(), is_final = EXCLUDED.is_final`,
-      [sid, businessDate, JSON.stringify(data), isFinal]
+      [sid, businessDate, JSON.stringify(cleanData), isFinal]
     );
   } catch (err) {
     throw mapDbErr(err);
