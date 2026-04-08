@@ -1722,7 +1722,7 @@
   function updateConfirmedBadge() {
     var badge = document.getElementById('confirmed-badge');
     if (!badge) return;
-    badge.hidden = !(state.today && state.today._isFinal);
+    badge.hidden = !(state.today && state.today._isFinal === true);
   }
 
   function updateAutoRefreshStatus() {
