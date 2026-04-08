@@ -545,17 +545,17 @@ function parseProductMasterExcel(buffer) {
     if (!row) continue;
     const cells = row.map(lc);
     const hasBarcode = cells.some((c) => c === 'barcode no.' || c === 'barcode no');
-    const hasItemNo = cells.some((c) => c === 'item no.' || c === 'item no');
+    const hasItemNo = cells.some((c) => c === 'item no.' || c === 'item no' || c === 'no.');
     if (hasBarcode && hasItemNo) {
       headerIdx = i;
       cells.forEach((c, idx) => {
         if (c === 'department code') colMap.deptCode = idx;
         else if (c === 'barcode no.' || c === 'barcode no') colMap.barcodeNo = idx;
-        else if (c === 'item no.' || c === 'item no') colMap.itemNo = idx;
-        else if (c === 'description (eng)') colMap.nameEng = idx;
+        else if (c === 'item no.' || c === 'item no' || c === 'no.') colMap.itemNo = idx;
+        else if (c === 'description (eng)' || c === 'description') colMap.nameEng = idx;
         else if (c === 'description (tha)') colMap.nameTha = idx;
         else if (c === 'description (jpn)') colMap.nameJpn = idx;
-        else if (c === 'retail product group code' || c === 'product group code' || c === 'item group code') colMap.groupCode = idx;
+        else if (c === 'retail product group code' || c === 'product group code' || c === 'item group code' || c === 'retail product code') colMap.groupCode = idx;
       });
       break;
     }
