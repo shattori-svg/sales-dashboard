@@ -228,7 +228,7 @@ function saveBusinessHours(settings, storeId = 'default') {
 function getUsers() {
   return supabase
     .from(USERS_TABLE)
-    .select('id, username, display_name, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language')
+    .select('id, username, display_name, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language, last_login')
     .order('created_at', { ascending: true })
     .then(({ data: rows, error }) => {
       if (error) throw error;
@@ -240,7 +240,7 @@ function getUserByUsername(username) {
   const un = String(username).trim();
   return supabase
     .from(USERS_TABLE)
-    .select('id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language')
+    .select('id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language, last_login')
     .eq('username', un)
     .maybeSingle()
     .then(({ data: row, error }) => {
@@ -252,7 +252,7 @@ function getUserByUsername(username) {
 function getUserById(id) {
   return supabase
     .from(USERS_TABLE)
-    .select('id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language')
+    .select('id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language, last_login')
     .eq('id', id)
     .maybeSingle()
     .then(({ data: row, error }) => {
@@ -391,6 +391,16 @@ function saveProductGroups(rows) {
     });
 }
 
+function updateLastLogin(id) {
+  return supabase
+    .from(USERS_TABLE)
+    .update({ last_login: new Date().toISOString() })
+    .eq('id', id)
+    .then(({ error }) => {
+      if (error) throw error;
+    });
+}
+
 module.exports = {
   getStores,
   saveStores,
@@ -411,6 +421,7 @@ module.exports = {
   updateUser,
   updateUserPreferences,
   deleteUser,
+  updateLastLogin,
   countUsers,
   countAdmins,
   getProductGroups,

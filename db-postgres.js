@@ -248,7 +248,7 @@ async function saveBusinessHours(settings, storeId = 'default') {
 async function getUsers() {
   try {
     const r = await pool.query(
-      `SELECT id, username, display_name, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language
+      `SELECT id, username, display_name, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language, last_login
        FROM ${USERS_TABLE}
        ORDER BY created_at ASC`
     );
@@ -262,7 +262,7 @@ async function getUserByUsername(username) {
   const un = String(username).trim();
   try {
     const r = await pool.query(
-      `SELECT id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language
+      `SELECT id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language, last_login
        FROM ${USERS_TABLE}
        WHERE username = $1
        LIMIT 1`,
@@ -277,7 +277,7 @@ async function getUserByUsername(username) {
 async function getUserById(id) {
   try {
     const r = await pool.query(
-      `SELECT id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language
+      `SELECT id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language, last_login
        FROM ${USERS_TABLE}
        WHERE id = $1
        LIMIT 1`,
@@ -434,6 +434,14 @@ async function saveProductGroups(rows) {
   }
 }
 
+async function updateLastLogin(id) {
+  try {
+    await pool.query(`UPDATE ${USERS_TABLE} SET last_login = NOW() WHERE id = $1`, [id]);
+  } catch (err) {
+    throw mapDbErr(err);
+  }
+}
+
 module.exports = {
   getStores,
   saveStores,
@@ -454,6 +462,7 @@ module.exports = {
   updateUser,
   updateUserPreferences,
   deleteUser,
+  updateLastLogin,
   countUsers,
   countAdmins,
   getProductGroups,

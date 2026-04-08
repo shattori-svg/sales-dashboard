@@ -64,6 +64,7 @@ const {
   updateUser,
   updateUserPreferences,
   deleteUser,
+  updateLastLogin,
   countUsers,
   countAdmins,
 } = db;
@@ -389,6 +390,7 @@ app.get('/auth/callback', async (req, res) => {
       }
     }
     if (!user) return res.status(403).send('Access denied: user is not registered in User Master.');
+    updateLastLogin(user.id).catch(() => {});
     setJwtCookie(res, {
       loggedIn: true,
       userId: user.id,
@@ -416,6 +418,7 @@ app.post('/login', (req, res) => {
       if (!user) return res.redirect('/login?error=1');
       return bcrypt.compare(password, user.password_hash).then((ok) => {
         if (!ok) return res.redirect('/login?error=1');
+        updateLastLogin(user.id).catch(() => {});
         setJwtCookie(res, {
           loggedIn: true,
           userId: user.id,
