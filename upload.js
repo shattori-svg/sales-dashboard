@@ -326,6 +326,7 @@
           '<td>' + escapeHtml(currencyLabel) + '</td>' +
           '<td>' + escapeHtml(languageLabel) + '</td>' +
           '<td>' + escapeHtml(formatUserDate(u.created_at)) + '</td>' +
+          '<td>' + escapeHtml(formatUserDate(u.last_login)) + '</td>' +
           '<td><button type="button" class="btn-edit-user" data-id="' + escapeHtml(u.id) + '" data-username="' + escapeHtml(u.username) + '" data-display-name="' + escapeHtml(u.display_name || '') + '" data-role="' + escapeHtml(u.role) + '">変更</button> ' +
           '<button type="button" class="btn-delete-user" data-id="' + escapeHtml(u.id) + '"' + (isSelf ? ' disabled title="自分自身は削除できません"' : '') + '>削除</button></td>';
         tr.querySelector('.btn-edit-user').addEventListener('click', function () {

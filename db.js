@@ -37,6 +37,7 @@ db.exec(`
     display_name TEXT,
     role TEXT NOT NULL DEFAULT 'user',
     created_at TEXT DEFAULT (datetime('now')),
+    last_login TEXT,
     preferred_store TEXT,
     preferred_department TEXT,
     preferred_currency TEXT,
@@ -64,6 +65,15 @@ db.exec(`
     }
     if (!hasPreferredCurrency) db.exec('ALTER TABLE users ADD COLUMN preferred_currency TEXT');
     if (!hasPreferredLanguage) db.exec('ALTER TABLE users ADD COLUMN preferred_language TEXT');
+  } catch (e) {}
+})();
+
+(function addLastLoginColumnIfNeeded() {
+  try {
+    const info = db.prepare('PRAGMA table_info(users)').all();
+    if (!info.some((c) => c.name === 'last_login')) {
+      db.exec('ALTER TABLE users ADD COLUMN last_login TEXT');
+    }
   } catch (e) {}
 })();
 
@@ -264,19 +274,19 @@ function saveBusinessHours(settings, storeId = 'default') {
 
 // Users (id, username, password_hash, role, created_at)
 function getUsers() {
-  const rows = db.prepare('SELECT id, username, display_name, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language FROM users ORDER BY created_at ASC').all();
+  const rows = db.prepare('SELECT id, username, display_name, role, created_at, last_login, preferred_store, preferred_department, preferred_currency, preferred_language FROM users ORDER BY created_at ASC').all();
   return Promise.resolve(rows);
 }
 
 function getUserByUsername(username) {
-  const row = db.prepare('SELECT id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language FROM users WHERE username = ?').get(
+  const row = db.prepare('SELECT id, username, display_name, password_hash, role, created_at, last_login, preferred_store, preferred_department, preferred_currency, preferred_language FROM users WHERE username = ?').get(
     String(username).trim()
   );
   return Promise.resolve(row || null);
 }
 
 function getUserById(id) {
-  const row = db.prepare('SELECT id, username, display_name, password_hash, role, created_at, preferred_store, preferred_department, preferred_currency, preferred_language FROM users WHERE id = ?').get(id);
+  const row = db.prepare('SELECT id, username, display_name, password_hash, role, created_at, last_login, preferred_store, preferred_department, preferred_currency, preferred_language FROM users WHERE id = ?').get(id);
   return Promise.resolve(row || null);
 }
 
@@ -335,6 +345,11 @@ function updateUser(id, { username, displayName, passwordHash, role }) {
   return getUserById(id);
 }
 
+function updateLastLogin(id) {
+  db.prepare('UPDATE users SET last_login = datetime(\'now\') WHERE id = ?').run(id);
+  return Promise.resolve();
+}
+
 function deleteUser(id) {
   const r = db.prepare('DELETE FROM users WHERE id = ?').run(id);
   return Promise.resolve(r.changes > 0);
@@ -371,6 +386,7 @@ module.exports = {
   getUserById,
   createUser,
   updateUser,
+  updateLastLogin,
   deleteUser,
   countUsers,
   countAdmins,
