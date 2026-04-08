@@ -351,7 +351,7 @@ app.get('/auth/callback', async (req, res) => {
   const { code, state } = req.query;
   if (!code || !state) {
     const errMsg = req.query.error_description || req.query.error || 'Missing code or state';
-    return res.status(400).send('Invalid or missing state or code: ' + String(errMsg));
+    return res.status(400).send('Invalid or missing state or code: ' + escapeHtml(String(errMsg)));
   }
   if (!entraAuth.verifySignedState(state)) {
     return res.status(400).send('Invalid or expired state. Please try logging in again.');
@@ -363,7 +363,7 @@ app.get('/auth/callback', async (req, res) => {
     const decoded = await entraAuth.validateIdToken(idToken);
     const email = entraAuth.getEmailFromPayload(decoded);
     if (!entraAuth.isAllowedEmail(email)) {
-      return res.status(403).send('Access denied: only users from ' + entraAuth.getAllowedDomain() + ' are allowed');
+      return res.status(403).send('Access denied: only users from ' + escapeHtml(entraAuth.getAllowedDomain()) + ' are allowed');
     }
     let user = await getUserByUsername(email);
     if (!user) {
@@ -438,9 +438,13 @@ app.post('/logout', (_req, res) => {
   res.redirect('/login?loggedout=1');
 });
 
-app.get('/logout', (_req, res) => {
-  clearJwtCookie(res);
-  res.redirect('/login?loggedout=1');
+// GET /logout removed — use POST /logout to prevent CSRF
+
+// Block access to sensitive server-side files
+app.use((req, res, next) => {
+  const blocked = /^\/(server\.js|parser\.js|db\.js|db-.*\.js|entra-auth\.js|package\.json|package-lock\.json|\.env|data\/|node_modules\/|\.claude\/|\.git\/|tests\/)/i;
+  if (blocked.test(req.path)) return res.status(403).end();
+  next();
 });
 
 // Serve static assets (CSS, JS, images) before auth so login page can load styles

@@ -637,7 +637,7 @@
         maintainAspectRatio: true,
         plugins: { legend: { position: 'top', labels: { color: CHART_OPTS.color } } },
         scales: {
-          x: Object.assign({ title: { display: true, text: 'Time Slot' } }, chartScaleDefaults),
+          x: Object.assign({ title: { display: true, text: t('time_slot') } }, chartScaleDefaults),
           y: Object.assign({ beginAtZero: true, type: hasAnomalousScale ? 'logarithmic' : 'linear', title: { display: true, text: 'Net Sales (' + getCurrencyLabel() + ')' } }, chartScaleDefaults)
         }
       }
@@ -1638,18 +1638,8 @@
     var fallbackReceiptToday = (state.today && state.today.total && state.today.total.totalRow && (state.today.total.totalRow.receiptCount != null)) ? state.today.total.totalRow.receiptCount : null;
     var fallbackReceiptYesterday = (state.yesterday && state.yesterday.total && state.yesterday.total.totalRow && (state.yesterday.total.totalRow.receiptCount != null)) ? state.yesterday.total.totalRow.receiptCount : null;
     var fallbackReceiptLastWeek = (state.lastWeek && state.lastWeek.total && state.lastWeek.total.totalRow && (state.lastWeek.total.totalRow.receiptCount != null)) ? state.lastWeek.total.totalRow.receiptCount : null;
-    if (!isTotal) {
-      // Use dept-specific totalRow receipt count if available, otherwise keep total-store fallback
-      if (state.today && state.today.byDepartment && state.today.byDepartment[dept] && state.today.byDepartment[dept].totalRow && (state.today.byDepartment[dept].totalRow.receiptCount != null)) {
-        fallbackReceiptToday = state.today.byDepartment[dept].totalRow.receiptCount;
-      }
-      if (state.yesterday && state.yesterday.byDepartment && state.yesterday.byDepartment[dept] && state.yesterday.byDepartment[dept].totalRow && (state.yesterday.byDepartment[dept].totalRow.receiptCount != null)) {
-        fallbackReceiptYesterday = state.yesterday.byDepartment[dept].totalRow.receiptCount;
-      }
-      if (state.lastWeek && state.lastWeek.byDepartment && state.lastWeek.byDepartment[dept] && state.lastWeek.byDepartment[dept].totalRow && (state.lastWeek.byDepartment[dept].totalRow.receiptCount != null)) {
-        fallbackReceiptLastWeek = state.lastWeek.byDepartment[dept].totalRow.receiptCount;
-      }
-    }
+    // fallbackReceipt* stays at whole-store level (total.totalRow.receiptCount) for all views,
+    // including department view, per CLAUDE.md rule on 部門別買い上げ点数.
 
     // Pass total-store per-slot receipt map for all views so computeSummary uses correct receipts
     var summaryReceiptToday = receiptToday;
@@ -1957,7 +1947,7 @@
       list.forEach(function (r, idx) {
         html += '<tr>' +
           '<td>' + (idx + 1) + '</td>' +
-          '<td>' + r.name + '</td>' +
+          '<td>' + escapeHtml(r.name) + '</td>' +
           '<td>' + formatMoneyNoUnit(r.net) + '</td>' +
           '<td>' + formatPct(r.dod) + '</td>' +
           '<td>' + formatPct(r.wow) + '</td>' +
@@ -3243,11 +3233,25 @@
     return String(err).slice(0, 400);
   }
 
+  function sanitizeHtml(html) {
+    var tmp = document.createElement('div');
+    tmp.innerHTML = html;
+    tmp.querySelectorAll('script,iframe,object,embed,form').forEach(function(el) { el.remove(); });
+    tmp.querySelectorAll('*').forEach(function(el) {
+      Array.from(el.attributes).forEach(function(attr) {
+        if (attr.name.startsWith('on') || (attr.name === 'href' && attr.value.trim().toLowerCase().startsWith('javascript:'))) {
+          el.removeAttribute(attr.name);
+        }
+      });
+    });
+    return tmp.innerHTML;
+  }
+
   function renderMarkdown(text) {
     if (typeof marked !== 'undefined' && marked.parse) {
-      return marked.parse(text || '');
+      return sanitizeHtml(marked.parse(text || ''));
     }
-    return '<p>' + (text || '').replace(/\n/g, '<br>') + '</p>';
+    return sanitizeHtml('<p>' + (text || '').replace(/\n/g, '<br>') + '</p>');
   }
 
   function getTodayStr() {
@@ -3780,7 +3784,15 @@
     var setupLink = document.getElementById('setup-link');
     var settingsLinkForMenu = document.getElementById('settings-link');
     if (langSelect) langSelect.addEventListener('change', closeMobileMenu);
-    if (logoutLink) logoutLink.addEventListener('click', function () { closeMobileMenu(); closeUserMenu(); });
+    if (logoutLink) logoutLink.addEventListener('click', function (e) {
+      e.preventDefault();
+      closeMobileMenu(); closeUserMenu();
+      fetch('/logout', { method: 'POST', credentials: 'same-origin' }).then(function () {
+        window.location.href = '/login?loggedout=1';
+      }).catch(function () {
+        window.location.href = '/login?loggedout=1';
+      });
+    });
     if (setupLink) setupLink.addEventListener('click', closeMobileMenu);
     if (settingsLinkForMenu) settingsLinkForMenu.addEventListener('click', closeUserMenu);
 
