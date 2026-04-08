@@ -717,11 +717,22 @@ function buildDailySummaryForReport(dateStr, report, dept, master) {
 
   // Include byProduct for classification aggregation when dept filter requested
   if (dept && report.byProduct) {
+    const DEPT_MAP = { '1': 'Grocery', '2': 'Fruit & Vegetable', '3': 'Fish & Seafood', '4': 'Meat', '5': 'Delicatessen', '6': 'Store Management' };
     const byProduct = {};
     Object.values(report.byProduct).forEach((p) => {
-      if (!dept || p.departmentName === dept) {
-        const key = p.itemCode || p.retailProductCode;
-        const m = master ? (master[key] || master[p.retailProductCode] || null) : null;
+      // Match department by departmentName, or fallback to master deptCode first char
+      const key = p.itemCode || p.retailProductCode;
+      const m = master ? (master[key] || master[p.retailProductCode] || null) : null;
+      let pDept = p.departmentName || '';
+      if (!pDept && m && m.deptCode) {
+        pDept = DEPT_MAP[String(m.deptCode).charAt(0)] || '';
+      }
+      if (!pDept) {
+        // Fallback: infer department from groupCode or retailProductCode first digit
+        const gc = (m && m.groupCode) || p.retailProductCode || '';
+        if (gc) pDept = DEPT_MAP[gc.charAt(0)] || '';
+      }
+      if (pDept === dept) {
         byProduct[key] = {
           retailProductCode: p.retailProductCode || '',
           groupCode: m && m.groupCode ? m.groupCode : '',
