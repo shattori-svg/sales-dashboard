@@ -1036,6 +1036,9 @@ app.post('/api/upload/item-sales', requireAdmin, upload.single('file'), async (r
     try {
       itemSalesData = parseItemSalesExcel(file.buffer, businessDate, storeId);
     } catch (parseErr) {
+      if (parseErr && parseErr.message === 'FILE_RECOGNIZED_NO_SALES') {
+        return res.status(400).json({ error: 'ファイル形式は正しいですが、POS売上（Qty. Sold (POS) / Sales Amount (POS)）が全て0です。LS-Central で対象日の日付フィルタを確認してください。' });
+      }
       return res.status(400).json({ error: 'Failed to parse Item Sales Excel: ' + (parseErr && parseErr.message || String(parseErr)) });
     }
     if (!itemSalesData) {
@@ -1374,7 +1377,10 @@ app.post('/api/product-groups/import', requireAdmin, upload.single('file'), asyn
       const parsed = parseClassificationExcel(file.buffer);
       if (!parsed) {
         console.error('parseClassificationExcel returned null for file:', file.originalname, 'size:', file.buffer.length);
-        return res.status(400).json({ error: 'Failed to parse Excel. Supported files: Retail Class List, Divisions, Retail Item Categories, Retail Product Groups (LS-Central exports).' });
+        return res.status(400).json({ error: 'Excelの解析に失敗しました。対応ファイル: Retail Class List / Divisions / Retail Item Categories / Retail Product Groups (LS-Central エクスポート)' });
+      }
+      if (parsed.empty || parsed.rows.length === 0) {
+        return res.status(400).json({ error: `データ行がありません。LS-Centralで "${file.originalname}" をエクスポートする際にデータが含まれているか確認してください。` });
       }
       rows = parsed.rows;
       console.log(`Product groups imported from Excel (level ${parsed.level}):`, rows.length, 'rows');

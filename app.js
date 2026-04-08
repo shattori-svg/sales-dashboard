@@ -114,13 +114,16 @@
   }
 
   function refreshDepartmentSelectLabels() {
-    var ids = ['department-select', 'ai-department-select', 'allstores-department-select', 'settings-department-select'];
+    var ids = ['department-select', 'ai-department-select', 'allstores-department-select', 'settings-department-select', 'daily-dept-select', 'products-dept-filter'];
     ids.forEach(function (id) {
       var el = document.getElementById(id);
       if (!el) return;
+      var isProductsFilter = (id === 'products-dept-filter');
       Array.prototype.forEach.call(el.options, function (opt) {
         var v = opt.value || '';
-        if (v === 'Total') {
+        if (v === '') {
+          opt.textContent = isProductsFilter ? (t('products_all_depts') || 'All') : (t('total') || 'Total');
+        } else if (v === 'Total') {
           opt.textContent = t('total') || 'Total';
         } else {
           opt.textContent = getDepartmentDisplayName(v);
@@ -2148,13 +2151,13 @@
 
       var sumNetSales = 0, sumReceipts = 0, sumQty = 0;
       weeks.forEach(function (w) { sumNetSales += w.totalNetSales || 0; sumReceipts += w.receiptCount || 0; sumQty += w.quantitySold || 0; });
-      var table1 = '<section class="summary-section"><h3>' + t('weekly_net_title') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th><th>' + t('snapshot_net_sales') + ' (' + getCurrencyLabel() + ')</th><th>' + t('wow') + '</th><th>' + t('receipt_count') + '</th><th>' + t('qty_sold_short') + '</th></tr></thead><tbody>';
+      var table1 = '<section class="summary-section"><h3>' + t('weekly_net_title') + '</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th><th>' + t('snapshot_net_sales') + ' (' + getCurrencyLabel() + ')</th><th>' + t('wow') + '</th><th>' + t('receipt_count') + '</th><th>' + t('qty_sold_short') + '</th></tr></thead><tbody>';
       weeks.forEach(function (w, i) {
         var prev = weeks[i - 1];
         var wow = prev && prev.totalNetSales ? Math.round((w.totalNetSales / prev.totalNetSales) * 100) : '—';
         table1 += '<tr><td>' + w.label + '</td><td>' + formatMoneyNoUnit(w.totalNetSales) + '</td><td>' + (wow === '—' ? wow : wow + '%') + '</td><td>' + formatInt(w.receiptCount) + '</td><td>' + formatInt(w.quantitySold) + '</td></tr>';
       });
-      table1 += '<tr class="total-row"><td>' + t('total') + '</td><td>' + formatMoneyNoUnit(sumNetSales) + '</td><td>—</td><td>' + formatInt(sumReceipts) + '</td><td>' + formatInt(sumQty) + '</td></tr></tbody></table></section>';
+      table1 += '<tr class="total-row"><td>' + t('total') + '</td><td>' + formatMoneyNoUnit(sumNetSales) + '</td><td>—</td><td>' + formatInt(sumReceipts) + '</td><td>' + formatInt(sumQty) + '</td></tr></tbody></table></div></section>';
 
       var deptTotals = {};
       DEPARTMENTS.forEach(function (d) { deptTotals[d] = 0; });
@@ -2162,7 +2165,7 @@
       var grandTotalAll = 0;
       DEPARTMENTS.forEach(function (d) { grandTotalAll += deptTotals[d] || 0; });
 
-      var table2 = '<section class="summary-section"><h3>' + t('sales_by_dept') + ' (' + getCurrencyLabel() + ')</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
+      var table2 = '<section class="summary-section"><h3>' + t('sales_by_dept') + ' (' + getCurrencyLabel() + ')</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
       DEPARTMENTS.forEach(function (d) { table2 += '<th>' + getDepartmentDisplayName(d) + '</th>'; });
       table2 += '<th>' + t('total') + '</th></tr></thead><tbody>';
       weeks.forEach(function (w) {
@@ -2173,9 +2176,9 @@
       });
       table2 += '<tr class="total-row"><td>' + t('total') + '</td>';
       DEPARTMENTS.forEach(function (d) { table2 += '<td>' + formatMoneyNoUnit(deptTotals[d]) + '</td>'; });
-      table2 += '<td>' + formatMoneyNoUnit(grandTotalAll) + '</td></tr></tbody></table></section>';
+      table2 += '<td>' + formatMoneyNoUnit(grandTotalAll) + '</td></tr></tbody></table></div></section>';
 
-      var table3 = '<section class="summary-section"><h3>' + t('dept_composition_pct') + '</h3><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
+      var table3 = '<section class="summary-section"><h3>' + t('dept_composition_pct') + '</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('week') + '</th>';
       DEPARTMENTS.forEach(function (d) { table3 += '<th>' + getDepartmentDisplayName(d) + '</th>'; });
       table3 += '<th>' + t('total') + '</th></tr></thead><tbody>';
       weeks.forEach(function (w) {
@@ -2189,7 +2192,7 @@
       });
       table3 += '<tr class="total-row"><td>' + t('total') + '</td>';
       DEPARTMENTS.forEach(function (d) { table3 += '<td>' + (grandTotalAll ? ((deptTotals[d] || 0) / grandTotalAll * 100).toFixed(1) : '—') + '%</td>'; });
-      table3 += '<td>100%</td></tr></tbody></table></section>';
+      table3 += '<td>100%</td></tr></tbody></table></div></section>';
 
       container.innerHTML = table1 + table2 + table3;
     }).then(function () { hideLoading(); }).catch(function () {
@@ -2226,7 +2229,7 @@
         ['1',     t('classification_level1')],
         ['2',     t('classification_level2')],
         ['3',     t('classification_level3')],
-        ['4',     t('key_metrics')],
+        ['4',     t('classification_level4')],
       ];
     }
     opts.forEach(function(o) {
@@ -2263,7 +2266,7 @@
     days.forEach(function(day) {
       var byProduct = day.byProduct || {};
       Object.values(byProduct).forEach(function(p) {
-        var code = p.groupCode || ''; // classification code from product master
+        var code = p.groupCode || p.retailProductCode || ''; // groupCode preferred, fallback to retailProductCode
         if (!code) return;
         var net = p.totalNetSales || 0;
         var qty = p.totalQuantitySold || 0;
@@ -2283,7 +2286,7 @@
     return result;
   }
 
-  function renderClassificationAccordion(container, days, dept, clsTree, clsAgg, isNet) {
+  function renderClassificationAccordion(days, clsTree, clsAgg) {
     var dates = days.map(function(d) { return d.date; });
     var lang = window.i18n ? window.i18n.getCurrentLang() : 'ja';
 
@@ -2293,56 +2296,67 @@
       return g.description || g.code;
     }
 
-    function getVal(code, date) {
+    function getVal(code, date, isNet) {
       return clsAgg[code] && clsAgg[code][date] ? (isNet ? clsAgg[code][date].net : clsAgg[code][date].qty) : 0;
     }
 
-    function getRowTotal(code) {
-      return dates.reduce(function(s, d) { return s + getVal(code, d); }, 0);
+    function getRowTotal(code, isNet) {
+      return dates.reduce(function(s, d) { return s + getVal(code, d, isNet); }, 0);
+    }
+
+    function hasDataInSubtree(code) {
+      if (clsAgg[code]) return true;
+      return (clsTree.children[code] || []).some(function(c) { return hasDataInSubtree(c.code); });
+    }
+
+    function buildRows(isNet) {
+      var rows = '';
+      function renderNode(g) {
+        var code = g.code;
+        var childList = clsTree.children[code] || [];
+        var hasChildren = childList.length > 0;
+        if (!hasDataInSubtree(code)) return; // skip if no data anywhere in this subtree
+        rows += '<tr class="cls-row cls-level-' + (g.level || 1) + '"' +
+          ' data-code="' + escapeHtml(code) + '"' +
+          ' data-level="' + (g.level || 1) + '"' +
+          (g.parent_code ? ' data-parent="' + escapeHtml(g.parent_code) + '" hidden' : '') + '>';
+        rows += '<td>' +
+          (hasChildren ? '<span class="cls-toggle">▶</span>' : '<span style="display:inline-block;width:18px;"></span>') +
+          escapeHtml(getClsName(g)) + '</td>';
+        dates.forEach(function(d) {
+          var v = getVal(code, d, isNet);
+          rows += '<td>' + (isNet ? formatMoneyNoUnit(v) : formatInt(v)) + '</td>';
+        });
+        var rowTotal = getRowTotal(code, isNet);
+        rows += '<td>' + (isNet ? formatMoneyNoUnit(rowTotal) : formatInt(rowTotal)) + '</td></tr>';
+        childList.forEach(function(child) { renderNode(child); });
+      }
+      clsTree.roots.forEach(function(root) { renderNode(root); });
+      return rows;
     }
 
     var currLabel = getCurrencyLabel();
-    var title = isNet ? (t('classification_sales') + ' (' + currLabel + ')') : (t('classification_sales') + ' (' + t('qty_sold_short') + ')');
+    var clsLabel = lang === 'ja' ? '分類' : 'Classification';
 
-    var html = '<section class="summary-section"><h3>' + title + '</h3>';
+    var html = '<section class="summary-section">';
+    // Tab buttons
+    html += '<div class="cls-tab-bar">';
+    html += '<button class="cls-tab cls-tab-active" data-tab="net">' + t('classification_sales') + ' (' + currLabel + ')</button>';
+    html += '<button class="cls-tab" data-tab="qty">' + t('classification_sales') + ' (' + t('qty_sold_short') + ')</button>';
+    html += '</div>';
+
+    // Shared table wrapper with two tbody sets
     html += '<div class="cls-accordion daily-table-wrapper"><table class="report-table daily-table"><thead><tr>';
-    html += '<th style="min-width:200px;">' + (lang === 'ja' ? '分類' : 'Classification') + '</th>';
+    html += '<th style="min-width:200px;">' + clsLabel + '</th>';
     dates.forEach(function(d) {
       var dt = new Date(d + 'T12:00:00');
       var w = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()];
       html += '<th>' + d.slice(5) + ' (' + w.slice(0,1) + ')</th>';
     });
-    html += '<th>' + t('total_header') + '</th></tr></thead><tbody id="cls-tbody-' + (isNet ? 'net' : 'qty') + '">';
-
-    function renderNode(g, depth) {
-      var code = g.code;
-      var childList = clsTree.children[code] || [];
-      var hasChildren = childList.length > 0;
-      var indent = '\u3000'.repeat(depth); // Japanese full-width space for indent
-      var rowTotal = getRowTotal(code);
-      if (rowTotal === 0 && !hasChildren) return; // skip empty leaf nodes
-
-      html += '<tr class="cls-row cls-level-' + (g.level || 1) + '"' +
-        ' data-code="' + escapeHtml(code) + '"' +
-        ' data-level="' + (g.level || 1) + '"' +
-        (g.parent_code ? ' data-parent="' + escapeHtml(g.parent_code) + '" hidden' : '') + '>';
-      html += '<td style="white-space:nowrap;">' +
-        (hasChildren ? '<span class="cls-toggle" style="cursor:pointer;margin-right:4px;display:inline-block;width:16px;">▶</span>' : '<span style="display:inline-block;width:16px;"></span>') +
-        indent + escapeHtml(getClsName(g)) + '</td>';
-      dates.forEach(function(d) {
-        var v = getVal(code, d);
-        html += '<td>' + (isNet ? formatMoneyNoUnit(v) : formatInt(v)) + '</td>';
-      });
-      html += '<td>' + (isNet ? formatMoneyNoUnit(rowTotal) : formatInt(rowTotal)) + '</td></tr>';
-
-      // Render children (hidden by default unless depth === 0 forced open)
-      childList.forEach(function(child) { renderNode(child, depth + 1); });
-    }
-
-    // Only show groups that have data
-    clsTree.roots.forEach(function(root) { renderNode(root, 0); });
-
-    html += '</tbody></table></div></section>';
+    html += '<th>' + t('total_header') + '</th></tr></thead>';
+    html += '<tbody class="cls-body" id="cls-body-net">' + buildRows(true) + '</tbody>';
+    html += '<tbody class="cls-body" id="cls-body-qty" hidden>' + buildRows(false) + '</tbody>';
+    html += '</table></div></section>';
     return html;
   }
 
@@ -2402,40 +2416,47 @@
       if (totalHours > 0) periodHtml += '<tr><td>' + t('sales_per_hour_label') + '</td><td>' + formatMoneyNoUnit(Math.round(totalNet / totalHours)) + ' ' + getCurrencyLabel() + '</td></tr>';
       periodHtml += '</tbody></table></section>';
 
-      // Classification table (net sales)
-      var clsNetHtml = hasClsData ? renderClassificationAccordion(container, days, dept, clsTree, clsAgg, true) : '';
-      // Classification table (qty sold)
-      var clsQtyHtml = hasClsData ? renderClassificationAccordion(container, days, dept, clsTree, clsAgg, false) : '';
+      // Classification table (tabbed: net / qty)
+      var clsHtml = hasClsData ? renderClassificationAccordion(days, clsTree, clsAgg) : '';
 
-      container.innerHTML = periodHtml + clsNetHtml + clsQtyHtml;
+      container.innerHTML = periodHtml + clsHtml;
 
-      // Add accordion toggle behavior
+      // Tab switching
+      container.querySelectorAll('.cls-tab').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          container.querySelectorAll('.cls-tab').forEach(function(b) { b.classList.remove('cls-tab-active'); });
+          btn.classList.add('cls-tab-active');
+          var tab = btn.dataset.tab;
+          container.querySelectorAll('.cls-body').forEach(function(b) { b.hidden = true; });
+          var body = container.querySelector('#cls-body-' + tab);
+          if (body) body.hidden = false;
+        });
+      });
+
+      // Accordion: click anywhere on cls-row to expand/collapse
       container.querySelectorAll('.cls-accordion').forEach(function(accordion) {
+        function collapseChildren(parentCode) {
+          accordion.querySelectorAll('[data-parent="' + parentCode + '"]').forEach(function(r) {
+            r.hidden = true;
+            r.classList.remove('cls-expanded');
+            var t = r.querySelector('.cls-toggle');
+            if (t) t.textContent = '\u25b6';
+            collapseChildren(r.dataset.code);
+          });
+        }
         accordion.addEventListener('click', function(e) {
-          var toggle = e.target.closest('.cls-toggle');
-          if (!toggle) return;
-          var row = toggle.closest('tr.cls-row');
+          var row = e.target.closest('tr.cls-row');
           if (!row) return;
+          var toggle = row.querySelector('.cls-toggle');
+          if (!toggle) return; // leaf node — no children
           var code = row.dataset.code;
           var isExpanded = row.classList.contains('cls-expanded');
           if (isExpanded) {
-            // Collapse: hide all descendants
-            accordion.querySelectorAll('[data-parent]').forEach(function(r) {
-              var parent = r.dataset.parent;
-              var ancestor = parent;
-              while (ancestor) {
-                if (ancestor === code) { r.hidden = true; r.classList.remove('cls-expanded'); break; }
-                var parentRow = accordion.querySelector('[data-code="' + ancestor + '"]');
-                ancestor = parentRow ? parentRow.dataset.parent : null;
-              }
-            });
+            collapseChildren(code);
             row.classList.remove('cls-expanded');
             toggle.textContent = '\u25b6';
           } else {
-            // Expand: show direct children only
-            accordion.querySelectorAll('[data-parent="' + code + '"]').forEach(function(r) {
-              r.hidden = false;
-            });
+            accordion.querySelectorAll('[data-parent="' + code + '"]').forEach(function(r) { r.hidden = false; });
             row.classList.add('cls-expanded');
             toggle.textContent = '\u25bc';
           }
@@ -3412,13 +3433,21 @@
         el.value = storeId;
       }
     });
-    var deptSelects = ['department-select', 'ai-department-select'];
+    var deptSelects = ['department-select', 'ai-department-select', 'allstores-department-select', 'settings-department-select'];
     deptSelects.forEach(function (id) {
       var el = document.getElementById(id);
       if (el && department && Array.prototype.some.call(el.options, function (o) { return o.value === department; })) {
         el.value = department;
       }
     });
+    // daily-dept-select: Total option has value="" (not "Total")
+    var dailyDeptEl = document.getElementById('daily-dept-select');
+    if (dailyDeptEl) {
+      var dailyDeptVal = (department === 'Total') ? '' : department;
+      if (Array.prototype.some.call(dailyDeptEl.options, function (o) { return o.value === dailyDeptVal; })) {
+        dailyDeptEl.value = dailyDeptVal;
+      }
+    }
     // Products tab dept filter: 'Total' maps to '' (all depts)
     var productsDeptEl = document.getElementById('products-dept-filter');
     if (productsDeptEl) {
@@ -3435,6 +3464,7 @@
       if (currentLang !== preferredLanguage) window.i18n.setLanguage(preferredLanguage);
     }
     if (storeId) state.storeId = storeId;
+    updateDailyExportOptions();
   }
 
   function openSettingsModal(forceInitialSetup) {
@@ -3785,6 +3815,7 @@
         if (dept && opt === '1') { exportClassificationByLevel(1); return; }
         if (dept && opt === '2') { exportClassificationByLevel(2); return; }
         if (dept && opt === '3') { exportClassificationByLevel(3); return; }
+        if (dept && opt === '4') { exportClassificationByLevel(4); return; }
 
         var dateStr = (document.getElementById('daily-start-date') || {}).value || '';
         var dateEnd = (document.getElementById('daily-end-date') || {}).value || '';
