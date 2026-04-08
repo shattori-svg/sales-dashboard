@@ -383,7 +383,7 @@ function parseCsv(buffer) {
     const endRaw = get(iEnd);
     const deptCode = get(iDept);
     const rawStore = get(iStore);
-    const sid = rawStore || '1001';
+    const sid = rawStore || 'default';
     const store = getOrCreateStore(sid);
 
     if (!store.businessDate && get(iDate)) store.businessDate = parseBusinessDate(get(iDate)) || get(iDate);
