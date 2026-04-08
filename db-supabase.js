@@ -125,26 +125,18 @@ function getReport(businessDate, storeId = 'default') {
     });
 }
 
-async function getAvailableDates(storeId = 'default') {
+function getAvailableDates(storeId = 'default') {
   const sid = normStoreId(storeId);
-  // Paginate to avoid PostgREST 1000-row cap
-  const PAGE = 1000;
-  let all = [];
-  let from = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from(TABLE)
-      .select('business_date')
-      .eq('store_id', sid)
-      .order('business_date', { ascending: false })
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    all = all.concat(data);
-    if (data.length < PAGE) break;
-    from += PAGE;
-  }
-  return all.map((r) => r.business_date);
+  return supabase
+    .from(TABLE)
+    .select('business_date')
+    .eq('store_id', sid)
+    .order('business_date', { ascending: false })
+    .limit(10000)
+    .then(({ data: rows, error }) => {
+      if (error) throw error;
+      return (rows || []).map((r) => r.business_date);
+    });
 }
 
 function getUploadLog(limit = 200) {
@@ -367,25 +359,17 @@ function countAdmins() {
 
 const PRODUCT_GROUPS_TABLE = 'product_groups';
 
-async function getProductGroups() {
-  // Supabase/PostgREST caps at 1000 rows per request — paginate to get all
-  const PAGE = 1000;
-  let all = [];
-  let from = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from(PRODUCT_GROUPS_TABLE)
-      .select('code, description, description_tha, description_jpn, parent_code, level')
-      .order('level')
-      .order('code')
-      .range(from, from + PAGE - 1);
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    all = all.concat(data);
-    if (data.length < PAGE) break;
-    from += PAGE;
-  }
-  return all;
+function getProductGroups() {
+  return supabase
+    .from(PRODUCT_GROUPS_TABLE)
+    .select('code, description, description_tha, description_jpn, parent_code, level')
+    .order('level')
+    .order('code')
+    .limit(10000)
+    .then(({ data, error }) => {
+      if (error) throw error;
+      return data || [];
+    });
 }
 
 function saveProductGroups(rows) {
