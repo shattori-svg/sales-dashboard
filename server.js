@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const XLSX = require('xlsx');
 const express = require('express');
+const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
@@ -107,6 +108,21 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
 });
+
+let _cachedUserCount = null;
+let _cachedUserCountTs = 0;
+const USER_COUNT_CACHE_TTL_MS = 30 * 1000;
+
+async function cachedCountUsers() {
+  const now = Date.now();
+  if (_cachedUserCount !== null && now - _cachedUserCountTs < USER_COUNT_CACHE_TTL_MS) {
+    return _cachedUserCount;
+  }
+  const n = await countUsers();
+  _cachedUserCount = n;
+  _cachedUserCountTs = now;
+  return n;
+}
 
 function addDays(dateStr, days) {
   const d = new Date(dateStr + 'T12:00:00Z');
@@ -213,6 +229,7 @@ function startExchangeRateScheduler() {
   }, checkIntervalMs);
 }
 
+app.use(compression());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
@@ -269,7 +286,7 @@ function requireAuth(req, res, next) {
   // API key authentication
   if (checkApiKey(req)) return next();
 
-  countUsers()
+  cachedCountUsers()
     .then((n) => {
       if (n === 0 && !EXTERNAL_AUTH_MODE) {
         if (req.path === '/api/auth/status' || req.path === '/api/bootstrap-admin')
@@ -452,9 +469,19 @@ app.use((req, res, next) => {
 
 // Serve static assets (CSS, JS, images) before auth so login page can load styles
 const staticAssetExt = /\.(css|js|ico|png|jpg|jpeg|gif|svg|woff2?|ttf|eot)$/i;
+const preAuthStatic = express.static(path.join(__dirname), {
+  etag: true,
+  lastModified: true,
+  maxAge: 300000,
+  setHeaders: (res, filePath) => {
+    if (/\.html$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
+});
 app.use((req, res, next) => {
   if (staticAssetExt.test(req.path)) {
-    return express.static(path.join(__dirname))(req, res, (err) => {
+    return preAuthStatic(req, res, (err) => {
       if (err) next(err);
       else next();
     });
@@ -506,7 +533,7 @@ app.get('/api/auth/status', async (req, res) => {
     });
   }
 
-  const n = await countUsers();
+  const n = await cachedCountUsers();
   if (n === 0) {
     if (EXTERNAL_AUTH_MODE) {
       return res.json({ authEnabled: true, externalAuth: true, loggedIn: false, bootstrap: false, role: null });
@@ -583,7 +610,16 @@ app.post('/api/bootstrap-admin', async (req, res) => {
   }
 });
 
-app.use(express.static(path.join(__dirname), { etag: false, lastModified: false, setHeaders: (res, filePath) => { if (/\.(js|css|html)$/.test(filePath)) res.setHeader('Cache-Control', 'no-store'); } }));
+app.use(express.static(path.join(__dirname), {
+  etag: true,
+  lastModified: true,
+  maxAge: 300000,
+  setHeaders: (res, filePath) => {
+    if (/\.html$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
+}));
 
 app.get('/xlsx.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'node_modules', 'xlsx', 'dist', 'xlsx.full.min.js'));
@@ -787,10 +823,10 @@ app.get('/api/daily-summary', async (req, res) => {
     }
     const dept = (req.query.dept || '').trim();
     const master = dept ? await getProductMaster() : null;
+    const reports = await Promise.all(daysList.map(d => getReport(d, storeId).catch(() => null)));
     const summaries = [];
-    for (const d of daysList) {
-      const report = await getReport(d, storeId);
-      const sum = report ? buildDailySummaryForReport(d, report, dept || undefined, master) : null;
+    for (let i = 0; i < daysList.length; i++) {
+      const sum = reports[i] ? buildDailySummaryForReport(daysList[i], reports[i], dept || undefined, master) : null;
       if (sum) summaries.push(sum);
     }
     res.json({ days: summaries });
@@ -810,12 +846,14 @@ app.get('/api/report', async (req, res) => {
     const date = String(refDateStr).trim();
     const yesterdayStr = addDays(date, -1);
     const lastWeekStr = addDays(date, -7);
-    const today = await getReport(date, storeId);
+    const [today, yesterday, lastWeek] = await Promise.all([
+      getReport(date, storeId),
+      getReport(yesterdayStr, storeId).catch(() => null),
+      getReport(lastWeekStr, storeId).catch(() => null),
+    ]);
     if (!today) {
       return res.status(404).json({ error: 'No report found for date ' + date + '.' });
     }
-    const yesterday = await getReport(yesterdayStr, storeId);
-    const lastWeek = await getReport(lastWeekStr, storeId);
     res.json({ today, yesterday: yesterday || null, lastWeek: lastWeek || null, referenceDate: date });
   } catch (err) {
     console.error(err);
@@ -895,7 +933,15 @@ app.get('/api/ai/today', async (req, res) => {
 });
 
 const HOURLY_FORECAST_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const HOURLY_FORECAST_CACHE_MAX = 100;
 const hourlyForecastCache = new Map();
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of hourlyForecastCache) {
+    if (now - entry.ts > HOURLY_FORECAST_CACHE_TTL_MS) hourlyForecastCache.delete(key);
+  }
+}, 60 * 1000);
 
 app.get('/api/ai/hourly-forecast', async (req, res) => {
   if (!aiGemini.isAvailable()) {
@@ -914,7 +960,13 @@ app.get('/api/ai/hourly-forecast', async (req, res) => {
   }
   try {
     const data = await aiGemini.generateHourlyForecast(getReport, storeId, String(refDate).trim(), currentTime);
-    if (!currentTime) hourlyForecastCache.set(cacheKey, { data, ts: Date.now() });
+    if (!currentTime) {
+      if (hourlyForecastCache.size >= HOURLY_FORECAST_CACHE_MAX) {
+        const oldestKey = hourlyForecastCache.keys().next().value;
+        hourlyForecastCache.delete(oldestKey);
+      }
+      hourlyForecastCache.set(cacheKey, { data, ts: Date.now() });
+    }
     res.json(data);
   } catch (err) {
     const msg = err && err.message ? err.message : 'Unknown error';

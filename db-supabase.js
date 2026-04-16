@@ -132,7 +132,7 @@ function getAvailableDates(storeId = 'default') {
     .select('business_date')
     .eq('store_id', sid)
     .order('business_date', { ascending: false })
-    .limit(10000)
+    .limit(1000)
     .then(({ data: rows, error }) => {
       if (error) throw error;
       return (rows || []).map((r) => r.business_date);

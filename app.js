@@ -160,18 +160,8 @@
       chartInstances.composition.destroy();
       chartInstances.composition = null;
     }
-    if (chartInstances.dailySales) {
-      chartInstances.dailySales.destroy();
-      chartInstances.dailySales = null;
-    }
-    if (chartInstances.dailyComposition) {
-      chartInstances.dailyComposition.destroy();
-      chartInstances.dailyComposition = null;
-    }
-    if (chartInstances.dailyMetrics) {
-      chartInstances.dailyMetrics.destroy();
-      chartInstances.dailyMetrics = null;
-    }
+    // Daily charts are managed by destroyDailyCharts() / renderDailySummary() independently.
+    // Do NOT destroy them here — renderReport() (called by auto-refresh) never rebuilds them.
   }
 
   function setHourlyChartTab(view) {
@@ -1778,6 +1768,7 @@
 
   function startAutoRefresh() {
     stopAutoRefresh();
+    if (document.hidden) return;
     if (state.referenceDate !== getThailandDateStr()) return;
     nextAutoRefreshAt = Date.now() + AUTO_REFRESH_INTERVAL_MS;
     autoRefreshTimer = setInterval(silentRefreshReport, AUTO_REFRESH_INTERVAL_MS);
@@ -1786,6 +1777,14 @@
       updateAutoRefreshStatus();
     }, 1000);
   }
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      stopAutoRefresh();
+    } else {
+      startAutoRefresh();
+    }
+  });
 
   function refreshOutputDateSelect() {
     var el = document.getElementById('output-date');
