@@ -404,13 +404,17 @@
             <option value="default">Default</option>
           </select>
         </span>
-        <label for="weekly-end-date" class="output-header-sep" data-i18n="weekly_end_date">週の終了日</label>
-        <input type="date" id="weekly-end-date" aria-label="Select end date for weekly view">
+        <label for="weekly-end-date" class="output-header-sep" data-i18n="weekly_end_date">基準日</label>
+        <input type="date" id="weekly-end-date" aria-label="Reference date for weekly view" title="この日を含む週を最新週として表示">
         <label for="weekly-num-weeks" class="output-header-sep" data-i18n="num_weeks">表示週数</label>
         <select id="weekly-num-weeks" aria-label="Number of weeks">
           <option value="2" data-i18n-option="weeks_2">2週間</option>
           <option value="3" data-i18n-option="weeks_3">3週間</option>
           <option value="4" selected data-i18n-option="weeks_4">4週間</option>
+          <option value="8" data-i18n-option="weeks_8">8週間</option>
+          <option value="12" data-i18n-option="weeks_12">12週間</option>
+          <option value="26" data-i18n-option="weeks_26">26週間</option>
+          <option value="52" data-i18n-option="weeks_52">52週間</option>
         </select>
         <label for="weekly-export-select" class="output-header-sep" data-i18n="output_data">出力データ</label>
         <select id="weekly-export-select" aria-label="Select data to export">
@@ -422,7 +426,7 @@
         <button type="button" id="btn-weekly-excel" class="btn-csv" data-i18n="export_excel">Excel出力</button>
       </div>
       <div id="weekly-summary-tables"></div>
-      <p id="weekly-empty" class="empty-message" data-i18n="weekly_empty" hidden>週の終了日を選択してください。</p>
+      <p id="weekly-empty" class="empty-message" data-i18n="weekly_empty" hidden>基準日を選択してください。</p>
     </section>
 
     <section id="ai-panel" class="panel">

@@ -802,7 +802,7 @@ app.get('/api/daily-summary', async (req, res) => {
       const startD = parseDateYMD(startStr);
       const endD = parseDateYMD(refStr);
       if (startD && endD && startD <= endD) {
-        const maxDays = 31;
+        const maxDays = 365;
         for (let d = new Date(startD); d <= endD && daysList.length < maxDays; d.setUTCDate(d.getUTCDate() + 1)) {
           const y = d.getUTCFullYear();
           const m = String(d.getUTCMonth() + 1).padStart(2, '0');
@@ -812,7 +812,7 @@ app.get('/api/daily-summary', async (req, res) => {
       }
     }
     if (daysList.length === 0) {
-      const days = Math.min(31, Math.max(1, parseInt(req.query.days, 10) || 7));
+      const days = Math.min(365, Math.max(1, parseInt(req.query.days, 10) || 7));
       if (!refStr || !/^\d{4}-\d{2}-\d{2}$/.test(String(refStr).trim())) {
         return res.status(400).json({ error: 'Query parameter referenceDate (YYYY-MM-DD) is required.' });
       }

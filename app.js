@@ -2086,7 +2086,7 @@
     var endDateEl = document.getElementById('weekly-end-date');
     var endDate = endDateEl ? endDateEl.value : '';
     var numWeeksEl = document.getElementById('weekly-num-weeks');
-    var numWeeks = numWeeksEl ? Math.min(4, Math.max(2, parseInt(numWeeksEl.value, 10) || 4)) : 4;
+    var numWeeks = numWeeksEl ? Math.min(52, Math.max(2, parseInt(numWeeksEl.value, 10) || 4)) : 4;
     var daysToFetch = numWeeks * 7;
     var container = document.getElementById('weekly-summary-tables');
     var emptyEl = document.getElementById('weekly-empty');
@@ -2521,6 +2521,16 @@
       container.innerHTML = '';
       if (emptyEl) emptyEl.hidden = false;
       return;
+    }
+    // Validate date range: backend caps at 365 days. Reject anything longer with a clear message.
+    var DAILY_MAX_DAYS = 365;
+    if (startDate && startDate <= endDate) {
+      var diffDays = Math.floor((new Date(endDate + 'T00:00:00Z') - new Date(startDate + 'T00:00:00Z')) / 86400000) + 1;
+      if (diffDays > DAILY_MAX_DAYS) {
+        container.innerHTML = '';
+        if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = t('daily_range_too_long'); }
+        return;
+      }
     }
     if (emptyEl) emptyEl.hidden = true;
     showLoading();
@@ -3799,8 +3809,23 @@
     var dailyStartEl = document.getElementById('daily-start-date');
     var dailyEndEl = document.getElementById('daily-end-date');
     if (dailyStoreEl) dailyStoreEl.addEventListener('change', function () { refreshDailyDateSelect(); });
-    if (dailyStartEl) dailyStartEl.addEventListener('change', renderDailySummary);
-    if (dailyEndEl) dailyEndEl.addEventListener('change', renderDailySummary);
+    function syncDailyDateBounds() {
+      if (!dailyStartEl || !dailyEndEl) return;
+      var s = dailyStartEl.value;
+      var e = dailyEndEl.value;
+      if (e) {
+        // Start date must be within 364 days before end date (inclusive = 365 days total)
+        dailyStartEl.min = addDays(e, -364);
+        dailyStartEl.max = e;
+      }
+      if (s) {
+        dailyEndEl.min = s;
+        dailyEndEl.max = addDays(s, 364);
+      }
+    }
+    if (dailyStartEl) dailyStartEl.addEventListener('change', function () { syncDailyDateBounds(); renderDailySummary(); });
+    if (dailyEndEl) dailyEndEl.addEventListener('change', function () { syncDailyDateBounds(); renderDailySummary(); });
+    syncDailyDateBounds();
     var dailyDeptEl = document.getElementById('daily-dept-select');
     if (dailyDeptEl) dailyDeptEl.addEventListener('change', function () {
       updateDailyExportOptions();
