@@ -2577,40 +2577,55 @@
       });
       totalRow.push(grandTotalSales);
 
-      var table1 = '<section class="summary-section"><h3>' + t('daily_sales_by_dept') + ' (' + getCurrencyLabel() + ')</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('department') + '</th>';
-      dateLabels.forEach(function (l) { table1 += '<th>' + l + '</th>'; });
-      table1 += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
+      var table1Body = '<div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('department') + '</th>';
+      dateLabels.forEach(function (l) { table1Body += '<th>' + l + '</th>'; });
+      table1Body += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
       deptOrder.forEach(function (dept) {
         var rowTotal = 0;
-        table1 += '<tr><td>' + getDepartmentDisplayName(dept) + '</td>';
+        table1Body += '<tr><td>' + getDepartmentDisplayName(dept) + '</td>';
         days.forEach(function (d) {
           var v = (d.byDepartment && d.byDepartment[dept]) ? d.byDepartment[dept] : 0;
           rowTotal += v;
-          table1 += '<td>' + formatMoneyNoUnit(v) + '</td>';
+          table1Body += '<td>' + formatMoneyNoUnit(v) + '</td>';
         });
-        table1 += '<td>' + formatMoneyNoUnit(rowTotal) + '</td></tr>';
+        table1Body += '<td>' + formatMoneyNoUnit(rowTotal) + '</td></tr>';
       });
-      table1 += '<tr class="total-row"><td>' + t('total_header') + '</td>';
-      totalRow.forEach(function (v) { table1 += '<td>' + formatMoneyNoUnit(v) + '</td>'; });
-      table1 += '</tr></tbody></table></div></section>';
+      table1Body += '<tr class="total-row"><td>' + t('total_header') + '</td>';
+      totalRow.forEach(function (v) { table1Body += '<td>' + formatMoneyNoUnit(v) + '</td>'; });
+      table1Body += '</tr></tbody></table></div>';
 
-      var table1b = '<section class="summary-section"><h3>' + t('daily_composition_pct') + '</h3><div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('department') + '</th>';
-      dateLabels.forEach(function (l) { table1b += '<th>' + l + '</th>'; });
-      table1b += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
+      var table1bBody = '<div class="daily-table-wrapper"><table class="report-table daily-table"><thead><tr><th>' + t('department') + '</th>';
+      dateLabels.forEach(function (l) { table1bBody += '<th>' + l + '</th>'; });
+      table1bBody += '<th>' + t('total_header') + '</th></tr></thead><tbody>';
       deptOrder.forEach(function (dept) {
-        table1b += '<tr><td>' + getDepartmentDisplayName(dept) + '</td>';
+        table1bBody += '<tr><td>' + getDepartmentDisplayName(dept) + '</td>';
         days.forEach(function (d) {
           var dayTotal = d.totalNetSales || 0;
           var v = (d.byDepartment && d.byDepartment[dept]) ? d.byDepartment[dept] : 0;
           var pct = dayTotal ? ((v / dayTotal) * 100).toFixed(1) : '—';
-          table1b += '<td>' + pct + '%</td>';
+          table1bBody += '<td>' + pct + '%</td>';
         });
         var deptGrand = days.reduce(function (s, day) { return s + ((day.byDepartment && day.byDepartment[dept]) ? day.byDepartment[dept] : 0); }, 0);
-        table1b += '<td>' + (grandTotalSales ? (deptGrand / grandTotalSales * 100).toFixed(1) : '—') + '%</td></tr>';
+        table1bBody += '<td>' + (grandTotalSales ? (deptGrand / grandTotalSales * 100).toFixed(1) : '—') + '%</td></tr>';
       });
-      table1b += '<tr class="total-row"><td>' + t('total_header') + '</td>';
-      days.forEach(function (d) { table1b += '<td>100%</td>'; });
-      table1b += '<td>100%</td></tr></tbody></table></div></section>';
+      table1bBody += '<tr class="total-row"><td>' + t('total_header') + '</td>';
+      days.forEach(function (d) { table1bBody += '<td>100%</td>'; });
+      table1bBody += '<td>100%</td></tr></tbody></table></div>';
+
+      var deptTabsHtml = '<section class="summary-section">' +
+        '<div class="composition-tabs" role="tablist" aria-label="' + t('daily_sales_by_dept') + ' / ' + t('daily_composition_pct') + '">' +
+          '<button type="button" role="tab" id="daily-dept-tab-sales" class="composition-tab active" aria-selected="true" aria-controls="daily-dept-sales-panel">' + t('daily_sales_by_dept') + ' (' + getCurrencyLabel() + ')</button>' +
+          '<button type="button" role="tab" id="daily-dept-tab-pct" class="composition-tab" aria-selected="false" aria-controls="daily-dept-pct-panel">' + t('daily_composition_pct') + '</button>' +
+        '</div>' +
+        '<div id="daily-dept-sales-panel" role="tabpanel" aria-labelledby="daily-dept-tab-sales">' +
+          table1Body +
+          '<div class="chart-wrapper"><canvas id="daily-chart-sales"></canvas></div>' +
+        '</div>' +
+        '<div id="daily-dept-pct-panel" role="tabpanel" aria-labelledby="daily-dept-tab-pct" hidden>' +
+          table1bBody +
+          '<div class="chart-wrapper"><canvas id="daily-chart-composition"></canvas></div>' +
+        '</div>' +
+      '</section>';
 
       var salesPerHour = days.map(function (d) {
         var h = d.hoursCount || 1;
@@ -2673,9 +2688,35 @@
       table2 += '<td>' + (totalQty ? formatMoneyNoUnit(Math.round(grandTotalSales / totalQty)) : '—') + '</td></tr>';
       table2 += '</tbody></table></div></section>';
 
-      var chartSectionHtml = '<section class="summary-section chart-section"><h3 class="chart-title">' + t('daily_sales_by_dept') + '</h3><div class="chart-wrapper"><canvas id="daily-chart-sales"></canvas></div><h3 class="chart-title">' + t('daily_composition_pct') + '</h3><div class="chart-wrapper"><canvas id="daily-chart-composition"></canvas></div><h3 class="chart-title">' + t('key_metrics_trend') + '</h3><div class="chart-wrapper"><canvas id="daily-chart-metrics"></canvas></div></section>';
+      var chartSectionHtml = '<section class="summary-section chart-section"><h3 class="chart-title">' + t('key_metrics_trend') + '</h3><div class="chart-wrapper"><canvas id="daily-chart-metrics"></canvas></div></section>';
 
-      container.innerHTML = weeklyTotalHtml + table1 + table1b + chartSectionHtml + table2;
+      container.innerHTML = weeklyTotalHtml + deptTabsHtml + chartSectionHtml + table2;
+
+      // Wire up department tab switching
+      var deptTabSales = document.getElementById('daily-dept-tab-sales');
+      var deptTabPct = document.getElementById('daily-dept-tab-pct');
+      var deptSalesPanel = document.getElementById('daily-dept-sales-panel');
+      var deptPctPanel = document.getElementById('daily-dept-pct-panel');
+      function setDailyDeptTab(view) {
+        var isSales = view !== 'pct';
+        if (deptSalesPanel) deptSalesPanel.hidden = !isSales;
+        if (deptPctPanel) deptPctPanel.hidden = isSales;
+        if (deptTabSales) {
+          deptTabSales.classList.toggle('active', isSales);
+          deptTabSales.setAttribute('aria-selected', isSales ? 'true' : 'false');
+        }
+        if (deptTabPct) {
+          deptTabPct.classList.toggle('active', !isSales);
+          deptTabPct.setAttribute('aria-selected', !isSales ? 'true' : 'false');
+        }
+        // Chart.js with responsive:true needs a resize when its panel becomes visible
+        var target = isSales ? chartInstances.dailySales : chartInstances.dailyComposition;
+        if (target && typeof target.resize === 'function') {
+          try { target.resize(); } catch (e) { /* noop */ }
+        }
+      }
+      if (deptTabSales) deptTabSales.addEventListener('click', function () { setDailyDeptTab('sales'); });
+      if (deptTabPct) deptTabPct.addEventListener('click', function () { setDailyDeptTab('pct'); });
 
       if (typeof Chart !== 'undefined') {
         var shortLabels = days.map(function (d) {
