@@ -2727,78 +2727,87 @@
         var dailySalesCanvas = document.getElementById('daily-chart-sales');
         var dailyCompCanvas = document.getElementById('daily-chart-composition');
         var dailyMetricsCanvas = document.getElementById('daily-chart-metrics');
+        // Each chart is isolated so a failure in one does not blow up the whole render.
         if (dailySalesCanvas) {
-          var salesDatasets = deptOrder.map(function (dept, i) {
-            var values = days.map(function (d) {
-              return (d.byDepartment && d.byDepartment[dept]) ? d.byDepartment[dept] : 0;
+          try {
+            var salesDatasets = deptOrder.map(function (dept, i) {
+              var values = days.map(function (d) {
+                return (d.byDepartment && d.byDepartment[dept]) ? d.byDepartment[dept] : 0;
+              });
+              return { label: dept, data: values, backgroundColor: dailyChartColors[i % dailyChartColors.length], borderColor: dailyChartColors[i % dailyChartColors.length], borderWidth: 1 };
             });
-            return { label: dept, data: values, backgroundColor: dailyChartColors[i % dailyChartColors.length], borderColor: dailyChartColors[i % dailyChartColors.length], borderWidth: 1 };
-          });
-          chartInstances.dailySales = new Chart(dailySalesCanvas, {
-            type: 'bar',
-            data: { labels: shortLabels, datasets: salesDatasets },
-            options: {
-              responsive: true,
-              maintainAspectRatio: true,
-              plugins: { legend: { position: 'top' } },
-              scales: {
-                x: { stacked: true, title: { display: true, text: t('date_label') } },
-                y: { stacked: true, beginAtZero: true, title: { display: true, text: t('net_sales') } }
+            chartInstances.dailySales = new Chart(dailySalesCanvas, {
+              type: 'bar',
+              data: { labels: shortLabels, datasets: salesDatasets },
+              options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: { legend: { position: 'top' } },
+                scales: {
+                  x: { stacked: true, title: { display: true, text: t('date_label') } },
+                  y: { stacked: true, beginAtZero: true, title: { display: true, text: t('net_sales') } }
+                }
               }
-            }
-          });
+            });
+          } catch (e) { try { console.error('[dailySales chart]', e); } catch (_) {} }
         }
         if (dailyCompCanvas) {
-          var compDatasets = deptOrder.map(function (dept, i) {
-            var pctValues = days.map(function (d) {
-              var dayTotal = d.totalNetSales || 0;
-              var v = (d.byDepartment && d.byDepartment[dept]) ? d.byDepartment[dept] : 0;
-              return dayTotal ? (v / dayTotal) * 100 : 0;
+          try {
+            var compDatasets = deptOrder.map(function (dept, i) {
+              var pctValues = days.map(function (d) {
+                var dayTotal = d.totalNetSales || 0;
+                var v = (d.byDepartment && d.byDepartment[dept]) ? d.byDepartment[dept] : 0;
+                return dayTotal ? (v / dayTotal) * 100 : 0;
+              });
+              return { label: dept, data: pctValues, backgroundColor: dailyChartColors[i % dailyChartColors.length], borderColor: dailyChartColors[i % dailyChartColors.length], borderWidth: 1 };
             });
-            return { label: dept, data: pctValues, backgroundColor: dailyChartColors[i % dailyChartColors.length], borderColor: dailyChartColors[i % dailyChartColors.length], borderWidth: 1 };
-          });
-          chartInstances.dailyComposition = new Chart(dailyCompCanvas, {
-            type: 'bar',
-            data: { labels: shortLabels, datasets: compDatasets },
-            options: {
-              responsive: true,
-              maintainAspectRatio: true,
-              plugins: {
-                legend: { position: 'top' },
-                tooltip: { callbacks: { label: function (ctx) { return (ctx.raw || 0).toFixed(1) + '%'; } } }
-              },
-              scales: {
-                x: { stacked: true, title: { display: true, text: t('date_label') } },
-                y: { stacked: true, min: 0, max: 100, title: { display: true, text: 'Share (%)' } }
+            chartInstances.dailyComposition = new Chart(dailyCompCanvas, {
+              type: 'bar',
+              data: { labels: shortLabels, datasets: compDatasets },
+              options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                  legend: { position: 'top' },
+                  tooltip: { callbacks: { label: function (ctx) { return (ctx.raw || 0).toFixed(1) + '%'; } } }
+                },
+                scales: {
+                  x: { stacked: true, title: { display: true, text: t('date_label') } },
+                  y: { stacked: true, min: 0, max: 100, title: { display: true, text: 'Share (%)' } }
+                }
               }
-            }
-          });
+            });
+          } catch (e) { try { console.error('[dailyComposition chart]', e); } catch (_) {} }
         }
         if (dailyMetricsCanvas) {
-          chartInstances.dailyMetrics = new Chart(dailyMetricsCanvas, {
-            type: 'line',
-            data: {
-              labels: shortLabels,
-              datasets: [
-                { label: 'Sales per hour (' + t('currency_unit') + ')', data: salesPerHour, borderColor: 'rgb(37, 99, 235)', backgroundColor: 'rgba(37, 99, 235, 0.1)', borderWidth: 2, fill: true, tension: 0.2, pointRadius: 4, yAxisID: 'y' },
-                { label: 'Receipt count', data: receiptCounts, borderColor: 'rgb(34, 197, 94)', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderWidth: 2, fill: false, tension: 0.2, pointRadius: 4, yAxisID: 'y1' }
-              ]
-            },
-            options: {
-              responsive: true,
-              maintainAspectRatio: true,
-              interaction: { mode: 'index', intersect: false },
-              plugins: { legend: { position: 'top' } },
-              scales: {
-                x: { title: { display: true, text: t('date_label') } },
-                y: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: 'Sales per hour (' + t('currency_unit') + ')' } },
-                y1: { type: 'linear', position: 'right', beginAtZero: true, title: { display: true, text: 'Receipt count' }, grid: { drawOnChartArea: false } }
+          try {
+            chartInstances.dailyMetrics = new Chart(dailyMetricsCanvas, {
+              type: 'line',
+              data: {
+                labels: shortLabels,
+                datasets: [
+                  { label: 'Sales per hour (' + t('currency_unit') + ')', data: salesPerHour, borderColor: 'rgb(37, 99, 235)', backgroundColor: 'rgba(37, 99, 235, 0.1)', borderWidth: 2, fill: true, tension: 0.2, pointRadius: 4, yAxisID: 'y' },
+                  { label: 'Receipt count', data: receiptCounts, borderColor: 'rgb(34, 197, 94)', backgroundColor: 'rgba(34, 197, 94, 0.1)', borderWidth: 2, fill: false, tension: 0.2, pointRadius: 4, yAxisID: 'y1' }
+                ]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { position: 'top' } },
+                scales: {
+                  x: { title: { display: true, text: t('date_label') } },
+                  y: { type: 'linear', position: 'left', beginAtZero: true, title: { display: true, text: 'Sales per hour (' + t('currency_unit') + ')' } },
+                  y1: { type: 'linear', position: 'right', beginAtZero: true, title: { display: true, text: 'Receipt count' }, grid: { drawOnChartArea: false } }
+                }
               }
-            }
-          });
+            });
+          } catch (e) { try { console.error('[dailyMetrics chart]', e); } catch (_) {} }
         }
       }
-    }).then(function () { hideLoading(); }).catch(function () {
+    }).then(function () { hideLoading(); }).catch(function (err) {
+      // Log the actual error so field issues are diagnosable via DevTools
+      try { console.error('[renderDailySummary] failed:', err); } catch (e) { /* noop */ }
       container.innerHTML = '';
       if (emptyEl) { emptyEl.hidden = false; emptyEl.textContent = t('daily_load_failed'); }
       hideLoading();
