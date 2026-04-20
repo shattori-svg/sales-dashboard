@@ -2086,7 +2086,7 @@
     var endDateEl = document.getElementById('weekly-end-date');
     var endDate = endDateEl ? endDateEl.value : '';
     var numWeeksEl = document.getElementById('weekly-num-weeks');
-    var numWeeks = numWeeksEl ? Math.min(52, Math.max(2, parseInt(numWeeksEl.value, 10) || 4)) : 4;
+    var numWeeks = numWeeksEl ? Math.min(52, Math.max(4, parseInt(numWeeksEl.value, 10) || 4)) : 4;
     var daysToFetch = numWeeks * 7;
     var container = document.getElementById('weekly-summary-tables');
     var emptyEl = document.getElementById('weekly-empty');
