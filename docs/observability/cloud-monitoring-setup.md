@@ -1,6 +1,8 @@
 # Cloud Monitoring Setup
 
-GCP 側で一度だけ実施する設定手順。コードで提供するエンドポイント (`/healthz` `/readyz` `/api/health/freshness`) と構造化ログ (`jsonPayload.event`) を利用する。
+GCP 側で一度だけ実施する設定手順。コードで提供するエンドポイント (`/livez` `/readyz` `/api/health/freshness`) と構造化ログ (`jsonPayload.event`) を利用する。
+
+> **注意**: ライブネス用エンドポイントは `/livez` を使う。`/healthz` は Cloud Run の `*.run.app` フロントエンド (GFE) によって内部的に予約されており、外部からリクエストすると GFE レベルで 404 が返ってコンテナまで届かない。`/healthz` はアプリ内部では `/livez` と同じく 200 を返すが、Uptime Check/外部ヘルスチェックには必ず `/livez` を指定すること。
 
 ## 推奨ルート
 
@@ -48,17 +50,17 @@ export CHANNEL=<上記 name の値>
 
 ## 2. Uptime Check（サーバー失活監視）
 
-- ライブネス（`/healthz`）— プロセス死活
+- ライブネス（`/livez`）— プロセス死活
 - データ未着（`/api/health/freshness`）— 直近アップロードが閾値を超えたら 503 を返すので、同じ機構で検知できる
 
 Console での作成が簡単（`Monitoring → Uptime checks → Create`）。CLI でやる場合:
 
 ```bash
-# /healthz: 1分おき、3地域から
-gcloud monitoring uptime create "sales-dashboard-healthz" \
+# /livez: 1分おき、3地域から
+gcloud monitoring uptime create "sales-dashboard-livez" \
   --resource-type=uptime-url \
   --resource-labels=host=${SERVICE_URL#https://},project_id=$PROJECT_ID \
-  --path="/healthz" \
+  --path="/livez" \
   --period=1 \
   --timeout=10
 
@@ -150,9 +152,9 @@ gcloud logging metrics create upload_failed_count \
 
 ### 4-5. Uptime Check 失敗（要件1: サーバー失活）
 
-- Metric の代わりに **Select a resource → Uptime check** から `sales-dashboard-healthz` を選択
+- Metric の代わりに **Select a resource → Uptime check** から `sales-dashboard-livez` を選択
 - Condition: `Any uptime check for this resource is failing`
-- Policy name: `[CRIT] /healthz down`
+- Policy name: `[CRIT] /livez down`
 - Section 2 の Uptime Check 一覧画面から「Create alerting policy」で作るのが最短
 
 ### 4-6. CPU使用率（要件5）
@@ -240,7 +242,7 @@ gcloud run services update $SERVICE --region=$REGION \
 ### デプロイ直後
 
 ```bash
-curl -sSf "$SERVICE_URL/healthz"
+curl -sSf "$SERVICE_URL/livez"
 # → {"ok":true}
 
 curl -sS "$SERVICE_URL/readyz"

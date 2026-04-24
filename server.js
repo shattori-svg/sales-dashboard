@@ -246,7 +246,7 @@ function startExchangeRateScheduler() {
 app.use(pinoHttp({
   logger,
   autoLogging: {
-    ignore: (req) => req.url === '/healthz' || req.url === '/readyz' || req.url === '/health',
+    ignore: (req) => req.url === '/livez' || req.url === '/healthz' || req.url === '/readyz' || req.url === '/health',
   },
   customLogLevel: (req, res, err) => {
     if (err || res.statusCode >= 500) return 'error';
@@ -355,10 +355,15 @@ function requireAdmin(req, res, next) {
 }
 
 // Liveness: the process can respond. Cheap, no external deps.
+// Path is /livez (not /healthz) because the Cloud Run `*.run.app` frontend
+// appears to reserve /healthz internally and returns 404 before it reaches the container.
+app.get('/livez', (req, res) => {
+  res.status(200).json({ ok: true });
+});
+// Backcompat aliases.
 app.get('/healthz', (req, res) => {
   res.status(200).json({ ok: true });
 });
-// Backcompat alias.
 app.get('/health', (req, res) => {
   res.status(200).json({ ok: true });
 });

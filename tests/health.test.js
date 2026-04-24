@@ -20,7 +20,13 @@ const request = require('supertest');
 const app = require('../server');
 
 describe('health endpoints', () => {
-  test('GET /healthz returns 200', async () => {
+  test('GET /livez returns 200', async () => {
+    const res = await request(app).get('/livez');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+  });
+
+  test('GET /healthz (alias) returns 200', async () => {
     const res = await request(app).get('/healthz');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ ok: true });
