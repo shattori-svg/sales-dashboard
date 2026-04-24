@@ -11,7 +11,19 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const bcrypt = require('bcrypt');
+const pinoHttp = require('pino-http');
+const logger = require('./logger');
 const { parseSheet, parseCsv, parseItemSalesExcel, parseProductMasterExcel, parseClassificationExcel } = require('./parser');
+
+// Crash fuses — log before the process exits so Cloud Logging captures the stack.
+process.on('uncaughtException', (err) => {
+  logger.fatal({ event: 'uncaughtException', err, stack: err && err.stack }, 'uncaughtException');
+  // Give the logger a moment to flush before exiting.
+  setTimeout(() => process.exit(1), 500).unref();
+});
+process.on('unhandledRejection', (reason) => {
+  logger.fatal({ event: 'unhandledRejection', reason: reason && (reason.stack || reason.message || reason) }, 'unhandledRejection');
+});
 const DB_PROVIDER = String(process.env.DB_PROVIDER || 'supabase').trim().toLowerCase();
 const hasSupabaseConfig = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 const hasPostgresConfig = !!process.env.DATABASE_URL;
@@ -19,7 +31,7 @@ let db;
 let activeDatabaseLabel;
 if (DB_PROVIDER === 'postgres') {
   if (!hasPostgresConfig) {
-    console.warn('DB_PROVIDER=postgres requires DATABASE_URL. Falling back to SQLite.');
+    logger.warn({ event: 'db_config_fallback', provider: 'postgres', reason: 'DATABASE_URL missing' }, 'DB_PROVIDER=postgres requires DATABASE_URL. Falling back to SQLite.');
     db = require('./db');
     activeDatabaseLabel = 'SQLite (data/sales.db) [fallback]';
   } else {
@@ -28,7 +40,7 @@ if (DB_PROVIDER === 'postgres') {
   }
 } else if (DB_PROVIDER === 'supabase') {
   if (!hasSupabaseConfig) {
-    console.warn('DB_PROVIDER=supabase requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. Falling back to SQLite.');
+    logger.warn({ event: 'db_config_fallback', provider: 'supabase', reason: 'SUPABASE_URL/KEY missing' }, 'DB_PROVIDER=supabase requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY. Falling back to SQLite.');
     db = require('./db');
     activeDatabaseLabel = 'SQLite (data/sales.db) [fallback]';
   } else {
@@ -39,7 +51,7 @@ if (DB_PROVIDER === 'postgres') {
   db = require('./db');
   activeDatabaseLabel = 'SQLite (data/sales.db)';
 } else {
-  console.warn('Unsupported DB_PROVIDER: ' + DB_PROVIDER + '. Falling back to SQLite.');
+  logger.warn({ event: 'db_config_fallback', provider: DB_PROVIDER, reason: 'unsupported' }, 'Unsupported DB_PROVIDER: ' + DB_PROVIDER + '. Falling back to SQLite.');
   db = require('./db');
   activeDatabaseLabel = 'SQLite (data/sales.db) [fallback]';
 }
@@ -198,9 +210,9 @@ async function refreshExchangeRateFromFrankfurter(reason) {
       throw new Error('Invalid FX rate from Frankfurter');
     }
     await saveExchangeRate(rate);
-    console.log(`[FX] Updated ${FX_FROM}->${FX_TO}=${rate} (${reason})`);
+    logger.info({ event: 'fx_updated', from: FX_FROM, to: FX_TO, rate, reason }, `[FX] Updated ${FX_FROM}->${FX_TO}=${rate} (${reason})`);
   } catch (err) {
-    console.error('[FX] Update failed:', err.message || err);
+    logger.error({ event: 'fx_update_failed', err }, '[FX] Update failed');
   } finally {
     fxRefreshInFlight = false;
   }
@@ -209,14 +221,14 @@ async function refreshExchangeRateFromFrankfurter(reason) {
 function startExchangeRateScheduler() {
   const enabled = toBool(process.env.EXCHANGE_RATE_AUTO_UPDATE, true);
   if (!enabled) {
-    console.log('[FX] Auto update disabled (EXCHANGE_RATE_AUTO_UPDATE=false)');
+    logger.info({ event: 'fx_auto_disabled' }, '[FX] Auto update disabled (EXCHANGE_RATE_AUTO_UPDATE=false)');
     return;
   }
   const dailyHour = Math.max(0, Math.min(23, parseInt(process.env.EXCHANGE_RATE_DAILY_HOUR || '0', 10) || 0));
   const dailyMinute = Math.max(0, Math.min(59, parseInt(process.env.EXCHANGE_RATE_DAILY_MINUTE || '5', 10) || 5));
   const checkIntervalMs = Math.max(60 * 1000, parseInt(process.env.EXCHANGE_RATE_CHECK_INTERVAL_MS || String(5 * 60 * 1000), 10) || (5 * 60 * 1000));
 
-  console.log(`[FX] Scheduler ON (${FX_TIMEZONE} ${String(dailyHour).padStart(2, '0')}:${String(dailyMinute).padStart(2, '0')})`);
+  logger.info({ event: 'fx_scheduler_on', timezone: FX_TIMEZONE, dailyHour, dailyMinute }, `[FX] Scheduler ON (${FX_TIMEZONE} ${String(dailyHour).padStart(2, '0')}:${String(dailyMinute).padStart(2, '0')})`);
   refreshExchangeRateFromFrankfurter('startup');
 
   setInterval(() => {
@@ -228,6 +240,31 @@ function startExchangeRateScheduler() {
     }
   }, checkIntervalMs);
 }
+
+// Structured access log + per-request logger injected as req.log.
+// Health endpoints are excluded to avoid flooding the log with Cloud Run / uptime probes.
+app.use(pinoHttp({
+  logger,
+  autoLogging: {
+    ignore: (req) => req.url === '/healthz' || req.url === '/readyz' || req.url === '/health',
+  },
+  customLogLevel: (req, res, err) => {
+    if (err || res.statusCode >= 500) return 'error';
+    if (res.statusCode >= 400) return 'warn';
+    return 'info';
+  },
+  customProps: () => ({ event: 'http' }),
+  serializers: {
+    req(req) {
+      return {
+        id: req.id,
+        method: req.method,
+        url: req.url,
+        remoteAddress: req.remoteAddress,
+      };
+    },
+  },
+}));
 
 app.use(compression());
 app.use(express.json());
@@ -302,7 +339,7 @@ function requireAuth(req, res, next) {
       return EXTERNAL_AUTH_MODE ? sendRedirectToEntra(res) : sendLoginRequired(res);
     })
     .catch((err) => {
-      console.error(err);
+      (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
       res.status(500).json({ error: 'Server error' });
     });
 }
@@ -317,8 +354,65 @@ function requireAdmin(req, res, next) {
   res.redirect('/');
 }
 
+// Liveness: the process can respond. Cheap, no external deps.
+app.get('/healthz', (req, res) => {
+  res.status(200).json({ ok: true });
+});
+// Backcompat alias.
 app.get('/health', (req, res) => {
   res.status(200).json({ ok: true });
+});
+
+// Readiness: the process can serve traffic (DB reachable).
+app.get('/readyz', async (req, res) => {
+  try {
+    await getAvailableDates('default');
+    res.status(200).json({ ok: true, db: activeDatabaseLabel });
+  } catch (err) {
+    logger.error({ event: 'readyz_failed', err }, 'readyz probe failed');
+    res.status(503).json({ ok: false, error: err && err.message || 'db unavailable' });
+  }
+});
+
+// Data freshness: alert when the latest sales upload is older than STALE_THRESHOLD_SECONDS.
+// Returns HTTP 503 when stale so a Cloud Monitoring uptime-check can fire an alert.
+const FRESHNESS_STALE_SECONDS = Number(process.env.STALE_THRESHOLD_SECONDS) || 7200; // default 2h
+app.get('/api/health/freshness', async (req, res) => {
+  try {
+    const rows = await getUploadLog(1);
+    if (!rows || rows.length === 0) {
+      logger.warn({ event: 'freshness_no_data' }, 'freshness probe: no uploads found');
+      return res.status(503).json({ ok: false, stale: true, reason: 'no_uploads', thresholdSeconds: FRESHNESS_STALE_SECONDS });
+    }
+    const latest = rows[0];
+    const raw = String(latest.receivedAt || '');
+    // SQLite returns "YYYY-MM-DD HH:mm:ss" (UTC) without 'T'/'Z'; Supabase/PG return ISO.
+    const iso = raw.indexOf('T') === -1 ? raw.replace(' ', 'T') + 'Z' : raw;
+    const latestMs = Date.parse(iso);
+    if (!Number.isFinite(latestMs)) {
+      logger.error({ event: 'freshness_parse_failed', raw }, 'could not parse latest upload timestamp');
+      return res.status(500).json({ ok: false, error: 'could not parse latest upload timestamp', raw });
+    }
+    const ageSeconds = Math.floor((Date.now() - latestMs) / 1000);
+    const stale = ageSeconds > FRESHNESS_STALE_SECONDS;
+    const body = {
+      ok: !stale,
+      stale,
+      latestUploadAt: new Date(latestMs).toISOString(),
+      ageSeconds,
+      thresholdSeconds: FRESHNESS_STALE_SECONDS,
+      storeId: latest.storeId,
+      businessDate: latest.businessDate,
+    };
+    if (stale) {
+      logger.warn({ event: 'data_stale', ...body }, 'sales data is stale');
+      return res.status(503).json(body);
+    }
+    res.status(200).json(body);
+  } catch (err) {
+    logger.error({ event: 'freshness_check_failed', err }, 'freshness probe failed');
+    res.status(500).json({ ok: false, error: err && err.message || 'freshness check failed' });
+  }
 });
 
 app.get('/api/changelog', (req, res) => {
@@ -418,7 +512,7 @@ app.get('/auth/callback', async (req, res) => {
     });
     res.redirect('/');
   } catch (err) {
-    console.error('Entra callback error:', err);
+    logger.error({ event: 'auth_failed', kind: 'entra_callback', err }, 'entra callback error');
     return res.redirect('/login?error=auth_failed');
   }
 });
@@ -432,9 +526,15 @@ app.post('/login', (req, res) => {
   if (!username || !password) return res.redirect('/login?error=1');
   getUserByUsername(username)
     .then((user) => {
-      if (!user) return res.redirect('/login?error=1');
+      if (!user) {
+        logger.warn({ event: 'auth_failed', reason: 'unknown_user', username }, 'login failed: unknown user');
+        return res.redirect('/login?error=1');
+      }
       return bcrypt.compare(password, user.password_hash).then((ok) => {
-        if (!ok) return res.redirect('/login?error=1');
+        if (!ok) {
+          logger.warn({ event: 'auth_failed', reason: 'bad_password', username }, 'login failed: bad password');
+          return res.redirect('/login?error=1');
+        }
         updateLastLogin(user.id).catch(() => {});
         setJwtCookie(res, {
           loggedIn: true,
@@ -448,7 +548,7 @@ app.post('/login', (req, res) => {
       });
     })
     .catch((err) => {
-      console.error(err);
+      logger.error({ event: 'auth_failed', reason: 'exception', err }, 'login error');
       res.redirect('/login?error=1');
     });
 });
@@ -575,7 +675,7 @@ app.put('/api/me/preferences', async (req, res) => {
     setJwtCookie(res, Object.assign({}, req.jwtUser, { needsProfileSetup: false }));
     return res.json({ ok: true });
   } catch (err) {
-    console.error('Update preferences error:', err);
+    (req.log || logger).error({ event: 'handler_error', kind: 'preferences_update', err }, 'update preferences error');
     return res.status(500).json({ error: err.message || 'Failed to save preferences' });
   }
 });
@@ -605,7 +705,7 @@ app.post('/api/bootstrap-admin', async (req, res) => {
     if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || (err && err.message && err.message.includes('unique'))) {
       return res.status(400).json({ error: 'Username already exists' });
     }
-    console.error(err);
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to create admin' });
   }
 });
@@ -641,7 +741,7 @@ app.get('/api/stores', async (req, res) => {
       exchangeRateUpdatedAt: exchange.updated_at,
     });
   } catch (err) {
-    console.error(err);
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to get stores.' });
   }
 });
@@ -669,7 +769,7 @@ app.put('/api/stores', requireAdmin, async (req, res) => {
       exchangeRateUpdatedAt: exchange.updated_at,
     });
   } catch (err) {
-    console.error(err);
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to save stores.' });
   }
 });
@@ -680,7 +780,7 @@ app.get('/api/business-hours', async (req, res) => {
     const settings = await getBusinessHours(storeId);
     res.json(settings);
   } catch (err) {
-    console.error(err);
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to get business hours.' });
   }
 });
@@ -703,7 +803,7 @@ app.put('/api/business-hours', requireAdmin, async (req, res) => {
     await saveBusinessHours(normalized, storeId);
     res.json(normalized);
   } catch (err) {
-    console.error(err);
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to save business hours.' });
   }
 });
@@ -714,7 +814,7 @@ app.get('/api/dates', async (req, res) => {
     const dates = await getAvailableDates(storeId);
     res.json({ dates });
   } catch (err) {
-    console.error(err);
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to get dates.' });
   }
 });
@@ -725,7 +825,7 @@ app.get('/api/upload-log', requireAdmin, async (req, res) => {
     const logs = await getUploadLog(limit);
     res.json({ logs });
   } catch (err) {
-    console.error(err);
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to get upload log.' });
   }
 });
@@ -831,7 +931,7 @@ app.get('/api/daily-summary', async (req, res) => {
     }
     res.json({ days: summaries });
   } catch (err) {
-    console.error(err);
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to get daily summary.' });
   }
 });
@@ -856,7 +956,7 @@ app.get('/api/report', async (req, res) => {
     }
     res.json({ today, yesterday: yesterday || null, lastWeek: lastWeek || null, referenceDate: date });
   } catch (err) {
-    console.error(err);
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to get report.' });
   }
 });
@@ -881,7 +981,7 @@ app.get('/api/ai/analyze', async (req, res) => {
     res.json({ ok: true, text });
   } catch (err) {
     const msg = err && err.message ? err.message : 'Unknown error';
-    console.error('AI analyze error:', msg);
+    (req.log || logger).error({ event: 'ai_error', kind: 'analyze', err }, 'AI analyze error');
     if (msg === 'NO_DATA') return res.status(404).json({ ok: false, error: 'NO_DATA' });
     res.status(500).json({ ok: false, error: msg });
   }
@@ -903,7 +1003,7 @@ app.get('/api/ai/forecast', async (req, res) => {
     res.json({ ok: true, text });
   } catch (err) {
     const msg = err && err.message ? err.message : 'Unknown error';
-    console.error('AI forecast error:', msg);
+    (req.log || logger).error({ event: 'ai_error', kind: 'forecast', err }, 'AI forecast error');
     if (msg === 'NO_DATA') return res.status(404).json({ ok: false, error: 'NO_DATA' });
     res.status(500).json({ ok: false, error: msg });
   }
@@ -926,7 +1026,7 @@ app.get('/api/ai/today', async (req, res) => {
     res.json({ ok: true, text });
   } catch (err) {
     const msg = err && err.message ? err.message : 'Unknown error';
-    console.error('AI today insight error:', msg);
+    (req.log || logger).error({ event: 'ai_error', kind: 'today_insight', err }, 'AI today insight error');
     if (msg === 'NO_DATA') return res.status(404).json({ ok: false, error: 'NO_DATA' });
     res.status(500).json({ ok: false, error: msg });
   }
@@ -970,7 +1070,7 @@ app.get('/api/ai/hourly-forecast', async (req, res) => {
     res.json(data);
   } catch (err) {
     const msg = err && err.message ? err.message : 'Unknown error';
-    console.error('AI hourly-forecast error:', msg);
+    (req.log || logger).error({ event: 'ai_error', kind: 'hourly_forecast', err }, 'AI hourly-forecast error');
     if (msg === 'NO_DATA') return res.status(404).json({ error: 'NO_DATA' });
     res.status(500).json({ error: msg });
   }
@@ -998,7 +1098,7 @@ async function handleUpload(req, res, isFinal) {
         }
       } catch (parseErr) {
         const msg = parseErr && (parseErr.message || String(parseErr));
-        console.error('Parse error for file:', f.originalname || 'unknown', msg, parseErr && parseErr.stack);
+        (req.log || logger).error({ event: 'parse_failed', fileName: f.originalname || 'unknown', err: parseErr }, 'parse error');
         return res.status(400).json({
           error: (isCsv ? 'Failed to parse CSV: ' : 'Failed to parse Excel: ') + (msg || 'Invalid or unsupported file.'),
         });
@@ -1042,7 +1142,7 @@ async function handleUpload(req, res, isFinal) {
         } catch (_) {}
       }
       await saveReport(businessDate, data, storeId, isFinal);
-      console.log('Saved to DB:', storeId, businessDate, isFinal ? '(final)' : '(provisional)');
+      (req.log || logger).info({ event: 'upload_saved', storeId, businessDate, isFinal: !!isFinal }, 'report saved');
     }
 
     if (isFinal) {
@@ -1079,9 +1179,7 @@ async function handleUpload(req, res, isFinal) {
     res.json({ today, yesterday, lastWeek, referenceDate: refDateStr, savedDates, storeId: refStoreId });
   } catch (err) {
     const msg = err && (err.message || String(err));
-    const stack = err && err.stack;
-    console.error('Upload error:', msg);
-    if (stack) console.error(stack);
+    (req.log || logger).error({ event: 'upload_failed', err, stack: err && err.stack }, 'upload failed');
     res.status(500).json({ error: 'Error processing files: ' + (msg || 'Unknown error') });
   }
 }
@@ -1134,7 +1232,7 @@ app.post('/api/upload/item-sales', requireAdmin, upload.single('file'), async (r
     }
 
     await saveReport(businessDate, merged, storeId, false);
-    console.log('Item Sales imported:', storeId, businessDate, Object.keys(itemSalesData.byProduct).length, 'products');
+    (req.log || logger).info({ event: 'item_sales_imported', storeId, businessDate, productCount: Object.keys(itemSalesData.byProduct).length }, 'Item Sales imported');
 
     const savedDates = await getAvailableDates(storeId);
     res.json({
@@ -1146,7 +1244,7 @@ app.post('/api/upload/item-sales', requireAdmin, upload.single('file'), async (r
     });
   } catch (err) {
     const msg = err && (err.message || String(err));
-    console.error('Item Sales upload error:', msg);
+    (req.log || logger).error({ event: 'upload_failed', kind: 'item_sales', err }, 'item sales upload error');
     res.status(500).json({ error: 'Error processing Item Sales file: ' + (msg || 'Unknown error') });
   }
 });
@@ -1221,13 +1319,13 @@ app.post('/api/upload/item-sales-json', requireAdmin, express.json({ limit: '5mb
     }
 
     await saveReport(bDate, merged, storeId, false);
-    console.log('Item Sales (JSON) imported:', storeId, bDate, Object.keys(byProduct).length, 'products');
+    (req.log || logger).info({ event: 'item_sales_imported', kind: 'json', storeId, businessDate: bDate, productCount: Object.keys(byProduct).length }, 'Item Sales (JSON) imported');
 
     const savedDates = await getAvailableDates(storeId);
     res.json({ ok: true, storeId, businessDate: bDate, productCount: Object.keys(byProduct).length, savedDates });
   } catch (err) {
     const msg = err && (err.message || String(err));
-    console.error('Item Sales JSON upload error:', msg);
+    (req.log || logger).error({ event: 'upload_failed', kind: 'item_sales_json', err }, 'item sales JSON upload error');
     res.status(500).json({ error: 'Error processing Item Sales JSON: ' + (msg || 'Unknown error') });
   }
 });
@@ -1393,7 +1491,7 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buf);
   } catch (err) {
-    console.error('products/export error:', err);
+    (req.log || logger).error({ event: 'export_failed', kind: 'products', err }, 'products export error');
     res.status(500).json({ error: err && err.message || 'Server error' });
   }
 });
@@ -1415,11 +1513,11 @@ app.post('/api/product-master/import', requireAdmin, upload.single('file'), asyn
     }
     await saveProductMaster(master);
     const count = Object.keys(master).length;
-    console.log('Product master imported:', count, 'items');
+    (req.log || logger).info({ event: 'product_master_imported', count }, 'Product master imported');
     res.json({ ok: true, count });
   } catch (err) {
     const msg = err && (err.message || String(err));
-    console.error('Product master import error:', msg);
+    (req.log || logger).error({ event: 'import_failed', kind: 'product_master', err }, 'product master import error');
     res.status(500).json({ error: 'Error processing product master: ' + (msg || 'Unknown error') });
   }
 });
@@ -1446,14 +1544,14 @@ app.post('/api/product-groups/import', requireAdmin, upload.single('file'), asyn
       // Excel: auto-detect Retail Class / Divisions / Item Categories / Product Groups
       const parsed = parseClassificationExcel(file.buffer);
       if (!parsed) {
-        console.error('parseClassificationExcel returned null for file:', file.originalname, 'size:', file.buffer.length);
+        (req.log || logger).error({ event: 'parse_failed', kind: 'classification', fileName: file.originalname, size: file.buffer.length }, 'parseClassificationExcel returned null');
         return res.status(400).json({ error: 'Excelの解析に失敗しました。対応ファイル: Retail Class List / Divisions / Retail Item Categories / Retail Product Groups (LS-Central エクスポート)' });
       }
       if (parsed.empty || parsed.rows.length === 0) {
         return res.status(400).json({ error: `データ行がありません。LS-Centralで "${file.originalname}" をエクスポートする際にデータが含まれているか確認してください。` });
       }
       rows = parsed.rows;
-      console.log(`Product groups imported from Excel (level ${parsed.level}):`, rows.length, 'rows');
+      (req.log || logger).info({ event: 'product_groups_imported', source: 'excel', level: parsed.level, rowCount: rows.length }, 'Product groups imported from Excel');
     } else {
       // CSV with columns: product_group_code, description, description_tha, description_jpn, parent_code, level
       const text = file.buffer.toString('utf8').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -1485,13 +1583,13 @@ app.post('/api/product-groups/import', requireAdmin, upload.single('file'), asyn
         });
       }
       if (rows.length === 0) return res.status(400).json({ error: 'No valid rows found in CSV.' });
-      console.log('Product groups imported from CSV:', rows.length, 'rows');
+      (req.log || logger).info({ event: 'product_groups_imported', source: 'csv', rowCount: rows.length }, 'Product groups imported from CSV');
     }
 
     await saveProductGroups(rows);
     res.json({ ok: true, count: rows.length });
   } catch (err) {
-    console.error('Product groups import error:', err);
+    (req.log || logger).error({ event: 'import_failed', kind: 'product_groups', err }, 'product groups import error');
     res.status(500).json({ error: err.message || 'Import failed' });
   }
 });
@@ -1502,7 +1600,7 @@ app.get('/api/users', requireAdmin, async (req, res) => {
     const users = await getUsers();
     res.json({ users });
   } catch (err) {
-    console.error(err);
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to get users.' });
   }
 });
@@ -1541,7 +1639,7 @@ app.post('/api/users', requireAdmin, async (req, res) => {
     if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || (err && err.message && err.message.includes('unique'))) {
       return res.status(400).json({ error: 'Username already exists.' });
     }
-    console.error(err);
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to create user.' });
   }
 });
@@ -1597,7 +1695,7 @@ app.put('/api/users/:id', requireAdmin, async (req, res) => {
     if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || (err && err.message && err.message.includes('unique'))) {
       return res.status(400).json({ error: 'Username already exists.' });
     }
-    console.error(err);
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to update user.' });
   }
 });
@@ -1616,13 +1714,27 @@ app.delete('/api/users/:id', requireAdmin, async (req, res) => {
     await deleteUser(id);
     res.status(204).send();
   } catch (err) {
-    console.error(err);
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to delete user.' });
   }
 });
 
-app.listen(PORT, () => {
-  console.log('Sales Reports server: http://localhost:' + PORT);
-  console.log('Database: ' + activeDatabaseLabel);
-  startExchangeRateScheduler();
+// Global error handler — last in the middleware chain.
+// Any thrown/next(err) in a route ends up here with a structured log entry.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  const log = req.log || logger;
+  log.error({ event: 'unhandled_express_error', err, stack: err && err.stack, path: req.path, method: req.method }, 'unhandled express error');
+  if (res.headersSent) return;
+  res.status(err && err.status ? err.status : 500).json({ error: 'internal_error' });
 });
+
+// Only bind the port when invoked directly (not when required by tests).
+if (require.main === module) {
+  app.listen(PORT, () => {
+    logger.info({ event: 'server_started', port: PORT, db: activeDatabaseLabel }, 'Sales Reports server listening');
+    startExchangeRateScheduler();
+  });
+}
+
+module.exports = app;

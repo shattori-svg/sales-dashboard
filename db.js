@@ -99,7 +99,8 @@ db.exec(`
       ALTER TABLE reports_new RENAME TO reports;
     `);
   } catch (e) {
-    console.error('Migration reports:', e);
+    const logger = require('./logger');
+    logger.error({ event: 'db_error', kind: 'migration', provider: 'sqlite', err: e }, 'Migration reports failed');
   }
 })();
 
