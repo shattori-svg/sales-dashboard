@@ -511,10 +511,19 @@ function parseCsv(buffer) {
 
 /**
  * Parse LS-Central product master Excel (Item list export).
- * Returns a map of { [itemNo]: { barcodeNo, nameEng, nameTha, nameJpn, deptCode } }, or null.
+ * Returns a map of { [itemNo]: { barcodeNo, nameEng/Tha/Jpn, deptCode, groupCode,
+ *   brandEng/Tha/Jpn, sizeSpecEng/Tha/Jpn,
+ *   vendorNo, unitCost, unitPrice } }, or null.
  *
- * Expected header columns: Department Code, Barcode No., Item No.,
- *   Description (ENG), Description (THA), Description (JPN)
+ * Expected header columns (subset of the LS-Central 50-column Item export):
+ *   Department Code, Barcode No., Item No., Description (ENG/THA/JPN),
+ *   Brand (ENG/THA/JPN), Size Specification (ENG/THA/JPN),
+ *   Vendor No. (default), Unit Cost (default), Unit Price (default),
+ *   Retail/Product Group Code
+ *
+ * Note: 発注入数 (order pack size) is intentionally not extracted — LS-Central's
+ * Item master does not expose it as a discrete column; pack notation appears
+ * only embedded in the description text (e.g. "(1x16x10)").
  *
  * @param {Buffer} buffer Excel file buffer
  * @returns {object|null}
@@ -556,6 +565,15 @@ function parseProductMasterExcel(buffer) {
         else if (c === 'description (tha)') colMap.nameTha = idx;
         else if (c === 'description (jpn)') colMap.nameJpn = idx;
         else if (c === 'retail product group code' || c === 'product group code' || c === 'item group code' || c === 'retail product code') colMap.groupCode = idx;
+        else if (c === 'brand (eng)' || c === 'brand') colMap.brandEng = idx;
+        else if (c === 'brand (tha)') colMap.brandTha = idx;
+        else if (c === 'brand (jpn)') colMap.brandJpn = idx;
+        else if (c === 'size specification (eng)' || c === 'size specification' || c === 'size spec' || c === 'size spec (eng)') colMap.sizeSpecEng = idx;
+        else if (c === 'size specification (tha)' || c === 'size spec (tha)') colMap.sizeSpecTha = idx;
+        else if (c === 'size specification (jpn)' || c === 'size spec (jpn)') colMap.sizeSpecJpn = idx;
+        else if (c === 'vendor no. (default)' || c === 'vendor no (default)' || c === 'vendor no.' || c === 'vendor no') colMap.vendorNo = idx;
+        else if (c === 'unit cost (default)' || c === 'unit cost') colMap.unitCost = idx;
+        else if (c === 'unit price (default)' || c === 'unit price') colMap.unitPrice = idx;
       });
       break;
     }
@@ -563,19 +581,40 @@ function parseProductMasterExcel(buffer) {
 
   if (headerIdx < 0 || colMap.itemNo == null || colMap.barcodeNo == null) return null;
 
+  // Helper: read string cell, trim, default to ''
+  const s = (row, idx) => (idx != null && row[idx] != null ? String(row[idx]).trim() : '');
+  // Helper: read numeric cell. Returns null when missing/non-numeric so the
+  // caller can distinguish "no data" from a legitimate 0.
+  const n = (row, idx) => {
+    if (idx == null || row[idx] == null) return null;
+    const raw = String(row[idx]).replace(/,/g, '').trim();
+    if (raw === '') return null;
+    const v = Number(raw);
+    return Number.isFinite(v) ? v : null;
+  };
+
   const master = {};
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row) continue;
-    const itemNo = row[colMap.itemNo] != null ? String(row[colMap.itemNo]).trim() : '';
+    const itemNo = s(row, colMap.itemNo);
     if (!itemNo) continue;
     master[itemNo] = {
-      barcodeNo: colMap.barcodeNo != null && row[colMap.barcodeNo] != null ? String(row[colMap.barcodeNo]).trim() : '',
-      nameEng: colMap.nameEng != null && row[colMap.nameEng] != null ? String(row[colMap.nameEng]).trim() : '',
-      nameTha: colMap.nameTha != null && row[colMap.nameTha] != null ? String(row[colMap.nameTha]).trim() : '',
-      nameJpn: colMap.nameJpn != null && row[colMap.nameJpn] != null ? String(row[colMap.nameJpn]).trim() : '',
-      deptCode: colMap.deptCode != null && row[colMap.deptCode] != null ? String(row[colMap.deptCode]).trim() : '',
-      groupCode: colMap.groupCode != null && row[colMap.groupCode] != null ? String(row[colMap.groupCode]).trim() : '',
+      barcodeNo: s(row, colMap.barcodeNo),
+      nameEng: s(row, colMap.nameEng),
+      nameTha: s(row, colMap.nameTha),
+      nameJpn: s(row, colMap.nameJpn),
+      deptCode: s(row, colMap.deptCode),
+      groupCode: s(row, colMap.groupCode),
+      brandEng: s(row, colMap.brandEng),
+      brandTha: s(row, colMap.brandTha),
+      brandJpn: s(row, colMap.brandJpn),
+      sizeSpecEng: s(row, colMap.sizeSpecEng),
+      sizeSpecTha: s(row, colMap.sizeSpecTha),
+      sizeSpecJpn: s(row, colMap.sizeSpecJpn),
+      vendorNo: s(row, colMap.vendorNo),
+      unitCost: n(row, colMap.unitCost),
+      unitPrice: n(row, colMap.unitPrice),
     };
   }
 

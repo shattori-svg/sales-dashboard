@@ -583,15 +583,30 @@
     var tbody = document.getElementById('product-master-list-tbody');
     var countEl = document.getElementById('product-master-list-count');
     if (!tbody) return;
+    // Format numeric value: blank when null/undefined, locale string with up to 2 decimals otherwise.
+    function fmtNum(v) {
+      if (v == null || v === '') return '';
+      var n = Number(v);
+      if (!isFinite(n)) return '';
+      return n.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    }
     tbody.innerHTML = '';
     items.forEach(function (item) {
+      // Brand / size: prefer ENG, fall back to THA so Thai-only rows still show something.
+      var brand = item.brandEng || item.brandTha || '';
+      var sizeSpec = item.sizeSpecEng || item.sizeSpecTha || '';
       var tr = document.createElement('tr');
       tr.innerHTML =
         '<td>' + escapeHtml(item.itemNo) + '</td>' +
         '<td>' + escapeHtml(item.barcodeNo || '') + '</td>' +
+        '<td>' + escapeHtml(item.vendorNo || '') + '</td>' +
+        '<td>' + escapeHtml(brand) + '</td>' +
         '<td>' + escapeHtml(item.nameEng || '') + '</td>' +
-        '<td>' + escapeHtml(item.nameJpn || '') + '</td>' +
         '<td>' + escapeHtml(item.nameTha || '') + '</td>' +
+        '<td>' + escapeHtml(item.nameJpn || '') + '</td>' +
+        '<td>' + escapeHtml(sizeSpec) + '</td>' +
+        '<td class="num">' + escapeHtml(fmtNum(item.unitCost)) + '</td>' +
+        '<td class="num">' + escapeHtml(fmtNum(item.unitPrice)) + '</td>' +
         '<td>' + escapeHtml(item.deptCode || '') + '</td>' +
         '<td>' + escapeHtml(item.groupCode || '') + '</td>';
       tbody.appendChild(tr);

@@ -1468,11 +1468,27 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
 
     const grandTotal = products.reduce((s, p) => s + p.totalNetSales, 0);
 
-    const rows = [['Barcode', 'Retail Product Code', 'Group Name', 'Item Name', 'Department', 'Net Sales (THB, excl.VAT)', 'Gross Sales (THB, incl.VAT)', 'VAT Amount (THB)', 'Discount (THB)', 'Discount %', 'Qty Sold', 'Net Unit Price (THB)', 'Gross Unit Price (THB)', 'Share %']];
+    const rows = [[
+      'Barcode (JAN)', 'Item No.', 'Vendor No.', 'Brand',
+      'Item Name (ENG)', 'Item Name (THA)', 'Size Specification',
+      'Master Cost (THB)', 'Master Price (THB)',
+      'Retail Product Code', 'Group Name', 'Department',
+      'Net Sales (THB, excl.VAT)', 'Gross Sales (THB, incl.VAT)', 'VAT Amount (THB)',
+      'Discount (THB)', 'Discount %', 'Qty Sold',
+      'Net Unit Price (THB)', 'Gross Unit Price (THB)', 'Share %'
+    ]];
     products.forEach((p) => {
       const m = master[p.itemCode] || {};
       const barcode = m.barcodeNo || p.itemCode;
-      const name = m.nameEng || p.itemName || p.itemCode;
+      const nameEng = m.nameEng || p.itemName || p.itemCode;
+      const nameTha = m.nameTha || '';
+      // Brand: prefer ENG, fall back to THA so Thai-only rows still surface a value.
+      const brand = m.brandEng || m.brandTha || '';
+      const sizeSpec = m.sizeSpecEng || m.sizeSpecTha || '';
+      const vendorNo = m.vendorNo || '';
+      // Master cost/price: keep numeric when present, blank when unknown (so Excel shows empty cell instead of 0).
+      const masterCost = (m.unitCost != null) ? m.unitCost : '';
+      const masterPrice = (m.unitPrice != null) ? m.unitPrice : '';
       const qty = p.totalQuantitySold || 0;
       const net = p.totalNetSales || 0;
       const gross = p.totalGrossSales || (net + (p.discountAmount || 0));
@@ -1483,12 +1499,29 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
       const netUnitPrice = qty > 0 ? Math.round(net / qty) : '';
       const grossUnitPrice = qty > 0 ? Math.round(gross / qty) : '';
       const share = grandTotal > 0 ? parseFloat((net / grandTotal * 100).toFixed(2)) : 0;
-      rows.push([barcode, p.retailProductCode, getGroupName(p.retailProductCode), name, p.departmentName, net, gross, vat, discount, discountRate, qty, netUnitPrice, grossUnitPrice, share]);
+      rows.push([
+        barcode, p.itemCode, vendorNo, brand,
+        nameEng, nameTha, sizeSpec,
+        masterCost, masterPrice,
+        p.retailProductCode, getGroupName(p.retailProductCode), p.departmentName,
+        net, gross, vat,
+        discount, discountRate, qty,
+        netUnitPrice, grossUnitPrice, share
+      ]);
     });
 
     const wb = XLSX.utils.book_new();
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{ wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 30 }, { wch: 40 }, { wch: 18 }, { wch: 22 }, { wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 18 }, { wch: 10 }];
+    // Column widths follow header order above.
+    ws['!cols'] = [
+      { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 18 },                 // Barcode, Item No., Vendor No., Brand
+      { wch: 36 }, { wch: 36 }, { wch: 18 },                              // Name ENG, Name THA, Size Spec
+      { wch: 14 }, { wch: 14 },                                            // Master Cost, Master Price
+      { wch: 20 }, { wch: 18 }, { wch: 18 },                              // Retail Code, Group, Dept
+      { wch: 20 }, { wch: 22 }, { wch: 16 },                              // Net, Gross, VAT
+      { wch: 14 }, { wch: 12 }, { wch: 10 },                              // Discount, Disc%, Qty
+      { wch: 16 }, { wch: 18 }, { wch: 10 },                              // Net Unit, Gross Unit, Share%
+    ];
     XLSX.utils.book_append_sheet(wb, ws, 'Products');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     const filename = `products_${dateFrom}${suffix}.xlsx`;
