@@ -1335,6 +1335,56 @@ app.post('/api/upload/item-sales-json', requireAdmin, express.json({ limit: '5mb
   }
 });
 
+// Item cost (COGS) upload — merges actual cost amounts from BC value entries
+// into an existing report's byProduct. Value entries only exist after LS Central
+// statement posting (end of day), so the feed runs the morning after businessDate.
+// Body: { businessDate: "YYYY-MM-DD", storeId: "...", costs: { "itemCode": cogsTHB, ... } }
+app.post('/api/upload/item-costs', requireAdmin, express.json({ limit: '5mb' }), async (req, res) => {
+  try {
+    const { businessDate, storeId: rawStoreId, costs } = req.body || {};
+    if (!businessDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(businessDate).trim())) {
+      return res.status(400).json({ error: 'businessDate (YYYY-MM-DD) is required.' });
+    }
+    if (!costs || typeof costs !== 'object' || Array.isArray(costs) || Object.keys(costs).length === 0) {
+      return res.status(400).json({ error: 'costs object is required and must not be empty.' });
+    }
+    const storeId = (rawStoreId ? String(rawStoreId).trim() : '') || 'default';
+    const bDate = String(businessDate).trim();
+
+    let existing = null;
+    try { existing = await getReport(bDate, storeId); } catch (_) {}
+    if (!existing || !existing.byProduct || Object.keys(existing.byProduct).length === 0) {
+      return res.status(404).json({ error: `No report with item sales found for ${bDate} / ${storeId}. Upload item sales first.` });
+    }
+
+    let matched = 0;
+    let unmatched = 0;
+    for (const [itemCode, raw] of Object.entries(costs)) {
+      const cost = Number(raw);
+      if (!Number.isFinite(cost)) continue;
+      const p = existing.byProduct[itemCode];
+      if (p) {
+        p.costAmount = cost;
+        matched++;
+      } else {
+        unmatched++;
+      }
+    }
+
+    // Preserve the finalized flag; only the report payload changes.
+    const isFinal = !!existing._isFinal;
+    const merged = Object.assign({}, existing, { _updatedAt: undefined, _isFinal: undefined });
+    await saveReport(bDate, merged, storeId, isFinal);
+    (req.log || logger).info({ event: 'item_costs_imported', storeId, businessDate: bDate, matched, unmatched }, 'Item costs imported');
+
+    res.json({ ok: true, storeId, businessDate: bDate, matched, unmatched });
+  } catch (err) {
+    const msg = err && (err.message || String(err));
+    (req.log || logger).error({ event: 'upload_failed', kind: 'item_costs', err }, 'item costs upload error');
+    res.status(500).json({ error: 'Error processing item costs: ' + (msg || 'Unknown error') });
+  }
+});
+
 app.get('/api/product-master', async (req, res) => {
   try {
     const master = await getProductMaster();
@@ -1452,6 +1502,7 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
             totalQuantitySold: 0,
             discountAmount: 0,
             vatAmount: 0,
+            costAmount: 0,
           };
         }
         merged[itemCode].totalNetSales += Number(p.totalNetSales) || 0;
@@ -1459,6 +1510,7 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
         merged[itemCode].totalQuantitySold += Number(p.totalQuantitySold) || 0;
         merged[itemCode].discountAmount += Number(p.totalDiscountAmount) || 0;
         merged[itemCode].vatAmount += Number(p.totalVatAmount) || 0;
+        merged[itemCode].costAmount += Number(p.costAmount) || 0;
       });
     });
 
@@ -1474,6 +1526,7 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
       'Master Cost (THB)', 'Master Price (THB)',
       'Retail Product Code', 'Group Name', 'Department',
       'Net Sales (THB, excl.VAT)', 'Gross Sales (THB, incl.VAT)', 'VAT Amount (THB)',
+      'COGS (THB)', 'Gross Profit (THB)', 'Gross Margin %',
       'Discount (THB)', 'Discount %', 'Qty Sold',
       'Net Unit Price (THB)', 'Gross Unit Price (THB)', 'Share %'
     ]];
@@ -1499,12 +1552,19 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
       const netUnitPrice = qty > 0 ? Math.round(net / qty) : '';
       const grossUnitPrice = qty > 0 ? Math.round(gross / qty) : '';
       const share = grandTotal > 0 ? parseFloat((net / grandTotal * 100).toFixed(2)) : 0;
+      // COGS: actual posted cost from BC value entries. Blank when the cost feed
+      // has not run for the date(s) yet (costs post the morning after).
+      const cogs = p.costAmount || 0;
+      const hasCogs = cogs !== 0 && net > 0;
+      const grossProfit = hasCogs ? parseFloat((net - cogs).toFixed(2)) : '';
+      const grossMargin = hasCogs ? parseFloat(((net - cogs) / net * 100).toFixed(2)) : '';
       rows.push([
         barcode, p.itemCode, vendorNo, brand,
         nameEng, nameTha, sizeSpec,
         masterCost, masterPrice,
         p.retailProductCode, getGroupName(p.retailProductCode), p.departmentName,
         net, gross, vat,
+        hasCogs ? parseFloat(cogs.toFixed(2)) : '', grossProfit, grossMargin,
         discount, discountRate, qty,
         netUnitPrice, grossUnitPrice, share
       ]);
@@ -1519,6 +1579,7 @@ app.get('/api/products/export', requireAuth, async (req, res) => {
       { wch: 14 }, { wch: 14 },                                            // Master Cost, Master Price
       { wch: 20 }, { wch: 18 }, { wch: 18 },                              // Retail Code, Group, Dept
       { wch: 20 }, { wch: 22 }, { wch: 16 },                              // Net, Gross, VAT
+      { wch: 14 }, { wch: 16 }, { wch: 14 },                              // COGS, Gross Profit, Margin%
       { wch: 14 }, { wch: 12 }, { wch: 10 },                              // Discount, Disc%, Qty
       { wch: 16 }, { wch: 18 }, { wch: 10 },                              // Net Unit, Gross Unit, Share%
     ];

@@ -112,6 +112,24 @@ var d = new Date(ts.indexOf('T') === -1 ? ts.replace(' ', 'T') + 'Z' : ts);
 今日の日付が選択されているときのみ、5分ごとにサイレントリフレッシュ（`silentRefreshReport()`）が動く。
 日付が過去のときは `startAutoRefresh()` は即リターンする。
 
+### 商品別粗利率（COGS）は BC ValueEntries から翌朝マージ
+
+商品別の粗利率は**実際原価（COGS）**で計算する。データソースは BC 標準 Web サービス
+`ValueEntries`（`Item_Ledger_Entry_Type='Sale'` の `Cost_Amount_Actual`、符号反転して正値に）。
+Value Entry は LS Central のステートメント記帳後（≒翌朝）にしか存在しないため、
+売上フィード（当日・毎時）とは別に **get-item-sales の `src/syncCosts.js` が毎朝
+「昨日」分を取得**し、`POST /api/upload/item-costs` で既存レポートの
+`byProduct[*].costAmount` にマージする。
+
+- `costAmount` が無い/0 の商品は「原価未取込」として UI では `-` 表示（0%と区別する）
+- マージは上書き（再実行安全）。BC の原価調整ジョブ後の再取込にも使える
+- `/api/upload/item-costs` は `is_final` フラグを保持したまま保存する
+- ItemSalesPage（売上フィードの OData ページ）にはコスト系フィールドが**公開されていない**
+  （2026-06-10 に $metadata で確認済み）。コストを売上フィードに混ぜようとしない
+- ⚠️ BC のアイテム原価マスタに入力不備があり、原価>>売価の商品が存在
+  （例: ケース原価が単品原価として登録）。粗利率が大きな負値になるのはダッシュボードの
+  バグではなく BC マスタのデータ品質問題
+
 ### 部門別「買い上げ点数」の分母は全店レシート数
 
 `computeSummary()` の `receiptByTimeKey`（全店の時間帯別客数マップ）を部門表示でも渡し、
@@ -225,6 +243,7 @@ var CHART_OPTS = {
 | メソッド | パス | 説明 |
 |---|---|---|
 | `POST` | `/api/upload` | CSV/Excel アップロード（認証不要） |
+| `POST` | `/api/upload/item-costs` | 商品別COGSマージ（`{businessDate, storeId, costs:{itemCode:THB}}`、X-API-Key） |
 | `GET` | `/api/report` | 売上レポート取得（`?referenceDate=YYYY-MM-DD&storeId=xxx`） |
 | `GET` | `/api/dates` | アップロード済み日付一覧 |
 | `GET` | `/api/stores` | 店舗一覧 |

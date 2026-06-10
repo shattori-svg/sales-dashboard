@@ -2919,6 +2919,11 @@
       var wow = (wNet != null && wNet > 0) ? ((p.totalNetSales - wNet) / wNet * 100) : null;
       var sharePct = grandTotal > 0 ? (p.totalNetSales / grandTotal * 100) : 0;
       var unitPrice = (p.totalQuantitySold > 0) ? Math.round(p.totalNetSales / p.totalQuantitySold) : null;
+      // Gross margin from actual COGS (BC value entries, posted day-after).
+      // costAmount === 0 means the cost feed has not delivered for this item/date.
+      var margin = (p.costAmount && p.totalNetSales > 0)
+        ? ((p.totalNetSales - p.costAmount) / p.totalNetSales * 100)
+        : null;
       html += '<tr>';
       html += '<td>' + escapeHtml(barcode) + '</td>';
       html += '<td>' + escapeHtml(displayName) + '</td>';
@@ -2928,6 +2933,7 @@
       html += '<td class="' + (wow == null ? 'na-value' : wow >= 0 ? 'positive' : 'negative') + '">' + (wow == null ? '<span title="' + escapeHtml(t('no_last_week_data') || '先週データなし') + '">-</span>' : (wow >= 0 ? '+' : '') + wow.toFixed(1) + '%') + '</td>';
       html += '<td>' + formatInt(p.totalQuantitySold) + '</td>';
       html += '<td>' + (unitPrice != null ? formatCurrencyInteger(unitPrice) : '-') + '</td>';
+      html += '<td class="' + (margin == null ? 'na-value' : margin < 0 ? 'negative' : '') + '">' + (margin == null ? '<span title="' + escapeHtml(t('products_margin_pending') || '原価データ未取込') + '">-</span>' : margin.toFixed(1) + '%') + '</td>';
       html += '<td>' + sharePct.toFixed(1) + '%</td>';
       html += '</tr>';
     });
@@ -3004,10 +3010,12 @@
                 departmentName: p.departmentName,
                 totalNetSales: 0,
                 totalQuantitySold: 0,
+                costAmount: 0,
               };
             }
             mergedByProduct[itemCode].totalNetSales += p.totalNetSales || 0;
             mergedByProduct[itemCode].totalQuantitySold += p.totalQuantitySold || 0;
+            mergedByProduct[itemCode].costAmount += p.costAmount || 0;
           });
         });
 
