@@ -267,7 +267,20 @@ app.use(pinoHttp({
 }));
 
 app.use(compression());
-app.use(express.json());
+// Global JSON parser (100kb default). Routes that accept large automated
+// payloads declare their own express.json with a higher limit — they must be
+// skipped here, otherwise the global parser rejects with 413 before the
+// route-level parser ever runs.
+const LARGE_JSON_ROUTES = new Set([
+  '/api/upload/item-sales-json',
+  '/api/upload/item-costs',
+  '/api/product-master/merge',
+]);
+const defaultJsonParser = express.json();
+app.use((req, res, next) => {
+  if (LARGE_JSON_ROUTES.has(req.path)) return next();
+  return defaultJsonParser(req, res, next);
+});
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
