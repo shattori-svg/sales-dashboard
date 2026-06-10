@@ -1621,6 +1621,63 @@ app.post('/api/product-master/import', requireAdmin, upload.single('file'), asyn
   }
 });
 
+// Product master merge — upsert of the BC-syncable fields only (daily feed
+// from get-item-sales src/syncMaster.js via public OData services). Fields
+// that only exist in the manual Item Export (nameTha/Jpn, brand*, sizeSpec*,
+// deptCode) are never touched, so the occasional manual upload still owns them.
+// Body: { items: { itemCode: { nameEng?, barcodeNo?, vendorNo?, groupCode?,
+//                              categoryCode?, unitCost?, unitPrice?, lastDirectCost? } } }
+app.post('/api/product-master/merge', requireAdmin, express.json({ limit: '20mb' }), async (req, res) => {
+  // Strings update only when the feed has a non-empty value (never blank out
+  // existing data); numbers overwrite whenever present — BC is their source
+  // of truth and 0 is meaningful ("no cost registered").
+  const STRING_FIELDS = ['nameEng', 'barcodeNo', 'vendorNo', 'groupCode', 'categoryCode'];
+  const NUMBER_FIELDS = ['unitCost', 'unitPrice', 'lastDirectCost'];
+  try {
+    const { items } = req.body || {};
+    if (!items || typeof items !== 'object' || Array.isArray(items) || Object.keys(items).length === 0) {
+      return res.status(400).json({ error: 'items object is required and must not be empty.' });
+    }
+
+    const master = await getProductMaster();
+    let created = 0;
+    let updated = 0;
+    for (const [itemCode, raw] of Object.entries(items)) {
+      const code = String(itemCode).trim();
+      if (!code || !raw || typeof raw !== 'object') continue;
+      let entry = master[code];
+      if (!entry) {
+        entry = master[code] = {
+          barcodeNo: '', nameEng: '', nameTha: '', nameJpn: '',
+          deptCode: '', groupCode: '',
+          brandEng: '', brandTha: '', brandJpn: '',
+          sizeSpecEng: '', sizeSpecTha: '', sizeSpecJpn: '',
+          vendorNo: '', unitCost: null, unitPrice: null,
+        };
+        created++;
+      } else {
+        updated++;
+      }
+      for (const f of STRING_FIELDS) {
+        const v = raw[f];
+        if (v != null && String(v).trim() !== '') entry[f] = String(v).trim();
+      }
+      for (const f of NUMBER_FIELDS) {
+        const v = Number(raw[f]);
+        if (raw[f] != null && Number.isFinite(v)) entry[f] = v;
+      }
+    }
+
+    await saveProductMaster(master);
+    (req.log || logger).info({ event: 'product_master_merged', received: Object.keys(items).length, created, updated }, 'Product master merged');
+    res.json({ ok: true, received: Object.keys(items).length, created, updated, total: Object.keys(master).length });
+  } catch (err) {
+    const msg = err && (err.message || String(err));
+    (req.log || logger).error({ event: 'import_failed', kind: 'product_master_merge', err }, 'product master merge error');
+    res.status(500).json({ error: 'Error merging product master: ' + (msg || 'Unknown error') });
+  }
+});
+
 // Product groups (classification master)
 app.get('/api/product-groups', async (req, res) => {
   try {
