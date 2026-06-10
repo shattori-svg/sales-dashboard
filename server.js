@@ -4,6 +4,7 @@ require('dotenv').config();
 
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const XLSX = require('xlsx');
 const express = require('express');
 const compression = require('compression');
@@ -86,9 +87,16 @@ const entraAuth = require('./entra-auth');
 
 const app = express();
 const PORT = process.env.PORT || 3333;
+const IS_PROD = process.env.NODE_ENV === 'production' || !!process.env.K_SERVICE;
 
-// JWT helpers — stateless auth, works across Cloud Run instances
-const JWT_SECRET = process.env.SESSION_SECRET || 'sales-report-secret-change-in-production';
+// JWT helpers — stateless auth, works across Cloud Run instances.
+// SESSION_SECRET must be set in production; falling back to a hardcoded
+// default there would let anyone who knows the source forge an admin cookie.
+if (IS_PROD && !process.env.SESSION_SECRET) {
+  logger.fatal({ event: 'missing_session_secret' }, 'SESSION_SECRET must be set in production');
+  process.exit(1);
+}
+const JWT_SECRET = process.env.SESSION_SECRET || 'sales-report-secret-dev-only';
 const JWT_COOKIE = 'sales_report_jwt';
 const JWT_MAX_AGE_SEC = 24 * 60 * 60; // 24 hours
 
@@ -101,6 +109,7 @@ function verifyJwt(token) {
 function setJwtCookie(res, payload) {
   res.cookie(JWT_COOKIE, signJwt(payload), {
     httpOnly: true,
+    secure: IS_PROD, // HTTPS-only in production (Cloud Run terminates TLS)
     maxAge: JWT_MAX_AGE_SEC * 1000,
     sameSite: 'lax',
   });
@@ -266,6 +275,20 @@ app.use(pinoHttp({
   },
 }));
 
+// Behind Cloud Run's proxy: trust X-Forwarded-* so secure cookies and
+// req.ip work correctly.
+app.set('trust proxy', 1);
+
+// Baseline security headers. No strict CSP yet (the app uses a CDN for
+// Chart.js and inline styles); these are the safe, non-breaking ones.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'same-origin');
+  if (IS_PROD) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+
 app.use(compression());
 // Global JSON parser (100kb default). Routes that accept large automated
 // payloads declare their own express.json with a higher limit — they must be
@@ -314,13 +337,55 @@ function checkBasicAuth(req) {
   const pass = decoded.slice(colon + 1);
   const expectedUser = process.env.ERP_UPLOAD_USERNAME || '';
   const expectedPass = process.env.ERP_UPLOAD_PASSWORD || '';
-  return expectedUser && expectedPass && user === expectedUser && pass === expectedPass;
+  if (!expectedUser || !expectedPass) return false;
+  return timingSafeEqualStr(user, expectedUser) && timingSafeEqualStr(pass, expectedPass);
+}
+
+// Constant-time string comparison — avoids leaking secret length/content via
+// response timing. Returns false on any length mismatch without short-circuit.
+function timingSafeEqualStr(a, b) {
+  const ab = Buffer.from(String(a), 'utf8');
+  const bb = Buffer.from(String(b), 'utf8');
+  if (ab.length !== bb.length) {
+    // Still run a comparison so timing doesn't reveal the length difference.
+    crypto.timingSafeEqual(ab, ab);
+    return false;
+  }
+  return crypto.timingSafeEqual(ab, bb);
 }
 
 function checkApiKey(req) {
   const key = req.headers['x-api-key'];
-  return !!(key && process.env.API_KEY && key === process.env.API_KEY);
+  return !!(key && process.env.API_KEY && timingSafeEqualStr(key, process.env.API_KEY));
 }
+
+// Lightweight in-memory rate limiter for auth endpoints — throttles password
+// brute-force. Per-instance (acceptable for Cloud Run); keyed by client IP.
+function rateLimit({ windowMs, max }) {
+  const hits = new Map(); // ip -> { count, resetAt }
+  return (req, res, next) => {
+    const now = Date.now();
+    const ip = req.ip || req.connection?.remoteAddress || 'unknown';
+    let rec = hits.get(ip);
+    if (!rec || now > rec.resetAt) {
+      rec = { count: 0, resetAt: now + windowMs };
+      hits.set(ip, rec);
+    }
+    rec.count++;
+    if (rec.count > max) {
+      const retryAfter = Math.ceil((rec.resetAt - now) / 1000);
+      res.setHeader('Retry-After', String(retryAfter));
+      (req.log || logger).warn({ event: 'rate_limited', ip, path: req.path }, 'auth rate limit hit');
+      return res.status(429).json({ error: 'Too many attempts. Please wait and try again.' });
+    }
+    // Opportunistic cleanup so the map cannot grow unbounded.
+    if (hits.size > 5000) {
+      for (const [k, v] of hits) if (now > v.resetAt) hits.delete(k);
+    }
+    next();
+  };
+}
+const loginRateLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
 
 function requireAuth(req, res, next) {
   const isStatic = /\.(css|js|ico|png|jpg|jpeg|gif|svg|woff2?|ttf|eot)$/i.test(req.path);
@@ -535,7 +600,7 @@ app.get('/auth/callback', async (req, res) => {
   }
 });
 
-app.post('/login', (req, res) => {
+app.post('/login', loginRateLimiter, (req, res) => {
   if (EXTERNAL_AUTH_MODE) {
     return res.redirect('/login');
   }
@@ -698,7 +763,7 @@ app.put('/api/me/preferences', async (req, res) => {
   }
 });
 
-app.post('/api/bootstrap-admin', async (req, res) => {
+app.post('/api/bootstrap-admin', loginRateLimiter, async (req, res) => {
   if (EXTERNAL_AUTH_MODE) return res.status(403).json({ error: 'Use Entra ID login when Entra is configured' });
   const n = await countUsers();
   if (n > 0) return res.status(403).json({ error: 'Bootstrap only when no users' });
@@ -1900,10 +1965,30 @@ app.use((err, req, res, next) => {
 
 // Only bind the port when invoked directly (not when required by tests).
 if (require.main === module) {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     logger.info({ event: 'server_started', port: PORT, db: activeDatabaseLabel }, 'Sales Reports server listening');
     startExchangeRateScheduler();
   });
+
+  // Graceful shutdown: Cloud Run sends SIGTERM before stopping the instance.
+  // Stop accepting new connections, let in-flight requests finish, then exit.
+  let shuttingDown = false;
+  const shutdown = (signal) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info({ event: 'shutdown_start', signal }, 'graceful shutdown started');
+    server.close(() => {
+      logger.info({ event: 'shutdown_complete' }, 'server closed, exiting');
+      process.exit(0);
+    });
+    // Hard cap so a hung connection cannot block the platform's stop.
+    setTimeout(() => {
+      logger.warn({ event: 'shutdown_forced' }, 'forcing exit after timeout');
+      process.exit(0);
+    }, 25000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 module.exports = app;
