@@ -1105,6 +1105,55 @@ app.get('/api/ai/status', (req, res) => {
   res.json({ available: aiGemini.isAvailable() });
 });
 
+// Daily brief — pre-generated morning report (computed numbers + AI narrative).
+// Generation is triggered by Cloud Scheduler (X-API-Key) after the COGS sync,
+// and is idempotent: re-running overwrites the stored brief for that date.
+const briefKey = (storeId, date) => `daily_brief:${storeId}:${date}`;
+
+app.post('/api/ai/daily-brief/generate', requireAdmin, express.json(), async (req, res) => {
+  if (!aiGemini.isAvailable()) return res.status(503).json({ ok: false, error: 'AI_NOT_CONFIGURED' });
+  try {
+    const storeId = (req.body && req.body.storeId ? String(req.body.storeId).trim() : '') || 'default';
+    // Default: yesterday in Bangkok (the day whose data is final by morning).
+    let businessDate = req.body && req.body.businessDate ? String(req.body.businessDate).trim() : '';
+    if (!businessDate) {
+      businessDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' })
+        .format(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(businessDate)) {
+      return res.status(400).json({ ok: false, error: 'businessDate must be YYYY-MM-DD' });
+    }
+    const lang = (req.body && req.body.lang) || 'ja';
+    const master = await getProductMaster();
+    const brief = await aiGemini.generateDailyBrief(getReport, master, storeId, businessDate, lang);
+    await db.saveMasterJson(briefKey(storeId, businessDate), brief);
+    audit(req, 'daily_brief_generate', { storeId, businessDate });
+    (req.log || logger).info({ event: 'daily_brief_generated', storeId, businessDate }, 'daily brief generated');
+    res.json({ ok: true, storeId, businessDate, generatedAt: brief.generatedAt });
+  } catch (err) {
+    const msg = err && err.message ? err.message : 'Unknown error';
+    (req.log || logger).error({ event: 'ai_error', kind: 'daily_brief', err }, 'daily brief error');
+    if (msg === 'NO_DATA') return res.status(404).json({ ok: false, error: 'NO_DATA' });
+    res.status(500).json({ ok: false, error: msg });
+  }
+});
+
+app.get('/api/ai/daily-brief', async (req, res) => {
+  try {
+    const storeId = (req.query.storeId || 'default').trim() || 'default';
+    const date = String(req.query.date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ ok: false, error: 'date (YYYY-MM-DD) is required.' });
+    }
+    const brief = await db.getMasterJson(briefKey(storeId, date));
+    if (!brief) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+    res.json({ ok: true, brief });
+  } catch (err) {
+    (req.log || logger).error({ event: 'handler_error', err }, 'daily brief get error');
+    res.status(500).json({ ok: false, error: err.message || 'Failed to get brief.' });
+  }
+});
+
 app.get('/api/ai/analyze', async (req, res) => {
   if (!aiGemini.isAvailable()) {
     return res.json({ ok: false, error: 'AI_NOT_CONFIGURED' });

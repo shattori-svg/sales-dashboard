@@ -202,6 +202,20 @@ function saveProductMaster(master) {
   return Promise.resolve(master);
 }
 
+// Generic JSON storage in the masters table (e.g. daily briefs).
+function getMasterJson(key) {
+  const row = db.prepare('SELECT value FROM masters WHERE key = ?').get(String(key));
+  if (!row || !row.value) return Promise.resolve(null);
+  try { return Promise.resolve(JSON.parse(row.value)); } catch (_) { return Promise.resolve(null); }
+}
+
+function saveMasterJson(key, value) {
+  db.prepare('INSERT INTO masters (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(
+    String(key), JSON.stringify(value)
+  );
+  return Promise.resolve();
+}
+
 // Admin audit log — append-only trail of who did what, stored as a capped
 // JSON array in the masters table (no schema migration needed across backends).
 const AUDIT_LOG_KEY = 'audit_log';
@@ -401,6 +415,8 @@ module.exports = {
   saveProductMaster,
   getAuditLog,
   recordAudit,
+  getMasterJson,
+  saveMasterJson,
   getProductGroups,
   saveProductGroups,
   updateUserPreferences,

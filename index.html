@@ -131,6 +131,9 @@
         <span class="output-header-item">
           <button type="button" id="btn-hourly-excel" class="btn-csv" data-i18n="export_excel">Excel出力</button>
         </span>
+        <span class="output-header-item">
+          <button type="button" id="btn-yesterday-brief" class="btn-ai" data-i18n="btn_yesterday_brief">昨日のレポートを見る</button>
+        </span>
         <span id="hourly-loading-indicator" class="output-header-loading" data-i18n="updating" hidden>更新中...</span>
       </div>
       <div id="snapshot-card" class="snapshot-panels-wrap" aria-live="polite" hidden>
@@ -470,6 +473,51 @@
       <div id="ai-not-configured" class="ai-notice" hidden>
         <p data-i18n="ai_not_configured">AI機能を使用するには、サーバーに GEMINI_API_KEY 環境変数を設定してください。</p>
       </div>
+
+      <!-- Daily brief (pre-generated each morning) -->
+      <div id="brief-section" class="brief-section">
+        <div class="output-header">
+          <span class="output-header-item">
+            <strong data-i18n="brief_title">デイリーブリーフ</strong>
+          </span>
+          <span class="output-header-item">
+            <label for="brief-store-select" class="store-label" data-i18n="store">店舗</label>
+            <select id="brief-store-select" aria-label="Select store for brief">
+              <option value="default">Default</option>
+            </select>
+          </span>
+          <span class="output-header-item">
+            <label for="brief-date" class="output-header-sep" data-i18n="output_date">売上日</label>
+            <input type="date" id="brief-date" aria-label="Select brief date">
+          </span>
+          <span id="brief-generated-at" class="output-header-loading"></span>
+        </div>
+        <div id="brief-empty" class="hint" hidden></div>
+        <div id="brief-content" hidden>
+          <p id="brief-headline" class="brief-headline"></p>
+          <div id="brief-kpi-grid" class="brief-kpi-grid"></div>
+          <div class="brief-block">
+            <h4 data-i18n="brief_dept_title">部門別</h4>
+            <div class="brief-dept-wrap">
+              <div class="chart-wrapper brief-chart-wrap"><canvas id="brief-dept-chart"></canvas></div>
+              <div class="table-wrapper brief-dept-table-wrap">
+                <table class="report-table" id="brief-dept-table"></table>
+              </div>
+            </div>
+            <p id="brief-dept-text" class="brief-text"></p>
+          </div>
+          <div class="brief-block">
+            <h4 data-i18n="brief_products_title">商品トピック</h4>
+            <div id="brief-products-tables"></div>
+            <p id="brief-products-text" class="brief-text"></p>
+          </div>
+          <div class="brief-block brief-actions">
+            <h4 data-i18n="brief_actions_title">本日のアクション</h4>
+            <div id="brief-actions-text" class="brief-text"></div>
+          </div>
+        </div>
+      </div>
+      <hr class="brief-divider">
 
       <div id="ai-controls" class="output-header">
         <span class="output-header-item">

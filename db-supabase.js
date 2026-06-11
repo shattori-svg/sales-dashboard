@@ -185,6 +185,28 @@ function saveProductMaster(master) {
     });
 }
 
+function getMasterJson(key) {
+  return supabase
+    .from(MASTERS_TABLE)
+    .select('value')
+    .eq('key', String(key))
+    .maybeSingle()
+    .then(({ data: row, error }) => {
+      if (error) throw error;
+      if (!row || row.value == null) return null;
+      return typeof row.value === 'object' ? row.value : JSON.parse(row.value);
+    });
+}
+
+function saveMasterJson(key, value) {
+  return supabase
+    .from(MASTERS_TABLE)
+    .upsert({ key: String(key), value }, { onConflict: 'key' })
+    .then(({ error }) => {
+      if (error) throw error;
+    });
+}
+
 const AUDIT_LOG_KEY = 'audit_log';
 const AUDIT_LOG_CAP = 2000;
 
@@ -439,6 +461,8 @@ module.exports = {
   saveProductMaster,
   getAuditLog,
   recordAudit,
+  getMasterJson,
+  saveMasterJson,
   saveReport,
   getReport,
   getAvailableDates,

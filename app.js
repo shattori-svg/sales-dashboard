@@ -1981,6 +1981,7 @@
     if (tabName === 'weekly') refreshWeeklyDateSelect();
     if (tabName === 'ai') {
       refreshAiDateSelect();
+      loadDailyBriefDefault();
     }
   }
 
@@ -3197,6 +3198,7 @@
       fillOne(weeklySel);
       fillOne(aiSel);
       fillOne(productsSel);
+      fillOne(document.getElementById('brief-store-select'));
       state.storeId = getSelectedStoreId();
     }).catch(function () {
       var def = '<option value="default">Default</option>';
@@ -3264,6 +3266,187 @@
         }
       }
     }).catch(function () {});
+  }
+
+  // ---- Daily brief (pre-generated morning report) ----
+  var briefDeptChart = null;
+  var briefLoadedKey = null;
+
+  function bangkokYesterday() {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' })
+      .format(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  }
+
+  function pctBadge(v, invert) {
+    if (v == null || !isFinite(v)) return '<span class="brief-badge na-value">—</span>';
+    var positive = invert ? v < 0 : v >= 0;
+    var cls = positive ? 'positive' : 'negative';
+    return '<span class="brief-badge ' + cls + '">' + (v >= 0 ? '+' : '') + v.toFixed(1) + '%</span>';
+  }
+
+  function briefKpiCard(label, value, badges) {
+    return '<div class="brief-kpi-card"><div class="brief-kpi-label">' + escapeHtml(label) + '</div>' +
+      '<div class="brief-kpi-value">' + value + '</div>' +
+      (badges ? '<div class="brief-kpi-badges">' + badges + '</div>' : '') + '</div>';
+  }
+
+  function renderDailyBrief(brief) {
+    var content = document.getElementById('brief-content');
+    var emptyEl = document.getElementById('brief-empty');
+    var genAt = document.getElementById('brief-generated-at');
+    if (!content) return;
+    var d = brief.data || {};
+    var k = d.kpi || {};
+    var n = brief.narrative || {};
+    content.hidden = false;
+    if (emptyEl) emptyEl.hidden = true;
+    if (genAt) {
+      var ts = brief.generatedAt ? new Date(brief.generatedAt) : null;
+      genAt.textContent = ts ? (t('brief_generated_at') || '生成') + ': ' + ts.toLocaleString() : '';
+    }
+
+    var headlineEl = document.getElementById('brief-headline');
+    if (headlineEl) headlineEl.textContent = n.headline || '';
+
+    // ① KPI cards (largest granularity first)
+    var grid = document.getElementById('brief-kpi-grid');
+    if (grid) {
+      var html = '';
+      html += briefKpiCard(t('snapshot_net_sales') || '純売上高', formatCurrencyInteger(k.netSales || 0),
+        (t('dod') || 'DoD') + ' ' + pctBadge(k.dodPct) + ' ' + (t('wow') || 'WoW') + ' ' + pctBadge(k.wowPct) +
+        ' ' + (t('brief_vs_4w') || '同曜日4週平均比') + ' ' + pctBadge(k.vs4wAvgPct));
+      html += briefKpiCard(t('brief_customers') || '客数', formatInt(k.receiptCount || 0),
+        (t('dod') || 'DoD') + ' ' + pctBadge(k.receiptDodPct) + ' ' + (t('wow') || 'WoW') + ' ' + pctBadge(k.receiptWowPct));
+      html += briefKpiCard(t('brief_avg_receipt') || '客単価', k.avgReceipt != null ? formatCurrencyInteger(k.avgReceipt) : '—', '');
+      html += briefKpiCard(t('products_margin_pct') || '粗利率', k.marginPct != null ? k.marginPct.toFixed(1) + '%' : '—',
+        '<span class="brief-kpi-note">' + escapeHtml((t('brief_cogs_coverage') || '原価取込') + ' ' + (k.cogsCoverage || '—')) + '</span>');
+      grid.innerHTML = html;
+    }
+
+    // ② Departments: chart + table + commentary
+    var depts = d.departments || [];
+    var canvas = document.getElementById('brief-dept-chart');
+    if (canvas && window.Chart) {
+      if (briefDeptChart) { briefDeptChart.destroy(); briefDeptChart = null; }
+      briefDeptChart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: depts.map(function (x) { return x.name; }),
+          datasets: [{
+            label: t('snapshot_net_sales') || 'Net Sales',
+            data: depts.map(function (x) { return x.netSales; }),
+            backgroundColor: 'rgba(29,78,216,0.80)',
+            borderColor: 'rgb(29,78,216)',
+            borderWidth: 1,
+          }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color: '#6b7280' }, grid: { color: 'rgba(0,0,0,0.06)' } },
+            y: { ticks: { color: '#6b7280' }, grid: { display: false } },
+          },
+        },
+      });
+    }
+    var deptTable = document.getElementById('brief-dept-table');
+    if (deptTable) {
+      var th = '<thead><tr><th>' + escapeHtml(t('department') || '部門') + '</th><th>' + escapeHtml(t('snapshot_net_sales') || '売上') + '</th><th>' + escapeHtml(t('products_share_pct') || '構成比') + '</th><th>DoD</th><th>WoW</th><th>' + escapeHtml(t('products_margin_pct') || '粗利率') + '</th></tr></thead>';
+      var tb = '<tbody>' + depts.map(function (x) {
+        return '<tr><td>' + escapeHtml(x.name) + '</td><td>' + formatCurrencyInteger(x.netSales) + '</td><td>' +
+          (x.sharePct != null ? x.sharePct.toFixed(1) + '%' : '—') + '</td><td>' + pctBadge(x.dodPct) + '</td><td>' +
+          pctBadge(x.wowPct) + '</td><td>' + (x.marginPct != null ? x.marginPct.toFixed(1) + '%' : '<span class="na-value">—</span>') + '</td></tr>';
+      }).join('') + '</tbody>';
+      deptTable.innerHTML = th + tb;
+    }
+    var deptText = document.getElementById('brief-dept-text');
+    if (deptText) deptText.textContent = n.departments || '';
+
+    // ③ Products: top / movers / stockout candidates + commentary
+    var pWrap = document.getElementById('brief-products-tables');
+    if (pWrap) {
+      var p = d.products || {};
+      function miniTable(title, rows, cols) {
+        if (!rows || !rows.length) return '';
+        var h = '<div class="brief-mini-table"><h5>' + escapeHtml(title) + '</h5><div class="table-wrapper"><table class="report-table"><thead><tr>' +
+          cols.map(function (c) { return '<th>' + escapeHtml(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>';
+        h += rows.map(function (r) {
+          return '<tr>' + cols.map(function (c) { return '<td>' + c.render(r) + '</td>'; }).join('') + '</tr>';
+        }).join('');
+        return h + '</tbody></table></div></div>';
+      }
+      var nameCol = { label: t('products_item_name') || '商品名', render: function (r) { return escapeHtml(r.name); } };
+      var deptCol = { label: t('department') || '部門', render: function (r) { return escapeHtml(r.department); } };
+      var salesCol = { label: t('snapshot_net_sales') || '売上', render: function (r) { return formatCurrencyInteger(r.netSales); } };
+      var marginCol = { label: t('products_margin_pct') || '粗利率', render: function (r) { return r.marginPct != null ? r.marginPct.toFixed(1) + '%' : '<span class="na-value">—</span>'; } };
+      var html2 = '';
+      html2 += miniTable(t('brief_top_products') || '売上 Top 10', p.top, [nameCol, deptCol, salesCol, marginCol]);
+      var changeCol = { label: t('brief_change') || '前週差', render: function (r) { return (r.changeTHB >= 0 ? '+' : '') + formatCurrencyInteger(r.changeTHB); } };
+      html2 += miniTable(t('brief_risers') || '急伸（前週同曜日比）', p.risers, [nameCol, salesCol, changeCol]);
+      html2 += miniTable(t('brief_fallers') || '急落（前週同曜日比）', p.fallers, [nameCol, salesCol, changeCol]);
+      var prevCol = { label: t('brief_prev_week') || '前週売上', render: function (r) { return formatCurrencyInteger(r.prevNetSales); } };
+      html2 += miniTable(t('brief_zero') || '売上ゼロ（欠品疑い）', p.zeroSales, [nameCol, deptCol, prevCol]);
+      pWrap.innerHTML = html2;
+    }
+    var prodText = document.getElementById('brief-products-text');
+    if (prodText) prodText.textContent = n.products || '';
+
+    // ④ Actions
+    var actionsEl = document.getElementById('brief-actions-text');
+    if (actionsEl) {
+      var lines = String(n.actions || '').split(/\n+/).filter(function (s) { return s.trim(); });
+      actionsEl.innerHTML = lines.length
+        ? '<ul>' + lines.map(function (s) { return '<li>' + escapeHtml(s.replace(/^[-・*]\s*/, '')) + '</li>'; }).join('') + '</ul>'
+        : '';
+    }
+  }
+
+  function loadDailyBrief(storeId, date) {
+    var emptyEl = document.getElementById('brief-empty');
+    var content = document.getElementById('brief-content');
+    var genAt = document.getElementById('brief-generated-at');
+    var dateEl = document.getElementById('brief-date');
+    var storeEl = document.getElementById('brief-store-select');
+    if (dateEl && date) dateEl.value = date;
+    if (storeEl && storeId && storeEl.value !== storeId) storeEl.value = storeId;
+    var sid = storeEl ? storeEl.value : (storeId || 'default');
+    var d = dateEl ? dateEl.value : date;
+    if (!d) return;
+    briefLoadedKey = sid + ':' + d;
+    if (genAt) genAt.textContent = '';
+    fetch('/api/ai/daily-brief?storeId=' + encodeURIComponent(sid) + '&date=' + encodeURIComponent(d))
+      .then(function (res) {
+        if (res.status === 404) return null;
+        return parseJsonResponse(res);
+      })
+      .then(function (body) {
+        if (!body || !body.brief) {
+          if (content) content.hidden = true;
+          if (briefDeptChart) { briefDeptChart.destroy(); briefDeptChart = null; }
+          if (emptyEl) {
+            emptyEl.textContent = t('brief_not_found') || 'この日のレポートはまだ生成されていません。';
+            emptyEl.hidden = false;
+          }
+          return;
+        }
+        renderDailyBrief(body.brief);
+      })
+      .catch(function () {
+        if (content) content.hidden = true;
+        if (emptyEl) { emptyEl.textContent = t('ai_error_generic') || 'Error'; emptyEl.hidden = false; }
+      });
+  }
+
+  function loadDailyBriefDefault() {
+    var dateEl = document.getElementById('brief-date');
+    var storeEl = document.getElementById('brief-store-select');
+    var sid = storeEl && storeEl.value ? storeEl.value : 'default';
+    var d = dateEl && dateEl.value ? dateEl.value : bangkokYesterday();
+    if (briefLoadedKey === sid + ':' + d) return;
+    loadDailyBrief(sid, d);
   }
 
   function showAiLoading(show) {
@@ -3977,6 +4160,23 @@
     if (btnAiGenerate) btnAiGenerate.addEventListener('click', doAiGenerate);
     var aiStoreEl = document.getElementById('ai-store-select');
     if (aiStoreEl) aiStoreEl.addEventListener('change', refreshAiDateSelect);
+
+    /* Daily brief controls */
+    var briefDateEl = document.getElementById('brief-date');
+    if (briefDateEl) briefDateEl.addEventListener('change', function () { loadDailyBrief(null, null); });
+    var briefStoreEl = document.getElementById('brief-store-select');
+    if (briefStoreEl) briefStoreEl.addEventListener('change', function () { loadDailyBrief(null, null); });
+    var btnYesterdayBrief = document.getElementById('btn-yesterday-brief');
+    if (btnYesterdayBrief) {
+      btnYesterdayBrief.addEventListener('click', function () {
+        var hourlyStore = document.getElementById('store-select');
+        var sid = hourlyStore && hourlyStore.value ? hourlyStore.value : 'default';
+        switchTab('ai');
+        loadDailyBrief(sid, bangkokYesterday());
+        var briefSection = document.getElementById('brief-section');
+        if (briefSection && briefSection.scrollIntoView) briefSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
 
     /* Settings modal */
     var settingsLink = document.getElementById('settings-link');

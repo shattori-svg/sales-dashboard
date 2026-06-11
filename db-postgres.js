@@ -211,6 +211,28 @@ async function saveProductMaster(master) {
   }
 }
 
+async function getMasterJson(key) {
+  try {
+    const r = await pool.query(`SELECT value FROM ${MASTERS_TABLE} WHERE key = $1`, [String(key)]);
+    if (!r.rows[0] || r.rows[0].value == null) return null;
+    const v = r.rows[0].value;
+    return typeof v === 'object' ? v : JSON.parse(v);
+  } catch (err) {
+    throw mapDbErr(err);
+  }
+}
+
+async function saveMasterJson(key, value) {
+  try {
+    await pool.query(
+      `INSERT INTO ${MASTERS_TABLE} (key, value) VALUES ($1, $2::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [String(key), JSON.stringify(value)]
+    );
+  } catch (err) {
+    throw mapDbErr(err);
+  }
+}
+
 const AUDIT_LOG_KEY = 'audit_log';
 const AUDIT_LOG_CAP = 2000;
 
@@ -480,6 +502,8 @@ module.exports = {
   saveProductMaster,
   getAuditLog,
   recordAudit,
+  getMasterJson,
+  saveMasterJson,
   saveReport,
   getReport,
   getAvailableDates,

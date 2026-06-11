@@ -125,20 +125,33 @@ function buildComparisonText(todaySummary, yesterdaySummary, lastWeekSummary) {
   return text;
 }
 
-async function callGemini(prompt, modelOverride) {
+async function callGemini(prompt, modelOverride, timeoutMs) {
   if (!ai) throw new Error('AI_NOT_CONFIGURED');
   const model = modelOverride || MODEL;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const limit = timeoutMs || TIMEOUT_MS;
+  // Promise.race-based timeout: the previous AbortController was never wired
+  // to the request, so the 30s timeout silently did nothing.
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('AI_TIMEOUT')), limit);
+    if (timer.unref) timer.unref();
+  });
   try {
-    const response = await ai.models.generateContent({
-      model,
-      contents: prompt,
-    });
+    const response = await Promise.race([
+      ai.models.generateContent({ model, contents: prompt }),
+      timeout,
+    ]);
     return response.text || '';
   } finally {
     clearTimeout(timer);
   }
+}
+
+function extractJson(raw) {
+  const cleaned = String(raw).replace(/```json?\s*/gi, '').replace(/```\s*/g, '').trim();
+  const first = cleaned.indexOf('{');
+  const last = cleaned.lastIndexOf('}');
+  return JSON.parse(first >= 0 && last > first ? cleaned.slice(first, last + 1) : cleaned);
 }
 
 async function generateAnalysis(getReport, storeId, referenceDate, lang, department) {
@@ -394,11 +407,7 @@ Rules:
 - If today already has cumulative data, your forecast total must be >= that cumulative (end-of-day cannot be less than current).`;
 
   const raw = await callGemini(prompt, FORECAST_MODEL);
-  const cleaned = raw.replace(/```json?\s*/gi, '').replace(/```\s*/g, '').trim();
-  const firstBrace = cleaned.indexOf('{');
-  const lastBrace = cleaned.lastIndexOf('}');
-  const jsonStr = firstBrace >= 0 && lastBrace > firstBrace ? cleaned.slice(firstBrace, lastBrace + 1) : cleaned;
-  const parsed = JSON.parse(jsonStr);
+  const parsed = extractJson(raw);
 
   return {
     forecastTotalNetSales: Number(parsed.forecastTotalNetSales),
@@ -410,10 +419,263 @@ Rules:
   };
 }
 
+// ---------------------------------------------------------------------------
+// Daily brief — pre-computed numbers (code) + narrative (LLM).
+// All percentages/aggregations are calculated here so the model only explains;
+// it never invents figures. COGS comes from byProduct[*].costAmount (merged
+// day-after from BC value entries).
+// ---------------------------------------------------------------------------
+
+// Items whose recorded cost exceeds 3x sales are BC master-data defects
+// (case cost registered as unit cost) — excluded from margin math.
+const COST_ANOMALY_RATIO = 3;
+
+function productMarginStats(byProduct) {
+  let net = 0, cogs = 0, covered = 0, anomalies = 0, total = 0;
+  for (const p of Object.values(byProduct || {})) {
+    const sales = Number(p.totalNetSales) || 0;
+    const cost = Number(p.costAmount) || 0;
+    total++;
+    if (cost <= 0 || sales <= 0) continue;
+    if (cost > sales * COST_ANOMALY_RATIO) { anomalies++; continue; }
+    net += sales;
+    cogs += cost;
+    covered++;
+  }
+  return {
+    marginPct: net > 0 ? Math.round((net - cogs) / net * 1000) / 10 : null,
+    coveredItems: covered,
+    totalItems: total,
+    anomalyItems: anomalies,
+  };
+}
+
+// Like summarizeReport but falls back to total.totalRow / department totalRow
+// when the report has no hourly rows (item-sales-only reports store day totals
+// without hourly slots).
+function summarizeAny(dateStr, report) {
+  if (!report) return null;
+  const viaHourly = summarizeReport(dateStr, report, 'Total');
+  if (viaHourly) return viaHourly;
+  const tr = report.total && report.total.totalRow;
+  if (!tr) return null;
+  const byDept = {};
+  DEPARTMENTS.forEach((dept) => {
+    const d = report.byDepartment && report.byDepartment[dept];
+    let v = 0;
+    if (d) {
+      if (d.totalRow && d.totalRow.netSales != null) v = d.totalRow.netSales;
+      else if (d.daily && d.daily.netSales != null) v = d.daily.netSales;
+      else if (d.hourly) v = d.hourly.reduce((s, h) => s + (h.netSales || 0), 0);
+    }
+    byDept[dept] = v || 0;
+  });
+  const dow = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' });
+  return {
+    date: dateStr,
+    dow,
+    netSales: tr.netSales || 0,
+    grossSales: tr.grossSales || tr.netSales || 0,
+    receiptCount: tr.receiptCount || 0,
+    quantitySold: tr.quantitySold || 0,
+    hoursCount: 0,
+    byDepartment: byDept,
+  };
+}
+
+function pctChange(curr, prev) {
+  if (prev == null || prev <= 0 || curr == null) return null;
+  return Math.round((curr / prev - 1) * 1000) / 10;
+}
+
+function round1(v) { return v == null ? null : Math.round(v * 10) / 10; }
+
+function buildBriefData(reports, master) {
+  // reports: { target, d1, d7, d14, d21, d28 } (summaries already filtered to non-null where possible)
+  const { targetDate, target, d1, d7, d14, d21, d28 } = reports;
+  const tSum = summarizeAny(targetDate, target);
+  if (!tSum) return null;
+  const d1Sum = d1.report ? summarizeAny(d1.date, d1.report) : null;
+  const d7Sum = d7.report ? summarizeAny(d7.date, d7.report) : null;
+  const wAvgSrcs = [d7, d14, d21, d28].map((x) => (x.report ? summarizeAny(x.date, x.report) : null)).filter(Boolean);
+  const avg4w = wAvgSrcs.length
+    ? wAvgSrcs.reduce((s, x) => s + x.netSales, 0) / wAvgSrcs.length
+    : null;
+
+  const margin = productMarginStats(target.byProduct);
+
+  // Departments: sales + share + DoD/WoW + margin
+  const deptMargin = {};
+  for (const p of Object.values(target.byProduct || {})) {
+    const dn = p.departmentName;
+    if (!dn) continue;
+    const sales = Number(p.totalNetSales) || 0;
+    const cost = Number(p.costAmount) || 0;
+    if (!deptMargin[dn]) deptMargin[dn] = { net: 0, cogs: 0 };
+    if (cost > 0 && sales > 0 && cost <= sales * COST_ANOMALY_RATIO) {
+      deptMargin[dn].net += sales;
+      deptMargin[dn].cogs += cost;
+    }
+  }
+  const departments = DEPARTMENTS.map((dept) => {
+    const val = (tSum.byDepartment && tSum.byDepartment[dept]) || 0;
+    const prev1 = d1Sum && d1Sum.byDepartment ? d1Sum.byDepartment[dept] || 0 : null;
+    const prev7 = d7Sum && d7Sum.byDepartment ? d7Sum.byDepartment[dept] || 0 : null;
+    const dm = deptMargin[dept];
+    return {
+      name: dept,
+      netSales: Math.round(val),
+      sharePct: tSum.netSales > 0 ? round1(val / tSum.netSales * 100) : 0,
+      dodPct: pctChange(val, prev1),
+      wowPct: pctChange(val, prev7),
+      marginPct: dm && dm.net > 0 ? round1((dm.net - dm.cogs) / dm.net * 100) : null,
+    };
+  }).filter((d) => d.netSales > 0 || d.name !== 'Store Management');
+
+  // Products: top sellers, movers vs same weekday last week, possible stockouts
+  const nameOf = (code, p) => {
+    const m = master && master[code];
+    return (m && (m.nameEng || m.nameTha)) || p.itemName || code;
+  };
+  const currProducts = Object.entries(target.byProduct || {});
+  const prevByCode = (d7.report && d7.report.byProduct) || {};
+  const productRow = ([code, p]) => {
+    const sales = Number(p.totalNetSales) || 0;
+    const cost = Number(p.costAmount) || 0;
+    return {
+      itemCode: code,
+      name: nameOf(code, p),
+      department: p.departmentName || '',
+      netSales: Math.round(sales),
+      qty: Number(p.totalQuantitySold) || 0,
+      marginPct: cost > 0 && sales > 0 && cost <= sales * COST_ANOMALY_RATIO
+        ? round1((sales - cost) / sales * 100) : null,
+    };
+  };
+  const top = currProducts
+    .slice().sort((a, b) => (b[1].totalNetSales || 0) - (a[1].totalNetSales || 0))
+    .slice(0, 10).map(productRow);
+
+  const movers = [];
+  for (const [code, p] of currProducts) {
+    const curr = Number(p.totalNetSales) || 0;
+    const prev = Number(prevByCode[code] && prevByCode[code].totalNetSales) || 0;
+    if (prev < 500 && curr < 500) continue; // ignore noise
+    movers.push({ row: productRow([code, p]), curr, prev, diff: curr - prev });
+  }
+  movers.sort((a, b) => b.diff - a.diff);
+  const fmtMover = (m) => ({ ...m.row, prevNetSales: Math.round(m.prev), changeTHB: Math.round(m.diff) });
+  const risers = movers.slice(0, 5).filter((m) => m.diff > 0).map(fmtMover);
+  const fallers = movers.slice(-5).reverse().filter((m) => m.diff < 0).map(fmtMover);
+
+  const zeroSales = [];
+  for (const [code, pp] of Object.entries(prevByCode)) {
+    const prev = Number(pp.totalNetSales) || 0;
+    if (prev < 1000) continue;
+    const now = target.byProduct && target.byProduct[code];
+    if (!now || (Number(now.totalNetSales) || 0) === 0) {
+      zeroSales.push({ itemCode: code, name: nameOf(code, pp), department: pp.departmentName || '', prevNetSales: Math.round(prev) });
+    }
+  }
+  zeroSales.sort((a, b) => b.prevNetSales - a.prevNetSales);
+
+  return {
+    businessDate: targetDate,
+    dow: tSum.dow,
+    kpi: {
+      netSales: Math.round(tSum.netSales),
+      receiptCount: tSum.receiptCount,
+      avgReceipt: tSum.receiptCount > 0 ? Math.round(tSum.netSales / tSum.receiptCount) : null,
+      quantitySold: tSum.quantitySold,
+      marginPct: margin.marginPct,
+      cogsCoverage: `${margin.coveredItems}/${margin.totalItems}`,
+      costAnomalyItems: margin.anomalyItems,
+      dodPct: d1Sum ? pctChange(tSum.netSales, d1Sum.netSales) : null,
+      wowPct: d7Sum ? pctChange(tSum.netSales, d7Sum.netSales) : null,
+      vs4wAvgPct: avg4w ? pctChange(tSum.netSales, avg4w) : null,
+      receiptDodPct: d1Sum ? pctChange(tSum.receiptCount, d1Sum.receiptCount) : null,
+      receiptWowPct: d7Sum ? pctChange(tSum.receiptCount, d7Sum.receiptCount) : null,
+    },
+    departments,
+    products: { top, risers, fallers, zeroSales: zeroSales.slice(0, 8) },
+  };
+}
+
+/**
+ * Generate and return the daily brief object (computed data + LLM narrative).
+ * Heavy by design — runs as a scheduled pre-process, not interactively.
+ */
+async function generateDailyBrief(getReport, master, storeId, businessDate, lang) {
+  if (!AI_ENABLED) throw new Error('AI_NOT_CONFIGURED');
+
+  const dates = {
+    d1: addDays(businessDate, -1),
+    d7: addDays(businessDate, -7),
+    d14: addDays(businessDate, -14),
+    d21: addDays(businessDate, -21),
+    d28: addDays(businessDate, -28),
+  };
+  const target = await getReport(businessDate, storeId);
+  const hasHourly = !!(target && target.total && target.total.hourly && target.total.hourly.length);
+  const hasTotalRow = !!(target && target.total && target.total.totalRow);
+  if (!hasHourly && !hasTotalRow) throw new Error('NO_DATA');
+  const [r1, r7, r14, r21, r28] = await Promise.all([
+    getReport(dates.d1, storeId).catch(() => null),
+    getReport(dates.d7, storeId).catch(() => null),
+    getReport(dates.d14, storeId).catch(() => null),
+    getReport(dates.d21, storeId).catch(() => null),
+    getReport(dates.d28, storeId).catch(() => null),
+  ]);
+
+  const data = buildBriefData({
+    targetDate: businessDate,
+    target,
+    d1: { date: dates.d1, report: r1 },
+    d7: { date: dates.d7, report: r7 },
+    d14: { date: dates.d14, report: r14 },
+    d21: { date: dates.d21, report: r21 },
+    d28: { date: dates.d28, report: r28 },
+  }, master);
+  if (!data) throw new Error('NO_DATA');
+
+  const langName = lang === 'en' ? 'English' : lang === 'th' ? 'Thai' : 'Japanese';
+  const prompt = `You are a retail analyst writing the morning daily brief for LOPIA Thailand store managers.
+All figures below are pre-computed and correct — do NOT recompute or invent numbers. Margin = gross margin from actual COGS; null margin means cost data is missing (do not treat as 0%). "vs4wAvgPct" compares against the average of the same weekday over the last 4 weeks (seasonality-adjusted).
+
+${JSON.stringify(data)}
+
+Write concise, practical commentary in ${langName}. Respond with ONLY a JSON object:
+{"headline": string, "departments": string, "products": string, "actions": string}
+
+- headline: 2-3 sentences. Overall verdict for the day (sales vs the same-weekday average and day before, margin). Mention the single most important fact first.
+- departments: 2-4 sentences on department mix: which drove/dragged the day, margin standouts.
+- products: 2-4 sentences: notable top sellers, risers/fallers, and possible stockouts (zeroSales items sold well last week but zero this day). If costAnomalyItems > 0, add one sentence that those items have broken cost master data in BC.
+- actions: 2-3 short imperative bullet lines (separated by \\n) a store manager should do today.
+No markdown headings inside values. Keep each value plain text (line breaks allowed).`;
+
+  const raw = await callGemini(prompt, MODEL, 90000);
+  const narrative = extractJson(raw);
+
+  return {
+    businessDate,
+    storeId,
+    lang: lang || 'ja',
+    generatedAt: new Date().toISOString(),
+    data,
+    narrative: {
+      headline: String(narrative.headline || ''),
+      departments: String(narrative.departments || ''),
+      products: String(narrative.products || ''),
+      actions: String(narrative.actions || ''),
+    },
+  };
+}
+
 module.exports = {
   isAvailable,
   generateAnalysis,
   generateForecast,
   generateTodayInsight,
   generateHourlyForecast,
+  generateDailyBrief,
 };

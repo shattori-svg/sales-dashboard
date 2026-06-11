@@ -2530,6 +2530,81 @@ body.login-body {
   overflow-wrap: anywhere;
 }
 
+/* ---- Daily brief ---- */
+.brief-section { margin-bottom: var(--space-6); }
+.brief-headline {
+  font-size: 1.05rem;
+  line-height: 1.65;
+  font-weight: 600;
+  color: var(--text);
+  background: #eff6ff;
+  border-left: 4px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  padding: var(--space-4) var(--space-5);
+  margin: var(--space-4) 0;
+}
+.brief-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+.brief-kpi-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg);
+  padding: var(--space-4) var(--space-5);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.brief-kpi-label { font-size: var(--text-sm); color: var(--text-muted); }
+.brief-kpi-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  font-family: 'DM Mono', monospace;
+  color: var(--text);
+  margin: var(--space-1) 0;
+}
+.brief-kpi-badges { font-size: 0.78rem; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.brief-kpi-note { font-size: 0.75rem; color: var(--text-muted); }
+.brief-badge {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-family: 'DM Mono', monospace;
+}
+.brief-badge.positive { background: #dcfce7; color: #15803d; }
+.brief-badge.negative { background: #fee2e2; color: #b91c1c; }
+.brief-block { margin: var(--space-6) 0; }
+.brief-block h4 { margin: 0 0 var(--space-3); }
+.brief-dept-wrap {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.2fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+.brief-chart-wrap { height: 240px; position: relative; }
+.brief-text {
+  margin-top: var(--space-3);
+  line-height: 1.7;
+  color: var(--text-secondary);
+  white-space: pre-line;
+}
+.brief-mini-table { margin-bottom: var(--space-4); }
+.brief-mini-table h5 { margin: 0 0 var(--space-2); font-size: var(--text-sm); color: var(--text-secondary); }
+.brief-actions {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-4) var(--space-5);
+}
+.brief-actions ul { margin: 0; padding-left: 1.2rem; }
+.brief-actions li { margin: 0.3rem 0; line-height: 1.6; }
+.brief-divider { border: none; border-top: 1px solid var(--border); margin: var(--space-6) 0; }
+@media (max-width: 880px) {
+  .brief-dept-wrap { grid-template-columns: 1fr; }
+}
+
 /* ==========================================================================
    App shell — sidebar layout (dashboard page)
    ========================================================================== */
