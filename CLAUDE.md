@@ -155,6 +155,17 @@ CSS だけで変形する（ドロワーJSなし）。ヘッダーの表示中�
 「監査ログ」タブ。記録対象: login/login_failed/logout/bootstrap_admin/user_*/
 stores_update/exchange_rate_update/business_hours_update/product_master_import。
 
+### デイリーブリーフ（AI）は「数値=コード計算、文章=LLM」
+
+毎朝の自動レポートは `ai-gemini.js generateDailyBrief()`。**全数値（KPI・DoD/WoW・
+同曜日4週平均比・部門別粗利・商品Top/急変動/欠品疑い）はコードで事前計算**し、LLM には
+JSONで渡して4節のナラティブ（headline/departments/products/actions）だけ書かせる。
+LLMに計算させない方針を崩さないこと。原価異常品（cost > sales×3）は粗利計算から除外し
+件数のみ渡す。保存は `masters` の `daily_brief:<storeId>:<date>` キー
+（`getMasterJson`/`saveMasterJson`）。hourly が空のレポートは `total.totalRow` に
+フォールバック（item-sales系レポート対応）。Cloud Scheduler が
+`/api/ai/daily-brief/generate` を毎朝叩く（原価同期の後）。
+
 ### jest がハングする場合
 
 このマシンでは jest のワーカー終了処理が稀にハングする（テスト自体は数秒で全合格）。
@@ -278,6 +289,8 @@ var CHART_OPTS = {
 | `GET` | `/api/dates` | アップロード済み日付一覧 |
 | `GET` | `/api/stores` | 店舗一覧 |
 | `GET` | `/api/ai/analyze` | AI分析テキスト生成 |
+| `POST` | `/api/ai/daily-brief/generate` | デイリーブリーフ生成（X-API-Key、`{businessDate?, storeId?}`、省略時=バンコク昨日、冪等） |
+| `GET` | `/api/ai/daily-brief` | 保存済みブリーフ取得（`?date=YYYY-MM-DD&storeId=xxx`） |
 | `GET` | `/api/ai/forecast` | AI売上予測 |
 | `GET` | `/api/allstores` | 全店舗当日サマリー |
 
