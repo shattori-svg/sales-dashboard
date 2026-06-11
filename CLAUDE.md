@@ -130,6 +130,36 @@ Value Entry は LS Central のステートメント記帳後（≒翌朝）に�
   （例: ケース原価が単品原価として登録）。粗利率が大きな負値になるのはダッシュボードの
   バグではなく BC マスタのデータ品質問題
 
+### シェルはサイドバー構造・ナビボタンの contract
+
+`index.html` は `.app-shell`（grid: サイドバー 236px + メイン列）。**ナビボタンは
+`class="tab"` + `data-tab` を必ず維持する** — `app.js` の `switchTab()` がこのセレクタで
+全タブ・パネルを切り替えるため。モバイル(<1024px)はサイドバーが横スクロールナビに
+CSS だけで変形する（ドロワーJSなし）。ヘッダーの表示中ビュー名は `#header-page-title`
+（`switchTab` と `languageChange` イベントで更新）。
+
+### セキュリティ前提（2026-06 強化済み）
+
+- **本番では `SESSION_SECRET` 必須**（未設定なら起動失敗）。Secret Manager `session-secret`
+  から注入。変更すると全ユーザーのセッションが無効化される
+- API キー/ERP Basic 認証は `timingSafeEqualStr()` で定数時間比較
+- `/login`・`/api/bootstrap-admin` にインメモリレートリミッタ（15分20回/IP）
+- 大きいJSONを受けるルートは `LARGE_JSON_ROUTES` でグローバル `express.json()`(100kb) を
+  バイパスする。新たに大きいペイロードのルートを足すときはここに追加すること
+
+### 監査ログ
+
+管理操作の監査証跡は `masters` テーブルの `audit_log` キーに上限2000件のJSON配列で保存
+（3バックエンド共通・DDL不要）。記録は `audit(req, action, detail)`（fire-and-forget、
+失敗してもリクエストは壊さない）。閲覧は `GET /api/audit-log`（admin）と /setup の
+「監査ログ」タブ。記録対象: login/login_failed/logout/bootstrap_admin/user_*/
+stores_update/exchange_rate_update/business_hours_update/product_master_import。
+
+### jest がハングする場合
+
+このマシンでは jest のワーカー終了処理が稀にハングする（テスト自体は数秒で全合格）。
+`npx jest --testPathPatterns=tests/ --runInBand --forceExit` で回避できる。
+
 ### 部門別「買い上げ点数」の分母は全店レシート数
 
 `computeSummary()` の `receiptByTimeKey`（全店の時間帯別客数マップ）を部門表示でも渡し、
