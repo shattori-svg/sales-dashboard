@@ -161,10 +161,14 @@ stores_update/exchange_rate_update/business_hours_update/product_master_import�
 同曜日4週平均比・部門別粗利・商品Top/急変動/欠品疑い）はコードで事前計算**し、LLM には
 JSONで渡して4節のナラティブ（headline/departments/products/actions）だけ書かせる。
 LLMに計算させない方針を崩さないこと。原価異常品（cost > sales×3）は粗利計算から除外し
-件数のみ渡す。保存は `masters` の `daily_brief:<storeId>:<date>` キー
+件数のみ渡す。**スコープは Total＋6部門**（生成エンドポイントは既定で7本を並列生成。
+部門スコープは商品・粗利を部門内に絞り、客数KPIは信頼できないため Total のみ）。
+保存キーは `daily_brief:<storeId>:<date>`（Total）/ `...:<dept>`（部門）
 （`getMasterJson`/`saveMasterJson`）。hourly が空のレポートは `total.totalRow` に
 フォールバック（item-sales系レポート対応）。Cloud Scheduler が
 `/api/ai/daily-brief/generate` を毎朝叩く（原価同期の後）。
+旧オンデマンド「AI分析」UIは2026-06-11に廃止（バックエンドの
+/api/ai/analyze 等は残置）。ブリーフUIの部門セレクタはユーザーデフォルト部門に連動。
 
 ### jest がハングする場合
 
@@ -274,8 +278,10 @@ var CHART_OPTS = {
 
 ### ユーザー設定の反映（`applyUserPreferences()`）
 
-`department-select`・`ai-department-select`・`products-dept-filter` の3つに
-`authState.preferredDepartment` を反映する。
+`department-select`・`ai-department-select`・`allstores-department-select`・
+`settings-department-select`・`brief-department-select`・`daily-dept-select`・
+`products-dept-filter` に `authState.preferredDepartment` を反映する
+（daily/products は Total を `''` にマップ）。
 
 ---
 
