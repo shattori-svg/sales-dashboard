@@ -487,6 +487,18 @@
             </select>
           </span>
           <span class="output-header-item">
+            <label for="brief-department-select" class="output-header-sep" data-i18n="department">部門</label>
+            <select id="brief-department-select" aria-label="Select department for brief">
+              <option value="Total">Total</option>
+              <option value="Grocery">Grocery</option>
+              <option value="Fruit & Vegetable">Fruit &amp; Vegetable</option>
+              <option value="Fish & Seafood">Fish &amp; Seafood</option>
+              <option value="Meat">Meat</option>
+              <option value="Delicatessen">Delicatessen</option>
+              <option value="Store Management">Store Management</option>
+            </select>
+          </span>
+          <span class="output-header-item">
             <label for="brief-date" class="output-header-sep" data-i18n="output_date">売上日</label>
             <input type="date" id="brief-date" aria-label="Select brief date">
           </span>
@@ -515,57 +527,6 @@
             <h4 data-i18n="brief_actions_title">本日のアクション</h4>
             <div id="brief-actions-text" class="brief-text"></div>
           </div>
-        </div>
-      </div>
-      <hr class="brief-divider">
-
-      <div id="ai-controls" class="output-header">
-        <span class="output-header-item">
-          <label for="ai-store-select" class="store-label" data-i18n="store">店舗</label>
-          <select id="ai-store-select" aria-label="Select store for AI">
-            <option value="default">Default</option>
-          </select>
-        </span>
-        <span class="output-header-item">
-          <label for="ai-department-select" class="output-header-sep" data-i18n="department">部門</label>
-          <select id="ai-department-select" aria-label="Select department for AI">
-            <option value="Total">Total</option>
-            <option value="Grocery">Grocery</option>
-            <option value="Fruit & Vegetable">Fruit & Vegetable</option>
-            <option value="Fish & Seafood">Fish & Seafood</option>
-            <option value="Meat">Meat</option>
-            <option value="Delicatessen">Delicatessen</option>
-            <option value="Store Management">Store Management</option>
-          </select>
-        </span>
-        <span class="output-header-item">
-          <label for="ai-reference-date" class="output-header-sep" data-i18n="output_date">売上日</label>
-          <input type="date" id="ai-reference-date" aria-label="Select date for AI analysis">
-        </span>
-        <span class="output-header-item">
-          <button type="button" id="btn-ai-generate" class="btn-ai" data-i18n="ai_generate_btn">AI分析</button>
-        </span>
-      </div>
-
-      <div id="ai-loading" class="ai-loading" hidden>
-        <span class="loading-spinner" aria-hidden="true"></span>
-        <span data-i18n="ai_loading">AIが処理中です...</span>
-      </div>
-
-      <div id="ai-error" class="ai-error" hidden></div>
-
-      <div id="ai-results" class="ai-results" hidden>
-        <div id="ai-analysis-section" class="ai-result-block" hidden>
-          <h4 data-i18n="ai_analysis_title">分析結果</h4>
-          <div id="ai-analysis-content" class="ai-content"></div>
-        </div>
-        <div id="ai-today-section" class="ai-result-block" hidden>
-          <h4 data-i18n="ai_today_title">本日の着地予測</h4>
-          <div id="ai-today-content" class="ai-content"></div>
-        </div>
-        <div id="ai-forecast-section" class="ai-result-block" hidden>
-          <h4 data-i18n="ai_forecast_title">予測結果</h4>
-          <div id="ai-forecast-content" class="ai-content"></div>
         </div>
       </div>
     </section>

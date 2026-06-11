@@ -430,9 +430,10 @@ Rules:
 // (case cost registered as unit cost) — excluded from margin math.
 const COST_ANOMALY_RATIO = 3;
 
-function productMarginStats(byProduct) {
+function productMarginStats(byProduct, deptFilter) {
   let net = 0, cogs = 0, covered = 0, anomalies = 0, total = 0;
   for (const p of Object.values(byProduct || {})) {
+    if (deptFilter && p.departmentName !== deptFilter) continue;
     const sales = Number(p.totalNetSales) || 0;
     const cost = Number(p.costAmount) || 0;
     total++;
@@ -490,19 +491,21 @@ function pctChange(curr, prev) {
 
 function round1(v) { return v == null ? null : Math.round(v * 10) / 10; }
 
-function buildBriefData(reports, master) {
-  // reports: { target, d1, d7, d14, d21, d28 } (summaries already filtered to non-null where possible)
+function buildBriefData(reports, master, scope) {
+  // reports: { target, d1, d7, d14, d21, d28 }; scope: 'Total' or a department name.
   const { targetDate, target, d1, d7, d14, d21, d28 } = reports;
+  const isDept = scope && scope !== 'Total';
   const tSum = summarizeAny(targetDate, target);
   if (!tSum) return null;
   const d1Sum = d1.report ? summarizeAny(d1.date, d1.report) : null;
   const d7Sum = d7.report ? summarizeAny(d7.date, d7.report) : null;
   const wAvgSrcs = [d7, d14, d21, d28].map((x) => (x.report ? summarizeAny(x.date, x.report) : null)).filter(Boolean);
+  const scopeSales = (sum) => (sum == null ? null : (isDept ? ((sum.byDepartment && sum.byDepartment[scope]) || 0) : sum.netSales));
   const avg4w = wAvgSrcs.length
-    ? wAvgSrcs.reduce((s, x) => s + x.netSales, 0) / wAvgSrcs.length
+    ? wAvgSrcs.reduce((s, x) => s + (scopeSales(x) || 0), 0) / wAvgSrcs.length
     : null;
 
-  const margin = productMarginStats(target.byProduct);
+  const margin = productMarginStats(target.byProduct, isDept ? scope : null);
 
   // Departments: sales + share + DoD/WoW + margin
   const deptMargin = {};
@@ -517,7 +520,7 @@ function buildBriefData(reports, master) {
       deptMargin[dn].cogs += cost;
     }
   }
-  const departments = DEPARTMENTS.map((dept) => {
+  const departments = (isDept ? [scope] : DEPARTMENTS).map((dept) => {
     const val = (tSum.byDepartment && tSum.byDepartment[dept]) || 0;
     const prev1 = d1Sum && d1Sum.byDepartment ? d1Sum.byDepartment[dept] || 0 : null;
     const prev7 = d7Sum && d7Sum.byDepartment ? d7Sum.byDepartment[dept] || 0 : null;
@@ -537,8 +540,12 @@ function buildBriefData(reports, master) {
     const m = master && master[code];
     return (m && (m.nameEng || m.nameTha)) || p.itemName || code;
   };
-  const currProducts = Object.entries(target.byProduct || {});
-  const prevByCode = (d7.report && d7.report.byProduct) || {};
+  const inScope = ([, p]) => !isDept || p.departmentName === scope;
+  const currProducts = Object.entries(target.byProduct || {}).filter(inScope);
+  const prevByCodeAll = (d7.report && d7.report.byProduct) || {};
+  const prevByCode = isDept
+    ? Object.fromEntries(Object.entries(prevByCodeAll).filter(inScope))
+    : prevByCodeAll;
   const productRow = ([code, p]) => {
     const sales = Number(p.totalNetSales) || 0;
     const cost = Number(p.costAmount) || 0;
@@ -579,22 +586,29 @@ function buildBriefData(reports, master) {
   }
   zeroSales.sort((a, b) => b.prevNetSales - a.prevNetSales);
 
+  const scopedNet = scopeSales(tSum) || 0;
+  const scopedQty = isDept
+    ? currProducts.reduce((s, [, p]) => s + (Number(p.totalQuantitySold) || 0), 0)
+    : tSum.quantitySold;
   return {
     businessDate: targetDate,
     dow: tSum.dow,
+    scope: scope || 'Total',
     kpi: {
-      netSales: Math.round(tSum.netSales),
-      receiptCount: tSum.receiptCount,
-      avgReceipt: tSum.receiptCount > 0 ? Math.round(tSum.netSales / tSum.receiptCount) : null,
-      quantitySold: tSum.quantitySold,
+      netSales: Math.round(scopedNet),
+      // Department-level receipt counts are unreliable (dept-specific
+      // transactions), so customer KPIs are store-total scope only.
+      receiptCount: isDept ? null : tSum.receiptCount,
+      avgReceipt: !isDept && tSum.receiptCount > 0 ? Math.round(tSum.netSales / tSum.receiptCount) : null,
+      quantitySold: scopedQty,
       marginPct: margin.marginPct,
       cogsCoverage: `${margin.coveredItems}/${margin.totalItems}`,
       costAnomalyItems: margin.anomalyItems,
-      dodPct: d1Sum ? pctChange(tSum.netSales, d1Sum.netSales) : null,
-      wowPct: d7Sum ? pctChange(tSum.netSales, d7Sum.netSales) : null,
-      vs4wAvgPct: avg4w ? pctChange(tSum.netSales, avg4w) : null,
-      receiptDodPct: d1Sum ? pctChange(tSum.receiptCount, d1Sum.receiptCount) : null,
-      receiptWowPct: d7Sum ? pctChange(tSum.receiptCount, d7Sum.receiptCount) : null,
+      dodPct: pctChange(scopedNet, scopeSales(d1Sum)),
+      wowPct: pctChange(scopedNet, scopeSales(d7Sum)),
+      vs4wAvgPct: avg4w ? pctChange(scopedNet, avg4w) : null,
+      receiptDodPct: !isDept && d1Sum ? pctChange(tSum.receiptCount, d1Sum.receiptCount) : null,
+      receiptWowPct: !isDept && d7Sum ? pctChange(tSum.receiptCount, d7Sum.receiptCount) : null,
     },
     departments,
     products: { top, risers, fallers, zeroSales: zeroSales.slice(0, 8) },
@@ -605,8 +619,9 @@ function buildBriefData(reports, master) {
  * Generate and return the daily brief object (computed data + LLM narrative).
  * Heavy by design — runs as a scheduled pre-process, not interactively.
  */
-async function generateDailyBrief(getReport, master, storeId, businessDate, lang) {
+async function generateDailyBrief(getReport, master, storeId, businessDate, lang, department) {
   if (!AI_ENABLED) throw new Error('AI_NOT_CONFIGURED');
+  const scope = department && department !== 'Total' ? department : 'Total';
 
   const dates = {
     d1: addDays(businessDate, -1),
@@ -635,11 +650,18 @@ async function generateDailyBrief(getReport, master, storeId, businessDate, lang
     d14: { date: dates.d14, report: r14 },
     d21: { date: dates.d21, report: r21 },
     d28: { date: dates.d28, report: r28 },
-  }, master);
+  }, master, scope);
   if (!data) throw new Error('NO_DATA');
+  if (scope !== 'Total' && !(data.kpi.netSales > 0)) throw new Error('NO_DATA');
 
   const langName = lang === 'en' ? 'English' : lang === 'th' ? 'Thai' : 'Japanese';
-  const prompt = `You are a retail analyst writing the morning daily brief for LOPIA Thailand store managers.
+  const scopeIntro = scope === 'Total'
+    ? 'for LOPIA Thailand store managers'
+    : `for the ${scope} department manager of LOPIA Thailand (all data below is scoped to this department; sharePct = the department's share of whole-store sales)`;
+  const deptSectionRule = scope === 'Total'
+    ? '- departments: 2-4 sentences on department mix: which drove/dragged the day, margin standouts.'
+    : '- departments: 2-4 sentences on this department\'s day: sales vs comparisons, its share of the store, margin condition.';
+  const prompt = `You are a retail analyst writing the morning daily brief ${scopeIntro}.
 All figures below are pre-computed and correct — do NOT recompute or invent numbers. Margin = gross margin from actual COGS; null margin means cost data is missing (do not treat as 0%). "vs4wAvgPct" compares against the average of the same weekday over the last 4 weeks (seasonality-adjusted).
 
 ${JSON.stringify(data)}
@@ -648,9 +670,9 @@ Write concise, practical commentary in ${langName}. Respond with ONLY a JSON obj
 {"headline": string, "departments": string, "products": string, "actions": string}
 
 - headline: 2-3 sentences. Overall verdict for the day (sales vs the same-weekday average and day before, margin). Mention the single most important fact first.
-- departments: 2-4 sentences on department mix: which drove/dragged the day, margin standouts.
+${deptSectionRule}
 - products: 2-4 sentences: notable top sellers, risers/fallers, and possible stockouts (zeroSales items sold well last week but zero this day). If costAnomalyItems > 0, add one sentence that those items have broken cost master data in BC.
-- actions: 2-3 short imperative bullet lines (separated by \\n) a store manager should do today.
+- actions: 2-3 short imperative bullet lines (separated by \\n) the manager should do today.
 No markdown headings inside values. Keep each value plain text (line breaks allowed).`;
 
   const raw = await callGemini(prompt, MODEL, 90000);
@@ -659,6 +681,7 @@ No markdown headings inside values. Keep each value plain text (line breaks allo
   return {
     businessDate,
     storeId,
+    scope,
     lang: lang || 'ja',
     generatedAt: new Date().toISOString(),
     data,

@@ -1108,7 +1108,9 @@ app.get('/api/ai/status', (req, res) => {
 // Daily brief — pre-generated morning report (computed numbers + AI narrative).
 // Generation is triggered by Cloud Scheduler (X-API-Key) after the COGS sync,
 // and is idempotent: re-running overwrites the stored brief for that date.
-const briefKey = (storeId, date) => `daily_brief:${storeId}:${date}`;
+const BRIEF_DEPARTMENTS = ['Grocery', 'Fruit & Vegetable', 'Fish & Seafood', 'Meat', 'Delicatessen', 'Store Management'];
+const briefKey = (storeId, date, scope) =>
+  `daily_brief:${storeId}:${date}` + (scope && scope !== 'Total' ? ':' + scope : '');
 
 app.post('/api/ai/daily-brief/generate', requireAdmin, express.json(), async (req, res) => {
   if (!aiGemini.isAvailable()) return res.status(503).json({ ok: false, error: 'AI_NOT_CONFIGURED' });
@@ -1124,16 +1126,33 @@ app.post('/api/ai/daily-brief/generate', requireAdmin, express.json(), async (re
       return res.status(400).json({ ok: false, error: 'businessDate must be YYYY-MM-DD' });
     }
     const lang = (req.body && req.body.lang) || 'ja';
+    // Default: store total + every department (departments with no sales that
+    // day come back NO_DATA and are skipped). Pass department to limit.
+    const scopes = req.body && req.body.department
+      ? [String(req.body.department).trim()]
+      : ['Total'].concat(BRIEF_DEPARTMENTS);
     const master = await getProductMaster();
-    const brief = await aiGemini.generateDailyBrief(getReport, master, storeId, businessDate, lang);
-    await db.saveMasterJson(briefKey(storeId, businessDate), brief);
-    audit(req, 'daily_brief_generate', { storeId, businessDate });
-    (req.log || logger).info({ event: 'daily_brief_generated', storeId, businessDate }, 'daily brief generated');
-    res.json({ ok: true, storeId, businessDate, generatedAt: brief.generatedAt });
+
+    const results = await Promise.all(scopes.map((scope) =>
+      aiGemini.generateDailyBrief(getReport, master, storeId, businessDate, lang, scope)
+        .then(async (brief) => {
+          await db.saveMasterJson(briefKey(storeId, businessDate, scope), brief);
+          return { scope, ok: true };
+        })
+        .catch((err) => ({ scope, ok: false, error: err && err.message }))
+    ));
+    const generated = results.filter((r) => r.ok).map((r) => r.scope);
+    const failed = results.filter((r) => !r.ok && r.error !== 'NO_DATA');
+    audit(req, 'daily_brief_generate', { storeId, businessDate, generated: generated.length });
+    (req.log || logger).info({ event: 'daily_brief_generated', storeId, businessDate, generated, failed }, 'daily brief generated');
+    if (generated.length === 0) {
+      const allNoData = results.every((r) => r.error === 'NO_DATA');
+      return res.status(allNoData ? 404 : 500).json({ ok: false, error: allNoData ? 'NO_DATA' : (failed[0] && failed[0].error) || 'generation failed', results });
+    }
+    res.json({ ok: true, storeId, businessDate, generated, failed });
   } catch (err) {
     const msg = err && err.message ? err.message : 'Unknown error';
     (req.log || logger).error({ event: 'ai_error', kind: 'daily_brief', err }, 'daily brief error');
-    if (msg === 'NO_DATA') return res.status(404).json({ ok: false, error: 'NO_DATA' });
     res.status(500).json({ ok: false, error: msg });
   }
 });
@@ -1142,10 +1161,11 @@ app.get('/api/ai/daily-brief', async (req, res) => {
   try {
     const storeId = (req.query.storeId || 'default').trim() || 'default';
     const date = String(req.query.date || '').trim();
+    const scope = (req.query.department || 'Total').trim() || 'Total';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
       return res.status(400).json({ ok: false, error: 'date (YYYY-MM-DD) is required.' });
     }
-    const brief = await db.getMasterJson(briefKey(storeId, date));
+    const brief = await db.getMasterJson(briefKey(storeId, date, scope));
     if (!brief) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
     res.json({ ok: true, brief });
   } catch (err) {

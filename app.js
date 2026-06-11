@@ -1980,7 +1980,6 @@
     if (tabName === 'daily') refreshDailyDateSelect();
     if (tabName === 'weekly') refreshWeeklyDateSelect();
     if (tabName === 'ai') {
-      refreshAiDateSelect();
       loadDailyBriefDefault();
     }
   }
@@ -3315,26 +3314,37 @@
       html += briefKpiCard(t('snapshot_net_sales') || '純売上高', formatCurrencyInteger(k.netSales || 0),
         (t('dod') || 'DoD') + ' ' + pctBadge(k.dodPct) + ' ' + (t('wow') || 'WoW') + ' ' + pctBadge(k.wowPct) +
         ' ' + (t('brief_vs_4w') || '同曜日4週平均比') + ' ' + pctBadge(k.vs4wAvgPct));
-      html += briefKpiCard(t('brief_customers') || '客数', formatInt(k.receiptCount || 0),
-        (t('dod') || 'DoD') + ' ' + pctBadge(k.receiptDodPct) + ' ' + (t('wow') || 'WoW') + ' ' + pctBadge(k.receiptWowPct));
-      html += briefKpiCard(t('brief_avg_receipt') || '客単価', k.avgReceipt != null ? formatCurrencyInteger(k.avgReceipt) : '—', '');
+      if (k.receiptCount != null) {
+        // Customer KPIs are store-total only (department receipt counts are unreliable).
+        html += briefKpiCard(t('brief_customers') || '客数', formatInt(k.receiptCount || 0),
+          (t('dod') || 'DoD') + ' ' + pctBadge(k.receiptDodPct) + ' ' + (t('wow') || 'WoW') + ' ' + pctBadge(k.receiptWowPct));
+        html += briefKpiCard(t('brief_avg_receipt') || '客単価', k.avgReceipt != null ? formatCurrencyInteger(k.avgReceipt) : '—', '');
+      } else {
+        html += briefKpiCard(t('qty_sold_short') || '販売数量', formatInt(k.quantitySold || 0), '');
+      }
       html += briefKpiCard(t('products_margin_pct') || '粗利率', k.marginPct != null ? k.marginPct.toFixed(1) + '%' : '—',
         '<span class="brief-kpi-note">' + escapeHtml((t('brief_cogs_coverage') || '原価取込') + ' ' + (k.cogsCoverage || '—')) + '</span>');
       grid.innerHTML = html;
     }
 
-    // ② Departments: chart + table + commentary
+    // ② Departments: chart + table + commentary.
+    // Total scope charts the department mix; department scope charts its Top10
+    // products instead (a single department bar carries no information).
     var depts = d.departments || [];
+    var isDeptScope = brief.scope && brief.scope !== 'Total';
+    var chartRows = isDeptScope
+      ? ((d.products && d.products.top) || []).map(function (x) { return { label: x.name, value: x.netSales }; })
+      : depts.map(function (x) { return { label: x.name, value: x.netSales }; });
     var canvas = document.getElementById('brief-dept-chart');
     if (canvas && window.Chart) {
       if (briefDeptChart) { briefDeptChart.destroy(); briefDeptChart = null; }
       briefDeptChart = new Chart(canvas, {
         type: 'bar',
         data: {
-          labels: depts.map(function (x) { return x.name; }),
+          labels: chartRows.map(function (x) { return x.label; }),
           datasets: [{
             label: t('snapshot_net_sales') || 'Net Sales',
-            data: depts.map(function (x) { return x.netSales; }),
+            data: chartRows.map(function (x) { return x.value; }),
             backgroundColor: 'rgba(29,78,216,0.80)',
             borderColor: 'rgb(29,78,216)',
             borderWidth: 1,
@@ -3347,7 +3357,16 @@
           plugins: { legend: { display: false } },
           scales: {
             x: { ticks: { color: '#6b7280' }, grid: { color: 'rgba(0,0,0,0.06)' } },
-            y: { ticks: { color: '#6b7280' }, grid: { display: false } },
+            y: {
+              ticks: {
+                color: '#6b7280',
+                callback: function (value) {
+                  var label = this.getLabelForValue(value);
+                  return label && label.length > 22 ? label.slice(0, 21) + '…' : label;
+                },
+              },
+              grid: { display: false },
+            },
           },
         },
       });
@@ -3404,20 +3423,23 @@
     }
   }
 
-  function loadDailyBrief(storeId, date) {
+  function loadDailyBrief(storeId, date, department) {
     var emptyEl = document.getElementById('brief-empty');
     var content = document.getElementById('brief-content');
     var genAt = document.getElementById('brief-generated-at');
     var dateEl = document.getElementById('brief-date');
     var storeEl = document.getElementById('brief-store-select');
+    var deptEl = document.getElementById('brief-department-select');
     if (dateEl && date) dateEl.value = date;
     if (storeEl && storeId && storeEl.value !== storeId) storeEl.value = storeId;
+    if (deptEl && department && deptEl.value !== department) deptEl.value = department;
     var sid = storeEl ? storeEl.value : (storeId || 'default');
     var d = dateEl ? dateEl.value : date;
+    var dept = deptEl ? (deptEl.value || 'Total') : (department || 'Total');
     if (!d) return;
-    briefLoadedKey = sid + ':' + d;
+    briefLoadedKey = sid + ':' + d + ':' + dept;
     if (genAt) genAt.textContent = '';
-    fetch('/api/ai/daily-brief?storeId=' + encodeURIComponent(sid) + '&date=' + encodeURIComponent(d))
+    fetch('/api/ai/daily-brief?storeId=' + encodeURIComponent(sid) + '&date=' + encodeURIComponent(d) + '&department=' + encodeURIComponent(dept))
       .then(function (res) {
         if (res.status === 404) return null;
         return parseJsonResponse(res);
@@ -3443,10 +3465,12 @@
   function loadDailyBriefDefault() {
     var dateEl = document.getElementById('brief-date');
     var storeEl = document.getElementById('brief-store-select');
+    var deptEl = document.getElementById('brief-department-select');
     var sid = storeEl && storeEl.value ? storeEl.value : 'default';
     var d = dateEl && dateEl.value ? dateEl.value : bangkokYesterday();
-    if (briefLoadedKey === sid + ':' + d) return;
-    loadDailyBrief(sid, d);
+    var dept = deptEl && deptEl.value ? deptEl.value : 'Total';
+    if (briefLoadedKey === sid + ':' + d + ':' + dept) return;
+    loadDailyBrief(sid, d, dept);
   }
 
   function showAiLoading(show) {
@@ -3683,14 +3707,14 @@
     var department = authState.preferredDepartment || 'Total';
     var preferredCurrency = authState.preferredCurrency;
     var preferredLanguage = authState.preferredLanguage;
-    var storeSelects = ['store-select', 'ai-store-select'];
+    var storeSelects = ['store-select', 'ai-store-select', 'brief-store-select'];
     storeSelects.forEach(function (id) {
       var el = document.getElementById(id);
       if (el && storeId && Array.prototype.some.call(el.options, function (o) { return o.value === storeId; })) {
         el.value = storeId;
       }
     });
-    var deptSelects = ['department-select', 'ai-department-select', 'allstores-department-select', 'settings-department-select'];
+    var deptSelects = ['department-select', 'ai-department-select', 'allstores-department-select', 'settings-department-select', 'brief-department-select'];
     deptSelects.forEach(function (id) {
       var el = document.getElementById(id);
       if (el && department && Array.prototype.some.call(el.options, function (o) { return o.value === department; })) {
@@ -4163,16 +4187,22 @@
 
     /* Daily brief controls */
     var briefDateEl = document.getElementById('brief-date');
-    if (briefDateEl) briefDateEl.addEventListener('change', function () { loadDailyBrief(null, null); });
+    if (briefDateEl) briefDateEl.addEventListener('change', function () { loadDailyBrief(null, null, null); });
     var briefStoreEl = document.getElementById('brief-store-select');
-    if (briefStoreEl) briefStoreEl.addEventListener('change', function () { loadDailyBrief(null, null); });
+    if (briefStoreEl) briefStoreEl.addEventListener('change', function () { loadDailyBrief(null, null, null); });
+    var briefDeptEl = document.getElementById('brief-department-select');
+    if (briefDeptEl) briefDeptEl.addEventListener('change', function () { loadDailyBrief(null, null, null); });
     var btnYesterdayBrief = document.getElementById('btn-yesterday-brief');
     if (btnYesterdayBrief) {
       btnYesterdayBrief.addEventListener('click', function () {
         var hourlyStore = document.getElementById('store-select');
+        var hourlyDept = document.getElementById('department-select');
         var sid = hourlyStore && hourlyStore.value ? hourlyStore.value : 'default';
+        // Follow the department currently shown on the snapshot tab (which
+        // itself defaults to the user's preferred department).
+        var dept = hourlyDept && hourlyDept.value ? hourlyDept.value : 'Total';
         switchTab('ai');
-        loadDailyBrief(sid, bangkokYesterday());
+        loadDailyBrief(sid, bangkokYesterday(), dept);
         var briefSection = document.getElementById('brief-section');
         if (briefSection && briefSection.scrollIntoView) briefSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
