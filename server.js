@@ -86,6 +86,7 @@ const {
 } = db;
 const aiGemini = require('./ai-gemini');
 const entraAuth = require('./entra-auth');
+const externalContext = require('./external-context');
 
 const app = express();
 const PORT = process.env.PORT || 3333;
@@ -1131,10 +1132,20 @@ app.post('/api/ai/daily-brief/generate', requireAdmin, express.json(), async (re
     const scopes = req.body && req.body.department
       ? [String(req.body.department).trim()]
       : ['Total'].concat(BRIEF_DEPARTMENTS);
+    // Fetch shared inputs once, not per scope: product master, classification
+    // groups, and the day's external context (weather/holiday/payday/AQI/disaster).
     const master = await getProductMaster();
+    const groups = await getProductGroups().catch(() => []);
+    let external = null;
+    try {
+      external = await externalContext.fetchExternalContext(businessDate);
+    } catch (e) {
+      (req.log || logger).warn({ event: 'external_context_failed', err: e && e.message }, 'external context fetch failed');
+    }
+    const opts = { groups, external };
 
     const results = await Promise.all(scopes.map((scope) =>
-      aiGemini.generateDailyBrief(getReport, master, storeId, businessDate, lang, scope)
+      aiGemini.generateDailyBrief(getReport, master, storeId, businessDate, lang, scope, opts)
         .then(async (brief) => {
           await db.saveMasterJson(briefKey(storeId, businessDate, scope), brief);
           return { scope, ok: true };

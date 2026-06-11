@@ -2575,35 +2575,98 @@ body.login-body {
 }
 .brief-badge.positive { background: #dcfce7; color: #15803d; }
 .brief-badge.negative { background: #fee2e2; color: #b91c1c; }
+/* verdict bar */
+.brief-verdict-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius);
+  margin: var(--space-3) 0;
+  border-left: 4px solid var(--border);
+}
+.brief-verdict-bar.verdict-good { background: #ecfdf5; border-left-color: #16a34a; }
+.brief-verdict-bar.verdict-ok { background: #eff6ff; border-left-color: #2563eb; }
+.brief-verdict-bar.verdict-warn { background: #fffbeb; border-left-color: #d97706; }
+.brief-verdict-bar.verdict-bad { background: #fef2f2; border-left-color: #dc2626; }
+.brief-verdict-badge { font-weight: 700; font-size: 0.95rem; }
+.verdict-good .brief-verdict-badge { color: #15803d; }
+.verdict-ok .brief-verdict-badge { color: #1d4ed8; }
+.verdict-warn .brief-verdict-badge { color: #b45309; }
+.verdict-bad .brief-verdict-badge { color: #b91c1c; }
+.brief-verdict-scope { font-size: 0.9rem; color: var(--text-secondary); font-weight: 500; }
+
+/* external context chips */
+.brief-external { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--space-3) 0 var(--space-4); }
+.brief-ext-chip {
+  font-size: 0.78rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+/* category cascade (大分類 card → 中分類 rows) */
+#brief-categories { display: flex; flex-direction: column; gap: var(--space-4); }
+.brief-l1-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  overflow: hidden;
+  background: var(--bg);
+}
+.brief-l1-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 10px 14px;
+  background: #eef2ff;               /* 大分類 = indigo tint */
+  border-bottom: 1px solid var(--border);
+  font-weight: 600; font-size: 0.98rem;
+}
+.brief-l1-bar .ti-folder { color: #4f46e5; font-size: 17px; }
+.brief-l1-card > .brief-cat-note { padding: 8px 14px 0; }   /* note attached to 大分類 */
+.brief-l2-list { padding: 4px 14px 6px; }
+.brief-l2-row {
+  padding: 9px 0;
+  border-bottom: 0.5px solid var(--border);
+  border-left: 3px solid #c7d2fe;    /* 中分類 = indigo accent rail */
+  padding-left: 12px;
+}
+.brief-l2-row:last-child { border-bottom: none; }
+.brief-l2-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.brief-cat-name { font-weight: 500; }
+.brief-cat-metrics { font-size: 0.82rem; color: var(--text-secondary); font-family: 'DM Mono', monospace; }
+.brief-cat-note { margin: 4px 0 0; font-size: 0.87rem; line-height: 1.55; color: var(--text-secondary); }
+.brief-l2-row .brief-cat-note { padding-right: 4px; }
+
+/* level pills — make 大分類 / 中分類 unmistakable */
+.brief-level-pill {
+  font-size: 0.68rem; font-weight: 600; letter-spacing: 0.02em;
+  padding: 2px 8px; border-radius: 999px; flex: none;
+}
+.brief-level-pill.pill-l1 { background: #4f46e5; color: #fff; }
+.brief-level-pill.pill-l2 { background: #e0e7ff; color: #3730a3; }
+.brief-alert-sug { color: var(--text-secondary); }
+
+/* item alerts */
+.brief-alert-row { display: flex; gap: 10px; padding: 7px 0; border-bottom: 0.5px solid var(--border); align-items: baseline; }
+.brief-alert-row:last-child { border-bottom: none; }
+.brief-alert-tag {
+  font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; white-space: nowrap; font-weight: 500; flex: none;
+}
+.brief-alert-tag.tag-stockout { background: #fee2e2; color: #b91c1c; }
+.brief-alert-tag.tag-anomaly { background: #fef3c7; color: #b45309; }
+.brief-alert-tag.tag-coverage { background: #f1f5f9; color: #475569; }
+.brief-alert-text { font-size: 0.88rem; line-height: 1.5; }
+
 .brief-block { margin: var(--space-6) 0; }
 .brief-block h4 { margin: 0 0 var(--space-3); }
-.brief-dept-wrap {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.2fr);
-  gap: var(--space-5);
-  align-items: start;
-}
-.brief-chart-wrap { height: 240px; position: relative; }
 .brief-text {
   margin-top: var(--space-3);
   line-height: 1.7;
   color: var(--text-secondary);
   white-space: pre-line;
 }
-.brief-mini-table { margin-bottom: var(--space-4); }
-.brief-mini-table h5 { margin: 0 0 var(--space-2); font-size: var(--text-sm); color: var(--text-secondary); }
-.brief-actions {
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: var(--radius-lg, 12px);
-  padding: var(--space-4) var(--space-5);
-}
-.brief-actions ul { margin: 0; padding-left: 1.2rem; }
-.brief-actions li { margin: 0.3rem 0; line-height: 1.6; }
 .brief-divider { border: none; border-top: 1px solid var(--border); margin: var(--space-6) 0; }
-@media (max-width: 880px) {
-  .brief-dept-wrap { grid-template-columns: 1fr; }
-}
 
 /* ==========================================================================
    App shell — sidebar layout (dashboard page)

@@ -3268,7 +3268,6 @@
   }
 
   // ---- Daily brief (pre-generated morning report) ----
-  var briefDeptChart = null;
   var briefLoadedKey = null;
 
   function bangkokYesterday() {
@@ -3289,6 +3288,71 @@
       (badges ? '<div class="brief-kpi-badges">' + badges + '</div>' : '') + '</div>';
   }
 
+  var VERDICT_LABEL = { good: '好調', ok: 'ほぼ平常', warn: 'やや低調', bad: '要注意', na: '—' };
+
+  function renderBriefExternal(ext) {
+    if (!ext) return '';
+    var chips = [];
+    function chip(icon, text) {
+      return '<span class="brief-ext-chip"><i class="' + icon + '" aria-hidden="true"></i> ' + escapeHtml(text) + '</span>';
+    }
+    chips.push(chip('', (ext.dow ? ext.dow + '曜' : '') + (ext.isWeekend ? '・週末' : '・平日')));
+    if (ext.holiday && ext.holiday.isHoliday) chips.push(chip('', '祝日: ' + (ext.holiday.name || '')));
+    if (ext.payday && ext.payday.note) chips.push(chip('', ext.payday.note));
+    if (ext.weather && (ext.weather.tempMax != null || (ext.weather.summary && ext.weather.summary !== '—'))) {
+      var w = ext.weather;
+      var wt = (w.summary && w.summary !== '—' ? w.summary : '') + (w.tempMax != null ? ' ' + w.tempMax + '/' + (w.tempMin != null ? w.tempMin : '') + '℃' : '') + (w.precipMm ? ' 降水' + w.precipMm + 'mm' : '');
+      if (wt.trim()) chips.push(chip('', wt.trim()));
+    }
+    if (ext.airQuality && ext.airQuality.pm25 != null) chips.push(chip('', 'PM2.5 ' + ext.airQuality.pm25 + '(' + (ext.airQuality.band || '') + ')'));
+    if (ext.disasters && ext.disasters.length) {
+      ext.disasters.slice(0, 2).forEach(function (dz) { chips.push(chip('', '災害: ' + (dz.typeLabel || dz.type) + ' ' + dz.level)); });
+    }
+    return chips.join('');
+  }
+
+  function marginTxt(m) { return m != null ? m.toFixed(1) + '%' : '<span class="na-value">—</span>'; }
+  function catNote(notes, key) {
+    var note = notes && key != null ? notes[String(key)] : null;
+    return note ? '<p class="brief-cat-note">' + escapeHtml(note) + '</p>' : '';
+  }
+  function catMetrics(x, withMargin) {
+    return '<span class="brief-cat-metrics">' + formatCurrencyInteger(x.netSales) +
+      (x.sharePct != null ? ' ・ ' + (t('products_share_pct') || '構成比') + ' ' + x.sharePct.toFixed(1) + '%' : '') +
+      ' ・ WoW ' + pctBadge(x.wowPct) +
+      (withMargin && x.marginPct != null ? ' ・ ' + (t('products_margin_pct') || '粗利率') + ' ' + marginTxt(x.marginPct) : '') +
+      '</span>';
+  }
+
+  // Renders the breakdown cascade with explicit level labels (大分類/中分類) and
+  // color division, plus inline cause+suggestion notes keyed by category code
+  // (department scope) or department name (whole-store scope).
+  function renderBriefCategories(categories, notes, opts) {
+    if (!categories || !categories.length) return '';
+    var l1Label = (opts && opts.l1Label) || '';
+    var l2Label = (opts && opts.l2Label) || '';
+    function levelPill(cls, label) {
+      return label ? '<span class="brief-level-pill ' + cls + '">' + escapeHtml(label) + '</span>' : '';
+    }
+    return categories.map(function (l1) {
+      var children = (l1.children || []).map(function (l2) {
+        return '<div class="brief-l2-row">' +
+          '<div class="brief-l2-head">' + levelPill('pill-l2', l2Label) +
+          '<span class="brief-cat-name">' + escapeHtml(l2.name) + '</span> ' + catMetrics(l2, true) + '</div>' +
+          catNote(notes, l2.code) +
+          '</div>';
+      }).join('');
+      return '<div class="brief-l1-card">' +
+        '<div class="brief-l1-bar">' + levelPill('pill-l1', l1Label) +
+        '<i class="ti ti-folder" aria-hidden="true"></i> ' +
+        '<span class="brief-cat-name">' + escapeHtml(l1.name) + '</span> ' +
+        catMetrics(l1, l1.marginPct != null) + '</div>' +
+        catNote(notes, l1.code) +
+        (children ? '<div class="brief-l2-list">' + children + '</div>' : '') +
+        '</div>';
+    }).join('');
+  }
+
   function renderDailyBrief(brief) {
     var content = document.getElementById('brief-content');
     var emptyEl = document.getElementById('brief-empty');
@@ -3297,6 +3361,7 @@
     var d = brief.data || {};
     var k = d.kpi || {};
     var n = brief.narrative || {};
+    var isDeptScope = brief.scope && brief.scope !== 'Total';
     content.hidden = false;
     if (emptyEl) emptyEl.hidden = true;
     if (genAt) {
@@ -3304,10 +3369,24 @@
       genAt.textContent = ts ? (t('brief_generated_at') || '生成') + ': ' + ts.toLocaleString() : '';
     }
 
+    // Verdict bar
+    var verdictEl = document.getElementById('brief-verdict-bar');
+    if (verdictEl) {
+      var vd = d.verdict || { level: 'na', label: '—' };
+      var scopeName = isDeptScope ? getDepartmentDisplayName(brief.scope) : (t('total') || '全店');
+      verdictEl.className = 'brief-verdict-bar verdict-' + (vd.level || 'na');
+      verdictEl.innerHTML = '<span class="brief-verdict-badge">' + escapeHtml(VERDICT_LABEL[vd.level] || vd.label || '—') + '</span>' +
+        '<span class="brief-verdict-scope">' + escapeHtml(scopeName) + ' ・ ' + escapeHtml(d.businessDate || '') + '</span>';
+    }
+
     var headlineEl = document.getElementById('brief-headline');
     if (headlineEl) headlineEl.textContent = n.headline || '';
 
-    // ① KPI cards (largest granularity first)
+    var extEl = document.getElementById('brief-external');
+    if (extEl) extEl.innerHTML = renderBriefExternal(d.external);
+
+    // KPI cards. Whole-store margin is intentionally not shown (cost coverage
+    // is Grocery-only); margin is a department-brief metric.
     var grid = document.getElementById('brief-kpi-grid');
     if (grid) {
       var html = '';
@@ -3315,112 +3394,76 @@
         (t('dod') || 'DoD') + ' ' + pctBadge(k.dodPct) + ' ' + (t('wow') || 'WoW') + ' ' + pctBadge(k.wowPct) +
         ' ' + (t('brief_vs_4w') || '同曜日4週平均比') + ' ' + pctBadge(k.vs4wAvgPct));
       if (k.receiptCount != null) {
-        // Customer KPIs are store-total only (department receipt counts are unreliable).
         html += briefKpiCard(t('brief_customers') || '客数', formatInt(k.receiptCount || 0),
           (t('dod') || 'DoD') + ' ' + pctBadge(k.receiptDodPct) + ' ' + (t('wow') || 'WoW') + ' ' + pctBadge(k.receiptWowPct));
         html += briefKpiCard(t('brief_avg_receipt') || '客単価', k.avgReceipt != null ? formatCurrencyInteger(k.avgReceipt) : '—', '');
       } else {
         html += briefKpiCard(t('qty_sold_short') || '販売数量', formatInt(k.quantitySold || 0), '');
       }
-      html += briefKpiCard(t('products_margin_pct') || '粗利率', k.marginPct != null ? k.marginPct.toFixed(1) + '%' : '—',
-        '<span class="brief-kpi-note">' + escapeHtml((t('brief_cogs_coverage') || '原価取込') + ' ' + (k.cogsCoverage || '—')) + '</span>');
+      // Margin only for departments where cost is actually registered.
+      if (isDeptScope && k.marginPct != null) {
+        html += briefKpiCard(t('products_margin_pct') || '粗利率', k.marginPct.toFixed(1) + '%',
+          '<span class="brief-kpi-note">' + escapeHtml((t('brief_cogs_coverage') || '原価取込') + ' ' + (k.cogsCoverage || '—')) + '</span>');
+      }
       grid.innerHTML = html;
     }
 
-    // ② Departments: chart + table + commentary.
-    // Total scope charts the department mix; department scope charts its Top10
-    // products instead (a single department bar carries no information).
+    // Breakdown: departments (whole store) or 大→中 categories (department).
+    var titleEl = document.getElementById('brief-breakdown-title');
+    if (titleEl) titleEl.textContent = isDeptScope ? (t('brief_category_title') || 'カテゴリ分析（大分類→中分類）') : (t('brief_dept_title') || '部門別');
+
     var depts = d.departments || [];
-    var isDeptScope = brief.scope && brief.scope !== 'Total';
-    var chartRows = isDeptScope
-      ? ((d.products && d.products.top) || []).map(function (x) { return { label: x.name, value: x.netSales }; })
-      : depts.map(function (x) { return { label: x.name, value: x.netSales }; });
-    var canvas = document.getElementById('brief-dept-chart');
-    if (canvas && window.Chart) {
-      if (briefDeptChart) { briefDeptChart.destroy(); briefDeptChart = null; }
-      briefDeptChart = new Chart(canvas, {
-        type: 'bar',
-        data: {
-          labels: chartRows.map(function (x) { return x.label; }),
-          datasets: [{
-            label: t('snapshot_net_sales') || 'Net Sales',
-            data: chartRows.map(function (x) { return x.value; }),
-            backgroundColor: 'rgba(29,78,216,0.80)',
-            borderColor: 'rgb(29,78,216)',
-            borderWidth: 1,
-          }],
-        },
-        options: {
-          indexAxis: 'y',
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            x: { ticks: { color: '#6b7280' }, grid: { color: 'rgba(0,0,0,0.06)' } },
-            y: {
-              ticks: {
-                color: '#6b7280',
-                callback: function (value) {
-                  var label = this.getLabelForValue(value);
-                  return label && label.length > 22 ? label.slice(0, 21) + '…' : label;
-                },
-              },
-              grid: { display: false },
-            },
-          },
-        },
-      });
-    }
-    var deptTable = document.getElementById('brief-dept-table');
-    if (deptTable) {
-      var th = '<thead><tr><th>' + escapeHtml(t('department') || '部門') + '</th><th>' + escapeHtml(t('snapshot_net_sales') || '売上') + '</th><th>' + escapeHtml(t('products_share_pct') || '構成比') + '</th><th>DoD</th><th>WoW</th><th>' + escapeHtml(t('products_margin_pct') || '粗利率') + '</th></tr></thead>';
-      var tb = '<tbody>' + depts.map(function (x) {
-        return '<tr><td>' + escapeHtml(x.name) + '</td><td>' + formatCurrencyInteger(x.netSales) + '</td><td>' +
-          (x.sharePct != null ? x.sharePct.toFixed(1) + '%' : '—') + '</td><td>' + pctBadge(x.dodPct) + '</td><td>' +
-          pctBadge(x.wowPct) + '</td><td>' + (x.marginPct != null ? x.marginPct.toFixed(1) + '%' : '<span class="na-value">—</span>') + '</td></tr>';
-      }).join('') + '</tbody>';
-      deptTable.innerHTML = th + tb;
+
+    // Cause+suggestion notes keyed by category code (dept) / department name (Total).
+    var notes = {};
+    (n.factors || []).forEach(function (f) { if (f && f.key != null) notes[String(f.key)] = f.note; });
+
+    var catWrap = document.getElementById('brief-categories');
+    if (catWrap) {
+      if (isDeptScope) {
+        catWrap.innerHTML = renderBriefCategories(d.categories, notes,
+          { l1Label: t('brief_level_l1') || '大分類', l2Label: t('brief_level_l2') || '中分類' });
+      } else {
+        // Whole store: render departments as a single-level cascade with notes,
+        // matching the department view's style.
+        var deptUnits = depts.map(function (x) {
+          return { code: x.name, name: x.name, netSales: x.netSales, sharePct: x.sharePct, wowPct: x.wowPct, marginPct: null, children: [] };
+        });
+        catWrap.innerHTML = renderBriefCategories(deptUnits, notes, { l1Label: t('department') || '部門' });
+      }
     }
     var deptText = document.getElementById('brief-dept-text');
-    if (deptText) deptText.textContent = n.departments || '';
+    if (deptText) deptText.textContent = '';
 
-    // ③ Products: top / movers / stockout candidates + commentary
+    // Item alerts: stockout candidates + cost-data issues (no SKU ranking).
     var pWrap = document.getElementById('brief-products-tables');
     if (pWrap) {
       var p = d.products || {};
-      function miniTable(title, rows, cols) {
-        if (!rows || !rows.length) return '';
-        var h = '<div class="brief-mini-table"><h5>' + escapeHtml(title) + '</h5><div class="table-wrapper"><table class="report-table"><thead><tr>' +
-          cols.map(function (c) { return '<th>' + escapeHtml(c.label) + '</th>'; }).join('') + '</tr></thead><tbody>';
-        h += rows.map(function (r) {
-          return '<tr>' + cols.map(function (c) { return '<td>' + c.render(r) + '</td>'; }).join('') + '</tr>';
-        }).join('');
-        return h + '</tbody></table></div></div>';
+      function alertRow(tagCls, tag, text, suggestion) {
+        return '<div class="brief-alert-row"><span class="brief-alert-tag ' + tagCls + '">' + escapeHtml(tag) + '</span>' +
+          '<span class="brief-alert-text">' + text +
+          (suggestion ? ' <span class="brief-alert-sug">→ ' + escapeHtml(suggestion) + '</span>' : '') + '</span></div>';
       }
-      var nameCol = { label: t('products_item_name') || '商品名', render: function (r) { return escapeHtml(r.name); } };
-      var deptCol = { label: t('department') || '部門', render: function (r) { return escapeHtml(r.department); } };
-      var salesCol = { label: t('snapshot_net_sales') || '売上', render: function (r) { return formatCurrencyInteger(r.netSales); } };
-      var marginCol = { label: t('products_margin_pct') || '粗利率', render: function (r) { return r.marginPct != null ? r.marginPct.toFixed(1) + '%' : '<span class="na-value">—</span>'; } };
-      var html2 = '';
-      html2 += miniTable(t('brief_top_products') || '売上 Top 10', p.top, [nameCol, deptCol, salesCol, marginCol]);
-      var changeCol = { label: t('brief_change') || '前週差', render: function (r) { return (r.changeTHB >= 0 ? '+' : '') + formatCurrencyInteger(r.changeTHB); } };
-      html2 += miniTable(t('brief_risers') || '急伸（前週同曜日比）', p.risers, [nameCol, salesCol, changeCol]);
-      html2 += miniTable(t('brief_fallers') || '急落（前週同曜日比）', p.fallers, [nameCol, salesCol, changeCol]);
-      var prevCol = { label: t('brief_prev_week') || '前週売上', render: function (r) { return formatCurrencyInteger(r.prevNetSales); } };
-      html2 += miniTable(t('brief_zero') || '売上ゼロ（欠品疑い）', p.zeroSales, [nameCol, deptCol, prevCol]);
-      pWrap.innerHTML = html2;
+      var rows = '';
+      (p.zeroSales || []).forEach(function (r) {
+        var txt = escapeHtml(r.name) + (isDeptScope ? '' : ' / ' + escapeHtml(r.department)) +
+          ' — ' + (t('brief_prev_week') || '前週売上') + ' ' + formatCurrencyInteger(r.prevNetSales);
+        rows += alertRow('tag-stockout', t('brief_alert_stockout') || '欠品疑い', txt, t('brief_sug_stockout') || '発注・棚の状況を確認');
+      });
+      if (k.costAnomalyItems) {
+        rows += alertRow('tag-anomaly', t('brief_alert_anomaly') || '原価異常',
+          escapeHtml((t('brief_alert_anomaly_desc') || '原価>売価×3 の商品') + ': ' + k.costAnomalyItems + (t('brief_items') || '品')),
+          t('brief_sug_anomaly') || 'BCの原価マスタ修正を依頼');
+      }
+      if (k.cogsCoverage) {
+        rows += alertRow('tag-coverage', t('brief_alert_coverage') || '原価取込',
+          escapeHtml((t('brief_cogs_coverage') || '原価取込') + ' ' + k.cogsCoverage),
+          t('brief_sug_coverage') || '売上上位の未登録品から原価登録を依頼');
+      }
+      pWrap.innerHTML = rows || ('<p class="hint">' + escapeHtml(t('brief_no_alerts') || '特記アラートなし') + '</p>');
     }
     var prodText = document.getElementById('brief-products-text');
-    if (prodText) prodText.textContent = n.products || '';
-
-    // ④ Actions
-    var actionsEl = document.getElementById('brief-actions-text');
-    if (actionsEl) {
-      var lines = String(n.actions || '').split(/\n+/).filter(function (s) { return s.trim(); });
-      actionsEl.innerHTML = lines.length
-        ? '<ul>' + lines.map(function (s) { return '<li>' + escapeHtml(s.replace(/^[-・*]\s*/, '')) + '</li>'; }).join('') + '</ul>'
-        : '';
-    }
+    if (prodText) prodText.textContent = n.alerts || '';
   }
 
   function loadDailyBrief(storeId, date, department) {
@@ -3447,7 +3490,6 @@
       .then(function (body) {
         if (!body || !body.brief) {
           if (content) content.hidden = true;
-          if (briefDeptChart) { briefDeptChart.destroy(); briefDeptChart = null; }
           if (emptyEl) {
             emptyEl.textContent = t('brief_not_found') || 'この日のレポートはまだ生成されていません。';
             emptyEl.hidden = false;

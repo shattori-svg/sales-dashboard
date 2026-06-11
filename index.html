@@ -506,26 +506,19 @@
         </div>
         <div id="brief-empty" class="hint" hidden></div>
         <div id="brief-content" hidden>
+          <div id="brief-verdict-bar" class="brief-verdict-bar"></div>
           <p id="brief-headline" class="brief-headline"></p>
+          <div id="brief-external" class="brief-external"></div>
           <div id="brief-kpi-grid" class="brief-kpi-grid"></div>
           <div class="brief-block">
-            <h4 data-i18n="brief_dept_title">部門別</h4>
-            <div class="brief-dept-wrap">
-              <div class="chart-wrapper brief-chart-wrap"><canvas id="brief-dept-chart"></canvas></div>
-              <div class="table-wrapper brief-dept-table-wrap">
-                <table class="report-table" id="brief-dept-table"></table>
-              </div>
-            </div>
+            <div class="brief-block-head"><i class="brief-block-icon" aria-hidden="true"></i><h4 id="brief-breakdown-title" data-i18n="brief_dept_title">部門別</h4></div>
+            <div id="brief-categories"></div>
             <p id="brief-dept-text" class="brief-text"></p>
           </div>
           <div class="brief-block">
-            <h4 data-i18n="brief_products_title">商品トピック</h4>
+            <h4 data-i18n="brief_alerts_title">アイテムアラート</h4>
             <div id="brief-products-tables"></div>
             <p id="brief-products-text" class="brief-text"></p>
-          </div>
-          <div class="brief-block brief-actions">
-            <h4 data-i18n="brief_actions_title">本日のアクション</h4>
-            <div id="brief-actions-text" class="brief-text"></div>
           </div>
         </div>
       </div>

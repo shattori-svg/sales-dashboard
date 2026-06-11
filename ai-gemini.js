@@ -491,7 +491,62 @@ function pctChange(curr, prev) {
 
 function round1(v) { return v == null ? null : Math.round(v * 10) / 10; }
 
-function buildBriefData(reports, master, scope) {
+// Overall day verdict from the seasonality-adjusted comparison (fallback WoW).
+function computeVerdict(vs4wAvgPct, wowPct) {
+  const v = vs4wAvgPct != null ? vs4wAvgPct : wowPct;
+  if (v == null) return { level: 'na', label: '—' };
+  if (v >= 5) return { level: 'good', label: '好調' };
+  if (v >= -3) return { level: 'ok', label: 'ほぼ平常' };
+  if (v >= -10) return { level: 'warn', label: 'やや低調' };
+  return { level: 'bad', label: '要注意' };
+}
+
+// Roll the in-scope products up the classification hierarchy to 大分類 (level 1,
+// 2-digit prefix) → 中分類 (level 2, 4-digit prefix). Codes are prefix-nested
+// (11 → 1101 → 110306 → 110306001) so prefixes give the parent levels.
+function buildCategoryRollup(currProducts, prevByCode, groups, nameOf) {
+  const groupName = {};
+  (groups || []).forEach((g) => { if (g && g.code != null) groupName[String(g.code)] = g.description || ''; });
+  const codeOf = (p) => String(p.retailProductCode || (p.groupCode || '')).trim();
+
+  const l1 = {}; // l1code -> { net, cogs, prev, children:{ l2code -> {...} } }
+  const accProduct = (bucket, sales, cost, prev) => {
+    bucket.net += sales;
+    bucket.prev += prev;
+    if (cost > 0 && sales > 0 && cost <= sales * COST_ANOMALY_RATIO) bucket.cogs += cost;
+  };
+  for (const [code, p] of currProducts) {
+    const gc = codeOf(p);
+    if (gc.length < 2) continue;
+    const l1c = gc.slice(0, 2);
+    const l2c = gc.slice(0, 4);
+    const sales = Number(p.totalNetSales) || 0;
+    const cost = Number(p.costAmount) || 0;
+    const prev = Number(prevByCode[code] && prevByCode[code].totalNetSales) || 0;
+    if (!l1[l1c]) l1[l1c] = { net: 0, cogs: 0, prev: 0, children: {} };
+    accProduct(l1[l1c], sales, cost, prev);
+    if (l2c.length >= 4) {
+      if (!l1[l1c].children[l2c]) l1[l1c].children[l2c] = { net: 0, cogs: 0, prev: 0 };
+      accProduct(l1[l1c].children[l2c], sales, cost, prev);
+    }
+  }
+  const fmt = (code, b) => ({
+    code,
+    name: groupName[code] || code,
+    netSales: Math.round(b.net),
+    wowPct: pctChange(b.net, b.prev),
+    marginPct: b.cogs > 0 && b.net > 0 ? round1((b.net - b.cogs) / b.net * 100) : null,
+  });
+  return Object.entries(l1)
+    .map(([l1c, b]) => Object.assign(fmt(l1c, b), {
+      children: Object.entries(b.children)
+        .map(([l2c, cb]) => fmt(l2c, cb))
+        .sort((a, z) => z.netSales - a.netSales),
+    }))
+    .sort((a, z) => z.netSales - a.netSales);
+}
+
+function buildBriefData(reports, master, scope, groups, external) {
   // reports: { target, d1, d7, d14, d21, d28 }; scope: 'Total' or a department name.
   const { targetDate, target, d1, d7, d14, d21, d28 } = reports;
   const isDept = scope && scope !== 'Total';
@@ -590,10 +645,17 @@ function buildBriefData(reports, master, scope) {
   const scopedQty = isDept
     ? currProducts.reduce((s, [, p]) => s + (Number(p.totalQuantitySold) || 0), 0)
     : tSum.quantitySold;
+  // Category cascade (大分類→中分類) is only meaningful within a department.
+  const categories = isDept ? buildCategoryRollup(currProducts, prevByCode, groups, nameOf) : null;
+  const vs4w = avg4w ? pctChange(scopedNet, avg4w) : null;
+  const wow = pctChange(scopedNet, scopeSales(d7Sum));
   return {
     businessDate: targetDate,
     dow: tSum.dow,
     scope: scope || 'Total',
+    verdict: computeVerdict(vs4w, wow),
+    external: external || null,
+    categories,
     kpi: {
       netSales: Math.round(scopedNet),
       // Department-level receipt counts are unreliable (dept-specific
@@ -619,9 +681,11 @@ function buildBriefData(reports, master, scope) {
  * Generate and return the daily brief object (computed data + LLM narrative).
  * Heavy by design — runs as a scheduled pre-process, not interactively.
  */
-async function generateDailyBrief(getReport, master, storeId, businessDate, lang, department) {
+async function generateDailyBrief(getReport, master, storeId, businessDate, lang, department, opts) {
   if (!AI_ENABLED) throw new Error('AI_NOT_CONFIGURED');
   const scope = department && department !== 'Total' ? department : 'Total';
+  const groups = (opts && opts.groups) || null;
+  const external = (opts && opts.external) || null;
 
   const dates = {
     d1: addDays(businessDate, -1),
@@ -650,33 +714,46 @@ async function generateDailyBrief(getReport, master, storeId, businessDate, lang
     d14: { date: dates.d14, report: r14 },
     d21: { date: dates.d21, report: r21 },
     d28: { date: dates.d28, report: r28 },
-  }, master, scope);
+  }, master, scope, groups, external);
   if (!data) throw new Error('NO_DATA');
   if (scope !== 'Total' && !(data.kpi.netSales > 0)) throw new Error('NO_DATA');
 
   const langName = lang === 'en' ? 'English' : lang === 'th' ? 'Thai' : 'Japanese';
-  const scopeIntro = scope === 'Total'
-    ? 'for LOPIA Thailand store managers'
-    : `for the ${scope} department manager of LOPIA Thailand (all data below is scoped to this department; sharePct = the department's share of whole-store sales)`;
-  const deptSectionRule = scope === 'Total'
-    ? '- departments: 2-4 sentences on department mix: which drove/dragged the day, margin standouts.'
-    : '- departments: 2-4 sentences on this department\'s day: sales vs comparisons, its share of the store, margin condition.';
+  const isDept = scope !== 'Total';
+  const scopeIntro = isDept
+    ? `for the ${scope} department manager of LOPIA Thailand (all data below is scoped to this department)`
+    : 'for LOPIA Thailand store managers (whole-store view)';
+  const marginRule = isDept && scope === 'Grocery'
+    ? 'Margin (粗利率) is reliable for this department — comment on it.'
+    : isDept
+      ? 'Margin data is mostly unavailable for this department (cost not registered in BC) — do not dwell on margin; focus on sales and quantity.'
+      : 'Do NOT state a whole-store margin number (cost coverage is partial, Grocery only). Margin belongs in the department briefs.';
+  // Per-row notes: dept briefs reference categories by `code`; the whole-store
+  // brief references departments by `name`.
+  const factorRule = isDept
+    ? 'For the 3-5 most important category movements (coarse→fine: prefer a few notable 中分類 sub-categories, plus a 大分類 if a whole class moved), return one factor each. "key" MUST be the exact category "code" from categories[] (the 4-digit code for a 中分類, the 2-digit code for a 大分類).'
+    : 'For the 3-5 departments that most drove or dragged the day, return one factor each. "key" MUST be the exact department "name" from departments[].';
+
   const prompt = `You are a retail analyst writing the morning daily brief ${scopeIntro}.
-All figures below are pre-computed and correct — do NOT recompute or invent numbers. Margin = gross margin from actual COGS; null margin means cost data is missing (do not treat as 0%). "vs4wAvgPct" compares against the average of the same weekday over the last 4 weeks (seasonality-adjusted).
+All figures below are pre-computed and correct — do NOT recompute or invent numbers. Margin = gross margin from actual COGS; null margin means cost data is missing (do not treat as 0%). "vs4wAvgPct" compares against the average of the same weekday over the last 4 weeks (seasonality-adjusted). "external" holds weather, public holiday, payday phase, air quality and active disasters for the day. ${marginRule}
 
 ${JSON.stringify(data)}
 
-Write concise, practical commentary in ${langName}. Respond with ONLY a JSON object:
-{"headline": string, "departments": string, "products": string, "actions": string}
+Write concise, practical commentary in ${langName}, in the voice of explaining WHY the day turned out this way and WHAT to do. Respond with ONLY a JSON object:
+{"headline": string, "factors": [{"key": string, "note": string}], "alerts": string}
 
-- headline: 2-3 sentences. Overall verdict for the day (sales vs the same-weekday average and day before, margin). Mention the single most important fact first.
-${deptSectionRule}
-- products: 2-4 sentences: notable top sellers, risers/fallers, and possible stockouts (zeroSales items sold well last week but zero this day). If costAnomalyItems > 0, add one sentence that those items have broken cost master data in BC.
-- actions: 2-3 short imperative bullet lines (separated by \\n) the manager should do today.
-No markdown headings inside values. Keep each value plain text (line breaks allowed).`;
+- headline: 1-2 sentences. The single most important takeaway for the day, weaving in external context (weather / holiday / payday) ONLY when it plausibly explains the result. Do not assert external causes you cannot support.
+- factors: ${factorRule} Each "note" is 1-2 short sentences = likely CAUSE then a concrete SUGGESTION (use "→" before the suggestion), e.g. "値引き拡大で数量増でも利益が伴わず。→ 値引き幅を見直しセット販促へ。". Order factors coarse→fine (biggest impact first). Only include movements that matter; do not force 5.
+- alerts: 1 short sentence on the item alerts overall (possible stockouts, cost anomalies, missing cost). Empty string if nothing notable.
+No markdown headings. Plain text. Avoid asserting causation you cannot back with the data; prefer "〜とみられる / 可能性".`;
 
   const raw = await callGemini(prompt, MODEL, 90000);
   const narrative = extractJson(raw);
+  const factors = Array.isArray(narrative.factors)
+    ? narrative.factors
+        .filter((f) => f && f.key != null && f.note)
+        .map((f) => ({ key: String(f.key), note: String(f.note) }))
+    : [];
 
   return {
     businessDate,
@@ -687,9 +764,9 @@ No markdown headings inside values. Keep each value plain text (line breaks allo
     data,
     narrative: {
       headline: String(narrative.headline || ''),
-      departments: String(narrative.departments || ''),
-      products: String(narrative.products || ''),
-      actions: String(narrative.actions || ''),
+      factors,
+      analysis: String(narrative.analysis || ''),
+      alerts: String(narrative.alerts || ''),
     },
   };
 }
