@@ -158,17 +158,29 @@ stores_update/exchange_rate_update/business_hours_update/product_master_import�
 ### デイリーブリーフ（AI）は「数値=コード計算、文章=LLM」
 
 毎朝の自動レポートは `ai-gemini.js generateDailyBrief()`。**全数値（KPI・DoD/WoW・
-同曜日4週平均比・部門別粗利・商品Top/急変動/欠品疑い）はコードで事前計算**し、LLM には
-JSONで渡して4節のナラティブ（headline/departments/products/actions）だけ書かせる。
-LLMに計算させない方針を崩さないこと。原価異常品（cost > sales×3）は粗利計算から除外し
-件数のみ渡す。**スコープは Total＋6部門**（生成エンドポイントは既定で7本を並列生成。
-部門スコープは商品・粗利を部門内に絞り、客数KPIは信頼できないため Total のみ）。
+同曜日4週平均比・部門別粗利・大分類→中分類ロールアップ・欠品疑い）はコードで事前計算**し、
+LLM には JSONで渡して文章だけ書かせる（headline・factors[{key,note}]＝カテゴリ別の原因+提案・
+alerts）。LLMに計算させない方針を崩さないこと。原価異常品（cost > sales×3）は粗利計算から
+除外し件数のみ渡す。**スコープは Total＋6部門**（生成エンドポイントは既定で7本を並列生成。
+部門スコープは商品・粗利・カテゴリを部門内に絞り、客数KPIは信頼できないため Total のみ）。
+
+**多言語**: ナラティブは ja/en/th を事前生成し `narrative.{lang}` に保存（数値dataは言語非依存・
+1回計算）。フロントは現在のUI言語で `narrative[lang]` を選び、languageChange で再描画。
+
+**外部要因（第一弾のみ・`external-context.js`）**: 曜日/給料日（算出）・タイ祝日（静的表。
+Nagerはタイ非対応）・天気/PM2.5（Open-Meteo）・災害（GDACS、日付フィルタ）。全て無料・キー不要。
+best-effortで取得失敗時はスキップ。生成時に1回取得し全スコープへ共有。ニュース/地政学・PredictHQは
+ハルシネーション/コストで不採用（調査: `docs/tech-research/20260611-external-context-apis.md`）。
+
+**判定バッジ**は vs4週平均比のしきい値でコード判定（好調/ほぼ平常/やや低調/要注意）。
+
 保存キーは `daily_brief:<storeId>:<date>`（Total）/ `...:<dept>`（部門）
 （`getMasterJson`/`saveMasterJson`）。hourly が空のレポートは `total.totalRow` に
 フォールバック（item-sales系レポート対応）。Cloud Scheduler が
-`/api/ai/daily-brief/generate` を毎朝叩く（原価同期の後）。
+`/api/ai/daily-brief/generate` を毎朝叩く（06:30 速報→原価同期08:30後→09:00 粗利込み再生成）。
 旧オンデマンド「AI分析」UIは2026-06-11に廃止（バックエンドの
 /api/ai/analyze 等は残置）。ブリーフUIの部門セレクタはユーザーデフォルト部門に連動。
+UIは判定→ヘッドライン→外部要因チップ→KPI→大分類カード(中分類ネスト・色分け)→アラート。グラフなし。
 
 ### jest がハングする場合
 
