@@ -301,8 +301,8 @@
       var tone = deptTone(item.name);
       var style = '--comp-bg:' + tone.bg + ';--comp-border:' + tone.border + ';--comp-accent:' + tone.accent + ';--comp-details:' + tone.details + ';--comp-peak:' + tone.peak + ';';
       html += '<div class="' + cardClass + '" style="' + style + '">' +
-        '<button type="button" class="composition-summary" data-dept="' + item.name + '" aria-expanded="false">' +
-        '<span class="composition-dept">' + getDepartmentDisplayName(item.name) + '</span>' +
+        '<button type="button" class="composition-summary" data-dept="' + escapeHtml(item.name) + '" aria-expanded="false">' +
+        '<span class="composition-dept">' + escapeHtml(getDepartmentDisplayName(item.name)) + '</span>' +
         '<span class="composition-total">' + formatMoney(item.total) + '</span>' +
         '<span class="composition-share-badge">' + share.toFixed(1) + '%</span>' +
         '<span class="composition-chevron">v</span>' +
@@ -358,7 +358,7 @@
     var theadHtml = '<th>' + timeLabel + '</th>';
     for (var idx = 0; idx < deptDatasets.length; idx++) {
       var name = deptDatasets[idx].name;
-      theadHtml += '<th>' + (isNarrow ? (DEPT_SHORT[name] || name) : name) + '</th>';
+      theadHtml += '<th>' + escapeHtml(isNarrow ? (DEPT_SHORT[name] || name) : name) + '</th>';
     }
     theadHtml += '<th>' + totalLabel + '</th>';
     thead.innerHTML = theadHtml;
