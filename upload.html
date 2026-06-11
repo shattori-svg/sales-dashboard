@@ -13,7 +13,9 @@
 
   <nav class="tabs" aria-label="Setup sections">
     <button type="button" class="tab active" data-tab="upload" aria-selected="true">アップロード</button>
+    <button type="button" class="tab" data-tab="monitoring" aria-selected="false">監視</button>
     <button type="button" class="tab" data-tab="log" aria-selected="false">受信ログ</button>
+    <button type="button" class="tab" data-tab="audit" aria-selected="false">監査ログ</button>
     <button type="button" class="tab" data-tab="stores" aria-selected="false">店舗マスター</button>
     <button type="button" class="tab" data-tab="users" aria-selected="false">ユーザー</button>
     <button type="button" class="tab" data-tab="product-master" aria-selected="false">商品マスター</button>
@@ -133,6 +135,64 @@
     </section>
 
     <!-- ====== 受信ログ ====== -->
+    <!-- ====== 監視 ====== -->
+    <section id="monitoring-panel" class="panel">
+      <p class="hint setup-back-link"><a href="/">← ダッシュボードへ戻る</a></p>
+      <h2>システム監視</h2>
+      <p class="hint">データの鮮度・最新の受信状況・自動同期の健全性を確認します。</p>
+      <div class="monitor-grid" id="monitor-cards">
+        <div class="monitor-card" id="monitor-freshness">
+          <div class="monitor-card-label">データ鮮度</div>
+          <div class="monitor-card-value" id="monitor-freshness-value">読み込み中…</div>
+          <div class="monitor-card-sub" id="monitor-freshness-sub"></div>
+        </div>
+        <div class="monitor-card" id="monitor-latest">
+          <div class="monitor-card-label">最新の受信</div>
+          <div class="monitor-card-value" id="monitor-latest-value">—</div>
+          <div class="monitor-card-sub" id="monitor-latest-sub"></div>
+        </div>
+        <div class="monitor-card" id="monitor-today">
+          <div class="monitor-card-label">本日の受信件数</div>
+          <div class="monitor-card-value" id="monitor-today-value">—</div>
+          <div class="monitor-card-sub" id="monitor-today-sub"></div>
+        </div>
+      </div>
+      <p class="hint" id="monitor-updated" aria-live="polite" style="margin-top:0.75rem;"></p>
+      <button type="button" id="monitor-refresh" class="btn-secondary" style="margin-top:0.5rem;">更新</button>
+    </section>
+
+    <!-- ====== 監査ログ ====== -->
+    <section id="audit-panel" class="panel">
+      <p class="hint setup-back-link"><a href="/">← ダッシュボードへ戻る</a></p>
+      <h2>監査ログ</h2>
+      <p class="hint">ログイン・ユーザー変更・設定変更・マスター取込などの操作履歴（新しい順、最大1000件）。</p>
+      <div class="output-header" style="margin-bottom:0.5rem;">
+        <span class="output-header-item">
+          <label for="audit-filter-action">操作</label>
+          <select id="audit-filter-action"><option value="">すべて</option></select>
+        </span>
+        <span class="output-header-item">
+          <input type="search" id="audit-search" placeholder="ユーザー・IP・詳細で検索" style="width:100%;padding:0.375rem 0.625rem;border:1px solid #d1d5db;border-radius:6px;font-size:0.875rem;">
+        </span>
+        <span class="output-header-item"><button type="button" id="audit-refresh" class="btn-secondary">更新</button></span>
+      </div>
+      <div class="table-wrapper">
+        <table class="report-table" aria-label="Audit log">
+          <thead>
+            <tr>
+              <th>日時</th>
+              <th>実行者</th>
+              <th>操作</th>
+              <th>IP</th>
+              <th>詳細</th>
+            </tr>
+          </thead>
+          <tbody id="audit-tbody"></tbody>
+        </table>
+      </div>
+      <p id="audit-empty" class="hint" aria-live="polite">読み込み中…</p>
+    </section>
+
     <section id="log-panel" class="panel">
       <p class="hint setup-back-link"><a href="/">← ダッシュボードへ戻る</a></p>
       <h2>データ受信ログ</h2>

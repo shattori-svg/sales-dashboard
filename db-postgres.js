@@ -211,6 +211,35 @@ async function saveProductMaster(master) {
   }
 }
 
+const AUDIT_LOG_KEY = 'audit_log';
+const AUDIT_LOG_CAP = 2000;
+
+async function getAuditLog(limit = 200) {
+  try {
+    const r = await pool.query(`SELECT value FROM ${MASTERS_TABLE} WHERE key = $1`, [AUDIT_LOG_KEY]);
+    if (!r.rows[0] || r.rows[0].value == null) return [];
+    const arr = r.rows[0].value;
+    return Array.isArray(arr) ? arr.slice(0, Math.min(Number(limit) || 200, AUDIT_LOG_CAP)) : [];
+  } catch (err) {
+    throw mapDbErr(err);
+  }
+}
+
+async function recordAudit(entry) {
+  try {
+    const r = await pool.query(`SELECT value FROM ${MASTERS_TABLE} WHERE key = $1`, [AUDIT_LOG_KEY]);
+    let arr = (r.rows[0] && Array.isArray(r.rows[0].value)) ? r.rows[0].value : [];
+    arr.unshift(entry);
+    if (arr.length > AUDIT_LOG_CAP) arr = arr.slice(0, AUDIT_LOG_CAP);
+    await pool.query(
+      `INSERT INTO ${MASTERS_TABLE} (key, value) VALUES ($1, $2::jsonb) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      [AUDIT_LOG_KEY, JSON.stringify(arr)]
+    );
+  } catch (err) {
+    throw mapDbErr(err);
+  }
+}
+
 async function getBusinessHours(storeId) {
   const key = businessHoursKey(storeId);
   try {
@@ -449,6 +478,8 @@ module.exports = {
   saveExchangeRate,
   getProductMaster,
   saveProductMaster,
+  getAuditLog,
+  recordAudit,
   saveReport,
   getReport,
   getAvailableDates,

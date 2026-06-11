@@ -202,6 +202,32 @@ function saveProductMaster(master) {
   return Promise.resolve(master);
 }
 
+// Admin audit log — append-only trail of who did what, stored as a capped
+// JSON array in the masters table (no schema migration needed across backends).
+const AUDIT_LOG_KEY = 'audit_log';
+const AUDIT_LOG_CAP = 2000;
+
+function getAuditLog(limit = 200) {
+  const row = db.prepare('SELECT value FROM masters WHERE key = ?').get(AUDIT_LOG_KEY);
+  if (!row || !row.value) return Promise.resolve([]);
+  try {
+    const arr = JSON.parse(row.value);
+    return Promise.resolve(Array.isArray(arr) ? arr.slice(0, Math.min(Number(limit) || 200, AUDIT_LOG_CAP)) : []);
+  } catch (_) { return Promise.resolve([]); }
+}
+
+function recordAudit(entry) {
+  const row = db.prepare('SELECT value FROM masters WHERE key = ?').get(AUDIT_LOG_KEY);
+  let arr = [];
+  if (row && row.value) { try { arr = JSON.parse(row.value) || []; } catch (_) { arr = []; } }
+  arr.unshift(entry); // newest first
+  if (arr.length > AUDIT_LOG_CAP) arr = arr.slice(0, AUDIT_LOG_CAP);
+  db.prepare('INSERT INTO masters (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(
+    AUDIT_LOG_KEY, JSON.stringify(arr)
+  );
+  return Promise.resolve();
+}
+
 function saveReport(businessDate, data, storeId = 'default', isFinal = false) {
   const sid = String(storeId || 'default').trim() || 'default';
   const stmt = db.prepare(
@@ -373,6 +399,8 @@ module.exports = {
   saveExchangeRate,
   getProductMaster,
   saveProductMaster,
+  getAuditLog,
+  recordAudit,
   getProductGroups,
   saveProductGroups,
   updateUserPreferences,

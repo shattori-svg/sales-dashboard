@@ -69,6 +69,8 @@ const {
   getReport,
   getAvailableDates,
   getUploadLog,
+  getAuditLog,
+  recordAudit,
   getBusinessHours,
   saveBusinessHours,
   getUsers,
@@ -387,6 +389,40 @@ function rateLimit({ windowMs, max }) {
 }
 const loginRateLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
 
+// Audit trail of admin/security-relevant actions. Fire-and-forget: a logging
+// failure must never break the underlying request. Actor is derived from the
+// JWT user, the API key, or basic auth.
+function auditActor(req) {
+  if (req.jwtUser && req.jwtUser.loggedIn) {
+    return req.jwtUser.displayName || req.jwtUser.username || req.jwtUser.userId || 'user';
+  }
+  if (req.headers && req.headers['x-api-key']) return 'api-key';
+  return 'anonymous';
+}
+function clientIp(req) {
+  return req.ip || (req.connection && req.connection.remoteAddress) || '';
+}
+function audit(req, action, detail) {
+  const entry = {
+    ts: new Date().toISOString(),
+    actor: auditActor(req),
+    action,
+    ip: clientIp(req),
+    detail: detail || undefined,
+  };
+  Promise.resolve()
+    .then(() => recordAudit(entry))
+    .catch((err) => (req.log || logger).warn({ event: 'audit_write_failed', action, err }, 'audit write failed'));
+}
+// Variant for contexts where the actor is explicit (e.g. a successful login,
+// where req.jwtUser is not yet populated).
+function auditAs(req, actor, action, detail) {
+  const entry = { ts: new Date().toISOString(), actor: actor || 'anonymous', action, ip: clientIp(req), detail: detail || undefined };
+  Promise.resolve()
+    .then(() => recordAudit(entry))
+    .catch((err) => (req.log || logger).warn({ event: 'audit_write_failed', action, err }, 'audit write failed'));
+}
+
 function requireAuth(req, res, next) {
   const isStatic = /\.(css|js|ico|png|jpg|jpeg|gif|svg|woff2?|ttf|eot)$/i.test(req.path);
   if (isStatic) return next();
@@ -593,6 +629,7 @@ app.get('/auth/callback', async (req, res) => {
       role: user.role === 'admin' ? 'admin' : 'user',
       needsProfileSetup: !!(user._needsProfileSetup),
     });
+    auditAs(req, user.display_name || user.username, 'login', { method: 'entra', role: user.role === 'admin' ? 'admin' : 'user' });
     res.redirect('/');
   } catch (err) {
     logger.error({ event: 'auth_failed', kind: 'entra_callback', err }, 'entra callback error');
@@ -611,11 +648,13 @@ app.post('/login', loginRateLimiter, (req, res) => {
     .then((user) => {
       if (!user) {
         logger.warn({ event: 'auth_failed', reason: 'unknown_user', username }, 'login failed: unknown user');
+        auditAs(req, username, 'login_failed', { reason: 'unknown_user' });
         return res.redirect('/login?error=1');
       }
       return bcrypt.compare(password, user.password_hash).then((ok) => {
         if (!ok) {
           logger.warn({ event: 'auth_failed', reason: 'bad_password', username }, 'login failed: bad password');
+          auditAs(req, username, 'login_failed', { reason: 'bad_password' });
           return res.redirect('/login?error=1');
         }
         updateLastLogin(user.id).catch(() => {});
@@ -627,6 +666,7 @@ app.post('/login', loginRateLimiter, (req, res) => {
           role: user.role,
           needsProfileSetup: false,
         });
+        auditAs(req, user.display_name || user.username, 'login', { method: 'password', role: user.role });
         res.redirect('/');
       });
     })
@@ -636,7 +676,8 @@ app.post('/login', loginRateLimiter, (req, res) => {
     });
 });
 
-app.post('/logout', (_req, res) => {
+app.post('/logout', (req, res) => {
+  if (req.jwtUser && req.jwtUser.loggedIn) audit(req, 'logout');
   clearJwtCookie(res);
   res.redirect('/login?loggedout=1');
 });
@@ -783,6 +824,7 @@ app.post('/api/bootstrap-admin', loginRateLimiter, async (req, res) => {
       role: 'admin',
       needsProfileSetup: false,
     });
+    auditAs(req, created.username, 'bootstrap_admin', { userId: created.id });
     res.status(201).json({ ok: true, redirect: '/' });
   } catch (err) {
     if (err.code === 'SQLITE_CONSTRAINT_UNIQUE' || (err && err.message && err.message.includes('unique'))) {
@@ -843,8 +885,10 @@ app.put('/api/stores', requireAdmin, async (req, res) => {
     const reqRate = req.body.exchange_rate != null ? Number(req.body.exchange_rate) : NaN;
     if (typeof reqRate === 'number' && !Number.isNaN(reqRate) && reqRate > 0) {
       await saveExchangeRate(reqRate);
+      audit(req, 'exchange_rate_update', { rate: reqRate });
     }
     await saveStores(normalized);
+    audit(req, 'stores_update', { count: normalized.length, ids: normalized.map((s) => s.id) });
     const exchange = await getExchangeRate();
     res.json({
       stores: normalized,
@@ -884,6 +928,7 @@ app.put('/api/business-hours', requireAdmin, async (req, res) => {
       };
     }
     await saveBusinessHours(normalized, storeId);
+    audit(req, 'business_hours_update', { storeId });
     res.json(normalized);
   } catch (err) {
     (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
@@ -910,6 +955,18 @@ app.get('/api/upload-log', requireAdmin, async (req, res) => {
   } catch (err) {
     (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
     res.status(500).json({ error: err.message || 'Failed to get upload log.' });
+  }
+});
+
+// Admin audit trail — who did what (logins, user changes, settings, imports).
+app.get('/api/audit-log', requireAdmin, async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 200, 1000);
+    const entries = await getAuditLog(limit);
+    res.json({ entries });
+  } catch (err) {
+    (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');
+    res.status(500).json({ error: err.message || 'Failed to get audit log.' });
   }
 });
 
@@ -1691,6 +1748,7 @@ app.post('/api/product-master/import', requireAdmin, upload.single('file'), asyn
     await saveProductMaster(master);
     const count = Object.keys(master).length;
     (req.log || logger).info({ event: 'product_master_imported', count }, 'Product master imported');
+    audit(req, 'product_master_import', { count });
     res.json({ ok: true, count });
   } catch (err) {
     const msg = err && (err.message || String(err));
@@ -1858,6 +1916,7 @@ app.post('/api/users', requireAdmin, async (req, res) => {
     if (preferredStore || preferredDepartment || preferredCurrency || preferredLanguage) {
       await updateUserPreferences(created.id, { preferredStore, preferredDepartment, preferredCurrency, preferredLanguage });
     }
+    audit(req, 'user_create', { userId: created.id, username, role });
     const user = await getUserById(created.id);
     res.status(201).json({
       id: user.id,
@@ -1915,6 +1974,7 @@ app.put('/api/users/:id', requireAdmin, async (req, res) => {
       });
     }
     const updated = await getUserById(id);
+    audit(req, 'user_update', { userId: id, username: updated.username, changed: Object.keys(updates) });
     res.json({
       id: updated.id,
       username: updated.username,
@@ -1946,6 +2006,7 @@ app.delete('/api/users/:id', requireAdmin, async (req, res) => {
   }
   try {
     await deleteUser(id);
+    audit(req, 'user_delete', { userId: id, username: user.username, role: user.role });
     res.status(204).send();
   } catch (err) {
     (req.log || logger).error({ event: 'handler_error', err }, 'request handler error');

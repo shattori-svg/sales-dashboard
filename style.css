@@ -2470,3 +2470,62 @@ body.login-body {
   color: var(--text-muted);
   display: inline-block;
 }
+
+/* ---- Monitoring cards (Setup → 監視) ---- */
+.monitor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+}
+.monitor-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.monitor-card-label {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+}
+.monitor-card-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+  font-family: 'DM Mono', monospace;
+}
+.monitor-card-value.is-good { color: #16a34a; }
+.monitor-card-value.is-bad { color: #dc2626; }
+.monitor-card-sub {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  margin-top: var(--space-2);
+}
+
+/* ---- Audit log ---- */
+.audit-action {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--surface-2, #f1f5f9);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.audit-action.audit-login { background: #dcfce7; color: #15803d; }
+.audit-action.audit-login_failed { background: #fee2e2; color: #b91c1c; }
+.audit-action.audit-logout { background: #e0e7ff; color: #4338ca; }
+.audit-action.audit-user_create,
+.audit-action.audit-user_update,
+.audit-action.audit-user_delete,
+.audit-action.audit-bootstrap_admin { background: #fef3c7; color: #b45309; }
+.audit-detail {
+  font-family: 'DM Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  max-width: 360px;
+  overflow-wrap: anywhere;
+}

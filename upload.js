@@ -232,11 +232,139 @@
       switchUploadTab(tab);
       if (tab === 'stores') loadStoresMaster();
       if (tab === 'log') loadUploadLog();
+      if (tab === 'monitoring') loadMonitoring();
+      if (tab === 'audit') loadAuditLog();
       if (tab === 'users') loadUsers();
       if (tab === 'product-master') loadProductMasterList();
       if (tab === 'classification') loadClassificationList();
     });
   });
+
+  // ---- Monitoring ----
+  function fmtAge(seconds) {
+    if (seconds == null || !isFinite(seconds)) return '—';
+    var s = Math.max(0, Math.round(seconds));
+    if (s < 60) return s + '秒';
+    if (s < 3600) return Math.round(s / 60) + '分';
+    if (s < 86400) return (s / 3600).toFixed(1) + '時間';
+    return (s / 86400).toFixed(1) + '日';
+  }
+
+  function loadMonitoring() {
+    var fv = document.getElementById('monitor-freshness-value');
+    var fs = document.getElementById('monitor-freshness-sub');
+    var lv = document.getElementById('monitor-latest-value');
+    var ls = document.getElementById('monitor-latest-sub');
+    var tv = document.getElementById('monitor-today-value');
+    var ts = document.getElementById('monitor-today-sub');
+    var updated = document.getElementById('monitor-updated');
+    if (fv) fv.textContent = '読み込み中…';
+
+    // Data freshness probe (machine endpoint reused for the human view).
+    fetch('/api/health/freshness').then(function (r) { return r.json().catch(function () { return {}; }); }).then(function (b) {
+      if (!fv) return;
+      var stale = b && b.stale;
+      fv.textContent = stale ? '⚠ 鮮度低下' : '✓ 最新';
+      fv.className = 'monitor-card-value ' + (stale ? 'is-bad' : 'is-good');
+      if (fs) {
+        if (b && b.reason === 'no_uploads') fs.textContent = 'アップロード履歴がありません';
+        else if (b && b.ageSeconds != null) fs.textContent = '最終受信から ' + fmtAge(b.ageSeconds) + '（閾値 ' + fmtAge(b.thresholdSeconds) + '）';
+        else fs.textContent = '';
+      }
+    }).catch(function () { if (fv) { fv.textContent = '取得失敗'; fv.className = 'monitor-card-value is-bad'; } });
+
+    // Latest reception + today's count from the upload log.
+    fetch('/api/upload-log?limit=500').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
+      var logs = (body && body.logs) || [];
+      if (lv) {
+        if (logs.length === 0) { lv.textContent = 'データなし'; if (ls) ls.textContent = ''; }
+        else {
+          lv.textContent = formatReceivedAt(logs[0].receivedAt);
+          if (ls) ls.textContent = '店舗 ' + escapeHtml(logs[0].storeId || '') + ' / 取引日 ' + escapeHtml(logs[0].businessDate || '');
+        }
+      }
+      if (tv) {
+        var today = new Date();
+        var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+        var todayStr = today.getFullYear() + '-' + pad(today.getMonth() + 1) + '-' + pad(today.getDate());
+        var count = logs.filter(function (r) {
+          var d = r.receivedAt ? String(r.receivedAt).slice(0, 10) : '';
+          // receivedAt is UTC; this is a rough local-day count, good enough for a glance.
+          return d === todayStr;
+        }).length;
+        tv.textContent = String(count) + ' 件';
+        if (ts) ts.textContent = '本日アップロードされたレポート数';
+      }
+      if (updated) updated.textContent = '更新: ' + formatReceivedAt(new Date().toISOString());
+    }).catch(function () {
+      if (lv) lv.textContent = '取得失敗';
+      if (tv) tv.textContent = '—';
+    });
+  }
+
+  var monitorRefreshBtn = document.getElementById('monitor-refresh');
+  if (monitorRefreshBtn) monitorRefreshBtn.addEventListener('click', loadMonitoring);
+
+  // ---- Audit log ----
+  var auditEntriesCache = [];
+  function renderAuditLog() {
+    var tbody = document.getElementById('audit-tbody');
+    var emptyEl = document.getElementById('audit-empty');
+    var actionFilter = document.getElementById('audit-filter-action');
+    var searchEl = document.getElementById('audit-search');
+    if (!tbody) return;
+    var fAction = actionFilter ? actionFilter.value : '';
+    var q = searchEl ? searchEl.value.trim().toLowerCase() : '';
+    var rows = auditEntriesCache.filter(function (e) {
+      if (fAction && e.action !== fAction) return false;
+      if (q) {
+        var hay = (String(e.actor || '') + ' ' + String(e.action || '') + ' ' + String(e.ip || '') + ' ' + JSON.stringify(e.detail || '')).toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+    tbody.innerHTML = rows.map(function (e) {
+      var detail = e.detail ? JSON.stringify(e.detail) : '';
+      return '<tr>' +
+        '<td>' + escapeHtml(formatReceivedAt(e.ts)) + '</td>' +
+        '<td>' + escapeHtml(e.actor || '') + '</td>' +
+        '<td><span class="audit-action audit-' + escapeHtml(String(e.action || '').replace(/[^a-z_]/gi, '')) + '">' + escapeHtml(e.action || '') + '</span></td>' +
+        '<td>' + escapeHtml(e.ip || '') + '</td>' +
+        '<td class="audit-detail">' + escapeHtml(detail) + '</td>' +
+        '</tr>';
+    }).join('');
+    if (emptyEl) emptyEl.textContent = rows.length === 0 ? '該当する記録がありません。' : '';
+  }
+
+  function loadAuditLog() {
+    var emptyEl = document.getElementById('audit-empty');
+    if (emptyEl) emptyEl.textContent = '読み込み中…';
+    fetch('/api/audit-log?limit=1000').then(function (res) { return parseJsonResponse(res); }).then(function (body) {
+      auditEntriesCache = (body && body.entries) || [];
+      // Populate the action filter with the distinct actions present.
+      var actionFilter = document.getElementById('audit-filter-action');
+      if (actionFilter) {
+        var actions = {};
+        auditEntriesCache.forEach(function (e) { if (e.action) actions[e.action] = true; });
+        var cur = actionFilter.value;
+        actionFilter.innerHTML = '<option value="">すべて</option>' +
+          Object.keys(actions).sort().map(function (a) { return '<option value="' + escapeHtml(a) + '">' + escapeHtml(a) + '</option>'; }).join('');
+        actionFilter.value = cur;
+      }
+      renderAuditLog();
+    }).catch(function () {
+      var tbody = document.getElementById('audit-tbody');
+      if (tbody) tbody.innerHTML = '';
+      if (emptyEl) emptyEl.textContent = '読み込みに失敗しました。';
+    });
+  }
+
+  var auditRefreshBtn = document.getElementById('audit-refresh');
+  if (auditRefreshBtn) auditRefreshBtn.addEventListener('click', loadAuditLog);
+  var auditActionFilter = document.getElementById('audit-filter-action');
+  if (auditActionFilter) auditActionFilter.addEventListener('change', renderAuditLog);
+  var auditSearchEl = document.getElementById('audit-search');
+  if (auditSearchEl) auditSearchEl.addEventListener('input', renderAuditLog);
 
   function escapeHtml(s) {
     if (s == null) return '';

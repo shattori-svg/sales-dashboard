@@ -185,6 +185,35 @@ function saveProductMaster(master) {
     });
 }
 
+const AUDIT_LOG_KEY = 'audit_log';
+const AUDIT_LOG_CAP = 2000;
+
+function getAuditLog(limit = 200) {
+  return supabase
+    .from(MASTERS_TABLE)
+    .select('value')
+    .eq('key', AUDIT_LOG_KEY)
+    .maybeSingle()
+    .then(({ data: row, error }) => {
+      if (error) throw error;
+      if (!row || row.value == null) return [];
+      const arr = typeof row.value === 'object' ? row.value : JSON.parse(row.value);
+      return Array.isArray(arr) ? arr.slice(0, Math.min(Number(limit) || 200, AUDIT_LOG_CAP)) : [];
+    });
+}
+
+async function recordAudit(entry) {
+  const { data: row, error } = await supabase
+    .from(MASTERS_TABLE).select('value').eq('key', AUDIT_LOG_KEY).maybeSingle();
+  if (error) throw error;
+  let arr = (row && Array.isArray(row.value)) ? row.value : [];
+  arr.unshift(entry);
+  if (arr.length > AUDIT_LOG_CAP) arr = arr.slice(0, AUDIT_LOG_CAP);
+  const { error: upErr } = await supabase
+    .from(MASTERS_TABLE).upsert({ key: AUDIT_LOG_KEY, value: arr }, { onConflict: 'key' });
+  if (upErr) throw upErr;
+}
+
 function getBusinessHours(storeId) {
   const key = businessHoursKey(storeId);
   return supabase
@@ -408,6 +437,8 @@ module.exports = {
   saveExchangeRate,
   getProductMaster,
   saveProductMaster,
+  getAuditLog,
+  recordAudit,
   saveReport,
   getReport,
   getAvailableDates,
