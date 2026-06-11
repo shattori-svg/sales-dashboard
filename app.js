@@ -1968,6 +1968,9 @@
     document.querySelectorAll('.panel').forEach(function (p) {
       p.classList.toggle('active', p.id === tabName + '-panel');
     });
+    // Reflect the current view in the header (sidebar layout).
+    var pageTitleEl = document.getElementById('header-page-title');
+    if (pageTitleEl) pageTitleEl.textContent = t('tab_' + tabName) || '';
     if (tabName === 'hourly') {
       refreshOutputDateSelect();
       renderReport();
@@ -3588,6 +3591,16 @@
   }
 
   function init() {
+    // Header shows the active view name (sidebar layout); set it for the
+    // initial tab and keep it updated when the language changes.
+    var initialTitleEl = document.getElementById('header-page-title');
+    function syncHeaderPageTitle() {
+      if (!initialTitleEl) return;
+      var activeTab = document.querySelector('.tab.active');
+      initialTitleEl.textContent = activeTab ? (t('tab_' + activeTab.getAttribute('data-tab')) || '') : '';
+    }
+    syncHeaderPageTitle();
+    window.addEventListener('languageChange', syncHeaderPageTitle);
     var mobileMenuToggle = document.getElementById('mobile-menu-toggle');
     var headerMenu = document.getElementById('header-menu');
     function closeMobileMenu() {

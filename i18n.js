@@ -6,6 +6,8 @@
   var messages = {
     ja: {
       app_title: 'LOPIA Thailand Sales Dashboard',
+      nav_group_flash: '速報',
+      nav_group_analysis: '分析',
       tab_hourly: '店別速報',
       tab_allstores: '全店速報',
       tab_daily: '日次集計',
@@ -234,6 +236,8 @@
     },
     en: {
       app_title: 'LOPIA Thailand Sales Dashboard',
+      nav_group_flash: 'Live',
+      nav_group_analysis: 'Analysis',
       tab_hourly: 'Store Snapshot',
       tab_allstores: 'All Stores Snapshot',
       tab_daily: 'Daily',
@@ -462,6 +466,8 @@
     },
     th: {
       app_title: 'LOPIA Thailand Sales Dashboard',
+      nav_group_flash: 'รายงานด่วน',
+      nav_group_analysis: 'วิเคราะห์',
       tab_hourly: 'สรุปตามสาขา',
       tab_allstores: 'สรุปรวมทุกสาขา',
       tab_daily: 'รายวัน',
