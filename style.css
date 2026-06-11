@@ -2560,16 +2560,10 @@ body.login-body {
 }
 .sidebar-brand-mark {
   flex: none;
-  width: 36px;
+  width: 40px;
   height: 36px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  font-weight: 700;
-  font-size: 1.1rem;
-  color: #fff;
-  background: linear-gradient(145deg, #1d4ed8 0%, #3b82f6 80%);
-  letter-spacing: 0;
+  object-fit: contain;
+  display: block;
 }
 .sidebar-brand-text {
   margin: 0;
@@ -2698,7 +2692,7 @@ body.login-body {
     padding: var(--space-3) var(--space-4);
     border-bottom: none;
   }
-  .sidebar-brand-mark { width: 28px; height: 28px; font-size: 0.9rem; border-radius: 8px; }
+  .sidebar-brand-mark { width: 30px; height: 26px; }
   .sidebar-brand-text { font-size: 0.78rem; }
   .sidebar .tabs {
     flex-direction: row;
