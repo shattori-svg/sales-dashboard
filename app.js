@@ -3353,14 +3353,26 @@
     }).join('');
   }
 
+  // Pick the narrative in the current UI language. Supports the multi-language
+  // shape { ja:{...}, en:{...}, th:{...} } and the legacy flat shape.
+  function pickBriefNarrative(brief) {
+    var nv = (brief && brief.narrative) || {};
+    if (nv.headline !== undefined || nv.factors !== undefined) return nv; // legacy single-lang
+    var lang = (window.i18n && window.i18n.getCurrentLang && window.i18n.getCurrentLang()) || 'ja';
+    return nv[lang] || nv.ja || nv[Object.keys(nv)[0]] || {};
+  }
+
+  var lastBrief = null;
+
   function renderDailyBrief(brief) {
+    lastBrief = brief;
     var content = document.getElementById('brief-content');
     var emptyEl = document.getElementById('brief-empty');
     var genAt = document.getElementById('brief-generated-at');
     if (!content) return;
     var d = brief.data || {};
     var k = d.kpi || {};
-    var n = brief.narrative || {};
+    var n = pickBriefNarrative(brief);
     var isDeptScope = brief.scope && brief.scope !== 'Total';
     content.hidden = false;
     if (emptyEl) emptyEl.hidden = true;
@@ -3850,6 +3862,12 @@
     }
     syncHeaderPageTitle();
     window.addEventListener('languageChange', syncHeaderPageTitle);
+    // Re-render the daily brief so its narrative + JS-set labels follow the UI language.
+    window.addEventListener('languageChange', function () {
+      if (lastBrief && document.getElementById('brief-content') && !document.getElementById('brief-content').hidden) {
+        renderDailyBrief(lastBrief);
+      }
+    });
     var mobileMenuToggle = document.getElementById('mobile-menu-toggle');
     var headerMenu = document.getElementById('header-menu');
     function closeMobileMenu() {

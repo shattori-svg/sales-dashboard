@@ -1142,7 +1142,10 @@ app.post('/api/ai/daily-brief/generate', requireAdmin, express.json(), async (re
     } catch (e) {
       (req.log || logger).warn({ event: 'external_context_failed', err: e && e.message }, 'external context fetch failed');
     }
-    const opts = { groups, external };
+    // Pre-generate the narrative in all UI languages (override with body.langs).
+    const langs = (req.body && Array.isArray(req.body.langs) && req.body.langs.length)
+      ? req.body.langs : ['ja', 'en', 'th'];
+    const opts = { groups, external, langs };
 
     const results = await Promise.all(scopes.map((scope) =>
       aiGemini.generateDailyBrief(getReport, master, storeId, businessDate, lang, scope, opts)

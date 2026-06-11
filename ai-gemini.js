@@ -718,7 +718,6 @@ async function generateDailyBrief(getReport, master, storeId, businessDate, lang
   if (!data) throw new Error('NO_DATA');
   if (scope !== 'Total' && !(data.kpi.netSales > 0)) throw new Error('NO_DATA');
 
-  const langName = lang === 'en' ? 'English' : lang === 'th' ? 'Thai' : 'Japanese';
   const isDept = scope !== 'Total';
   const scopeIntro = isDept
     ? `for the ${scope} department manager of LOPIA Thailand (all data below is scoped to this department)`
@@ -734,7 +733,7 @@ async function generateDailyBrief(getReport, master, storeId, businessDate, lang
     ? 'For the 3-5 most important category movements (coarse→fine: prefer a few notable 中分類 sub-categories, plus a 大分類 if a whole class moved), return one factor each. "key" MUST be the exact category "code" from categories[] (the 4-digit code for a 中分類, the 2-digit code for a 大分類).'
     : 'For the 3-5 departments that most drove or dragged the day, return one factor each. "key" MUST be the exact department "name" from departments[].';
 
-  const prompt = `You are a retail analyst writing the morning daily brief ${scopeIntro}.
+  const buildPrompt = (langName) => `You are a retail analyst writing the morning daily brief ${scopeIntro}.
 All figures below are pre-computed and correct — do NOT recompute or invent numbers. Margin = gross margin from actual COGS; null margin means cost data is missing (do not treat as 0%). "vs4wAvgPct" compares against the average of the same weekday over the last 4 weeks (seasonality-adjusted). "external" holds weather, public holiday, payday phase, air quality and active disasters for the day. ${marginRule}
 
 ${JSON.stringify(data)}
@@ -743,31 +742,37 @@ Write concise, practical commentary in ${langName}, in the voice of explaining W
 {"headline": string, "factors": [{"key": string, "note": string}], "alerts": string}
 
 - headline: 1-2 sentences. The single most important takeaway for the day, weaving in external context (weather / holiday / payday) ONLY when it plausibly explains the result. Do not assert external causes you cannot support.
-- factors: ${factorRule} Each "note" is 1-2 short sentences = likely CAUSE then a concrete SUGGESTION (use "→" before the suggestion), e.g. "値引き拡大で数量増でも利益が伴わず。→ 値引き幅を見直しセット販促へ。". Order factors coarse→fine (biggest impact first). Only include movements that matter; do not force 5.
+- factors: ${factorRule} Each "note" is 1-2 short sentences = likely CAUSE then a concrete SUGGESTION (use "→" before the suggestion). Order factors coarse→fine (biggest impact first). Only include movements that matter; do not force 5. Keep the "key" values identical regardless of output language.
 - alerts: 1 short sentence on the item alerts overall (possible stockouts, cost anomalies, missing cost). Empty string if nothing notable.
-No markdown headings. Plain text. Avoid asserting causation you cannot back with the data; prefer "〜とみられる / 可能性".`;
+No markdown headings. Plain text. Avoid asserting causation you cannot back with the data; prefer expressions like "likely / possibly".`;
 
-  const raw = await callGemini(prompt, MODEL, 90000);
-  const narrative = extractJson(raw);
-  const factors = Array.isArray(narrative.factors)
-    ? narrative.factors
-        .filter((f) => f && f.key != null && f.note)
-        .map((f) => ({ key: String(f.key), note: String(f.note) }))
-    : [];
+  const LANG_NAME = { ja: 'Japanese', en: 'English', th: 'Thai' };
+  // Pre-generate the narrative in every UI language so the stored brief can be
+  // shown in the viewer's language without re-calling the model. Numbers in
+  // `data` are language-agnostic and computed once above.
+  const langs = (opts && Array.isArray(opts.langs) && opts.langs.length) ? opts.langs : ['ja', 'en', 'th'];
+  const narrative = {};
+  for (const lg of langs) {
+    const raw = await callGemini(buildPrompt(LANG_NAME[lg] || 'Japanese'), MODEL, 90000);
+    const nv = extractJson(raw);
+    const factors = Array.isArray(nv.factors)
+      ? nv.factors.filter((f) => f && f.key != null && f.note).map((f) => ({ key: String(f.key), note: String(f.note) }))
+      : [];
+    narrative[lg] = {
+      headline: String(nv.headline || ''),
+      factors,
+      alerts: String(nv.alerts || ''),
+    };
+  }
 
   return {
     businessDate,
     storeId,
     scope,
-    lang: lang || 'ja',
+    langs,
     generatedAt: new Date().toISOString(),
     data,
-    narrative: {
-      headline: String(narrative.headline || ''),
-      factors,
-      analysis: String(narrative.analysis || ''),
-      alerts: String(narrative.alerts || ''),
-    },
+    narrative,
   };
 }
 
