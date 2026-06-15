@@ -1665,6 +1665,9 @@
       fetch('/api/ai/hourly-forecast?storeId=' + encodeURIComponent(storeIdForForecast) + '&referenceDate=' + encodeURIComponent(refDateForForecast) + '&currentTime=' + encodeURIComponent(currentTimeIso))
         .then(function (r) { return r.ok ? r.json() : Promise.reject(new Error('Fetch failed')); })
         .then(function (aiData) {
+          // Server returns { unavailable: true } when the forecast could not be
+          // generated (e.g. Gemini timeout). Skip the overlay — no error surfaced.
+          if (!aiData || aiData.unavailable) return;
           var thailandNow = (state.referenceDate === getThailandDateStr()) ? getThailandTimeStr() : null;
           var fd = buildForecastChartDataFromAI(aiData, todayNetForForecast, todayReceiptsForForecast, todayHourly, thailandNow);
           renderCharts(todayHourly, yesterdayHourly, lastWeekHourly, { forecastSalesData: fd.sales, forecastReceiptsData: fd.receipts }, true);

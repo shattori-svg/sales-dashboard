@@ -1276,26 +1276,56 @@ app.get('/api/ai/hourly-forecast', async (req, res) => {
   if (!refDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(refDate).trim())) {
     return res.status(400).json({ error: 'referenceDate (YYYY-MM-DD) is required.' });
   }
-  const cacheKey = `${storeId}:${refDate}`;
-  const cached = !currentTime ? hourlyForecastCache.get(cacheKey) : null;
-  if (cached && Date.now() - cached.ts < HOURLY_FORECAST_CACHE_TTL_MS) {
-    return res.json(cached.data);
+
+  // Cache key includes a coarse time bucket so time-aware ("currentTime") calls
+  // are cached too. Previously currentTime bypassed the cache entirely, so every
+  // dashboard render across every open client hit Gemini live — when Gemini got
+  // slow this produced a 500 storm and Cloud Run 5xx alert spam.
+  let cacheKey = `${storeId}:${String(refDate).trim()}`;
+  if (currentTime) {
+    const ms = Date.parse(currentTime);
+    const bucket = Number.isFinite(ms) ? Math.floor(ms / HOURLY_FORECAST_CACHE_TTL_MS) : 'live';
+    cacheKey += `:${bucket}`;
   }
-  try {
-    const data = await aiGemini.generateHourlyForecast(getReport, storeId, String(refDate).trim(), currentTime);
-    if (!currentTime) {
-      if (hourlyForecastCache.size >= HOURLY_FORECAST_CACHE_MAX) {
-        const oldestKey = hourlyForecastCache.keys().next().value;
-        hourlyForecastCache.delete(oldestKey);
-      }
-      hourlyForecastCache.set(cacheKey, { data, ts: Date.now() });
+
+  const now = Date.now();
+  const cached = hourlyForecastCache.get(cacheKey);
+  if (cached && now - cached.ts < HOURLY_FORECAST_CACHE_TTL_MS) {
+    try {
+      // Shares the in-flight Gemini call between concurrent renders (prevents a
+      // thundering herd) and serves the cached result on subsequent hits.
+      const data = await cached.promise;
+      return res.json(data);
+    } catch (_) {
+      // The cached attempt failed; return unavailable without recomputing so a
+      // Gemini outage can't be amplified into a request storm.
+      return res.json({ unavailable: true });
     }
+  }
+
+  // Start a new forecast and cache the in-flight promise immediately so
+  // concurrent requests in the same window reuse it instead of each calling Gemini.
+  if (hourlyForecastCache.size >= HOURLY_FORECAST_CACHE_MAX) {
+    const oldestKey = hourlyForecastCache.keys().next().value;
+    hourlyForecastCache.delete(oldestKey);
+  }
+  const promise = aiGemini.generateHourlyForecast(getReport, storeId, String(refDate).trim(), currentTime);
+  hourlyForecastCache.set(cacheKey, { promise, ts: now });
+
+  try {
+    const data = await promise;
     res.json(data);
   } catch (err) {
     const msg = err && err.message ? err.message : 'Unknown error';
-    (req.log || logger).error({ event: 'ai_error', kind: 'hourly_forecast', err }, 'AI hourly-forecast error');
-    if (msg === 'NO_DATA') return res.status(404).json({ error: 'NO_DATA' });
-    res.status(500).json({ error: msg });
+    if (msg === 'NO_DATA') {
+      hourlyForecastCache.delete(cacheKey);
+      return res.status(404).json({ error: 'NO_DATA' });
+    }
+    // The hourly forecast is a best-effort chart overlay and the frontend ignores
+    // failures. Return 200 (not 5xx) so transient Gemini timeouts/errors don't trip
+    // the Cloud Run "5xx rate" alert. Logged at warn for observability.
+    (req.log || logger).warn({ event: 'ai_error', kind: 'hourly_forecast', err }, 'AI hourly-forecast unavailable');
+    res.json({ unavailable: true });
   }
 });
 
