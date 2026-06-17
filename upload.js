@@ -263,13 +263,22 @@
     // Data freshness probe (machine endpoint reused for the human view).
     fetch('/api/health/freshness').then(function (r) { return r.json().catch(function () { return {}; }); }).then(function (b) {
       if (!fv) return;
+      var outside = b && b.outsideHours;
       var stale = b && b.stale;
-      fv.textContent = stale ? '⚠ 鮮度低下' : '✓ 最新';
-      fv.className = 'monitor-card-value ' + (stale ? 'is-bad' : 'is-good');
+      if (outside) {
+        // Closed / before opening: staleness monitoring is paused, not an error.
+        fv.textContent = '休止中（営業時間外）';
+        fv.className = 'monitor-card-value is-good';
+      } else {
+        fv.textContent = stale ? '⚠ 鮮度低下' : '✓ 最新';
+        fv.className = 'monitor-card-value ' + (stale ? 'is-bad' : 'is-good');
+      }
       if (fs) {
         if (b && b.reason === 'no_uploads') fs.textContent = 'アップロード履歴がありません';
-        else if (b && b.ageSeconds != null) fs.textContent = '最終受信から ' + fmtAge(b.ageSeconds) + '（閾値 ' + fmtAge(b.thresholdSeconds) + '）';
-        else fs.textContent = '';
+        else if (b && b.ageSeconds != null) {
+          var base = '最終受信から ' + fmtAge(b.ageSeconds) + '（閾値 ' + fmtAge(b.thresholdSeconds) + '）';
+          fs.textContent = outside ? base + ' / 営業時間外のため監視停止中' : base;
+        } else fs.textContent = '';
       }
     }).catch(function () { if (fv) { fv.textContent = '取得失敗'; fv.className = 'monitor-card-value is-bad'; } });
 

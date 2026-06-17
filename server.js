@@ -497,6 +497,32 @@ app.get('/readyz', async (req, res) => {
 // Data freshness: alert when the latest sales upload is older than STALE_THRESHOLD_SECONDS.
 // Returns HTTP 503 when stale so a Cloud Monitoring uptime-check can fire an alert.
 const FRESHNESS_STALE_SECONDS = Number(process.env.STALE_THRESHOLD_SECONDS) || 7200; // default 2h
+// Don't flag staleness right after opening — the store needs time to ring up and
+// upload the first sales of the day.
+const FRESHNESS_OPEN_GRACE_MINUTES = Number(process.env.FRESHNESS_OPEN_GRACE_MINUTES) || 60;
+
+// Returns true when Bangkok "now" falls within the store's operating window for
+// today's weekday (>= open + grace, and < close). Outside that window the store
+// is closed or not yet trading, so a missing recent upload is expected and must
+// not be reported as stale. Unknown/misconfigured hours fall back to "always on"
+// so the probe keeps its previous 24/7 behavior rather than silently disabling.
+function isWithinBusinessHours(settings, nowMinutes, weekday, graceMinutes) {
+  const day = settings && settings[weekday]; // numeric key coerces to the JSON string key
+  if (!day || !day.start || !day.end) return true;
+  const toMin = (hhmm) => {
+    const parts = String(hhmm).split(':');
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (!Number.isFinite(h)) return null;
+    return h * 60 + (Number.isFinite(m) ? m : 0);
+  };
+  const startMin = toMin(day.start);
+  const endMin = toMin(day.end); // '24:00' -> 1440
+  if (startMin == null || endMin == null || endMin <= startMin) return true;
+  const openMin = Math.min(startMin + (graceMinutes || 0), endMin);
+  return nowMinutes >= openMin && nowMinutes < endMin;
+}
+
 app.get('/api/health/freshness', async (req, res) => {
   try {
     const rows = await getUploadLog(1);
@@ -515,16 +541,30 @@ app.get('/api/health/freshness', async (req, res) => {
     }
     const ageSeconds = Math.floor((Date.now() - latestMs) / 1000);
     const stale = ageSeconds > FRESHNESS_STALE_SECONDS;
+
+    // Business-hours gate: outside the store's operating window (overnight, or
+    // within the grace period after opening) a missing upload is expected, so we
+    // never alert. This keeps the data_stale metric and the 5xx response off
+    // during closed hours, while preserving the alert during trading hours.
+    const bkk = getBangkokDateKeyAndTime();
+    const weekday = new Date(bkk.dateKey + 'T12:00:00Z').getUTCDay();
+    const settings = await getBusinessHours(latest.storeId);
+    const withinHours = isWithinBusinessHours(settings, bkk.hour * 60 + bkk.minute, weekday, FRESHNESS_OPEN_GRACE_MINUTES);
+    const outsideHours = !withinHours;
+    const alerting = stale && withinHours;
+
     const body = {
-      ok: !stale,
+      ok: !alerting,
       stale,
+      outsideHours,
+      alerting,
       latestUploadAt: new Date(latestMs).toISOString(),
       ageSeconds,
       thresholdSeconds: FRESHNESS_STALE_SECONDS,
       storeId: latest.storeId,
       businessDate: latest.businessDate,
     };
-    if (stale) {
+    if (alerting) {
       logger.warn({ event: 'data_stale', ...body }, 'sales data is stale');
       return res.status(503).json(body);
     }
@@ -2166,3 +2206,5 @@ if (require.main === module) {
 }
 
 module.exports = app;
+// Exposed for unit testing the freshness business-hours gate.
+module.exports.isWithinBusinessHours = isWithinBusinessHours;
